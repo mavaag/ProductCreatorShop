@@ -1,0 +1,277 @@
+"use client";
+
+import { useEffect, useState, useCallback } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
+import { useAuthGuard } from "@/lib/useAuthGuard";
+import { calculatePrice } from "@/lib/pricing";
+import {
+  Product,
+  ProductVariation,
+  Machine,
+  Material,
+  CostInputs,
+  EMPTY_COST_INPUTS,
+  PROCESS_TYPE_LABELS,
+} from "@/lib/types";
+
+export default function ProductEditPage() {
+  const ready = useAuthGuard();
+  const params = useParams();
+  const router = useRouter();
+  const productId = params.id as string;
+
+  const [product, setProduct] = useState<Product | null>(null);
+  const [variations, setVariations] = useState<ProductVariation[]>([]);
+  const [machines, setMachines] = useState<Machine[]>([]);
+  const [materials, setMaterials] = useState<Material[]>([]);
+
+  const load = useCallback(async () => {
+    const [{ data: p }, { data: v }, { data: m }, { data: mat }] = await Promise.all([
+      supabase.from("products").select("*").eq("id", productId).single(),
+      supabase.from("product_variations").select("*").eq("product_id", productId).order("attribute_value"),
+      supabase.from("machines").select("*"),
+      supabase.from("materials").select("*"),
+    ]);
+    setProduct(p);
+    setVariations(v ?? []);
+    setMachines(m ?? []);
+    setMaterials(mat ?? []);
+  }, [productId]);
+
+  useEffect(() => {
+    if (ready) load();
+  }, [ready, load]);
+
+  async function addVariation() {
+    const newSku = `${product?.sku}-${variations.length + 1}`;
+    const { error } = await supabase.from("product_variations").insert({
+      product_id: productId,
+      sku: newSku,
+      attribute_value: "",
+      cost_inputs: EMPTY_COST_INPUTS,
+    });
+    if (error) alert(error.message);
+    load();
+  }
+
+  async function deleteVariation(id: string) {
+    if (!confirm("Deze variant verwijderen?")) return;
+    await supabase.from("product_variations").delete().eq("id", id);
+    load();
+  }
+
+  async function deleteProduct() {
+    if (!confirm("Dit hele product (met alle varianten) verwijderen?")) return;
+    await supabase.from("products").delete().eq("id", productId);
+    router.push("/products");
+  }
+
+  if (!ready || !product) return null;
+
+  const machinesById = new Map(machines.map((m) => [m.id, m]));
+  const materialsById = new Map(materials.map((m) => [m.id, m]));
+
+  return (
+    <div>
+      <h1>{product.name}</h1>
+      <p className="sub">
+        <span className="pill">{PROCESS_TYPE_LABELS[product.process_type]}</span>{" "}
+        SKU: {product.sku} &middot; Kenmerk: {product.attribute_name}
+      </p>
+
+      <div style={{ marginBottom: 16 }}>
+        <button className="btn secondary" onClick={() => router.push("/products")}>&larr; Terug naar productenlijst</button>
+        <button className="btn danger" style={{ marginLeft: 8 }} onClick={deleteProduct}>Product verwijderen</button>
+      </div>
+
+      <h2>Varianten &amp; prijsberekening</h2>
+      <p className="muted">
+        Elke variant heeft zijn eigen prijsberekening (materialen, machinetijd, arbeid, marge). Deze gegevens blijven
+        hier bewaard en aanpasbaar -- bij de WooCommerce-export wordt enkel de berekende verkoopprijs meegenomen, niet
+        deze rekendetails.
+      </p>
+
+      {variations.map((v) => (
+        <VariationEditor
+          key={v.id}
+          variation={v}
+          attributeName={product.attribute_name}
+          machines={machines}
+          materials={materials}
+          machinesById={machinesById}
+          materialsById={materialsById}
+          onSaved={load}
+          onDelete={() => deleteVariation(v.id)}
+        />
+      ))}
+
+      <button className="btn" onClick={addVariation}>+ Variant toevoegen</button>
+    </div>
+  );
+}
+
+function VariationEditor({
+  variation,
+  attributeName,
+  machines,
+  materials,
+  machinesById,
+  materialsById,
+  onSaved,
+  onDelete,
+}: {
+  variation: ProductVariation;
+  attributeName: string;
+  machines: Machine[];
+  materials: Material[];
+  machinesById: Map<string, Machine>;
+  materialsById: Map<string, Material>;
+  onSaved: () => void;
+  onDelete: () => void;
+}) {
+  const [sku, setSku] = useState(variation.sku);
+  const [attributeValue, setAttributeValue] = useState(variation.attribute_value);
+  const [inputs, setInputs] = useState<CostInputs>(variation.cost_inputs ?? EMPTY_COST_INPUTS);
+  const [saving, setSaving] = useState(false);
+
+  const { costPrice, salePrice, warnings } = calculatePrice(inputs, machinesById, materialsById);
+
+  function updateMaterialLine(idx: number, patch: Partial<{ material_id: string; quantity: number }>) {
+    const next = [...inputs.materials];
+    next[idx] = { ...next[idx], ...patch };
+    setInputs({ ...inputs, materials: next });
+  }
+  function addMaterialLine() {
+    setInputs({ ...inputs, materials: [...inputs.materials, { material_id: materials[0]?.id ?? "", quantity: 0 }] });
+  }
+  function removeMaterialLine(idx: number) {
+    setInputs({ ...inputs, materials: inputs.materials.filter((_, i) => i !== idx) });
+  }
+
+  function updateMachineLine(idx: number, patch: Partial<{ machine_id: string; hours: number }>) {
+    const next = [...inputs.machine_time];
+    next[idx] = { ...next[idx], ...patch };
+    setInputs({ ...inputs, machine_time: next });
+  }
+  function addMachineLine() {
+    setInputs({ ...inputs, machine_time: [...inputs.machine_time, { machine_id: machines[0]?.id ?? "", hours: 0 }] });
+  }
+  function removeMachineLine(idx: number) {
+    setInputs({ ...inputs, machine_time: inputs.machine_time.filter((_, i) => i !== idx) });
+  }
+
+  async function save() {
+    setSaving(true);
+    await supabase
+      .from("product_variations")
+      .update({
+        sku,
+        attribute_value: attributeValue,
+        cost_inputs: inputs,
+        cost_price: costPrice,
+        sale_price: salePrice,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", variation.id);
+    setSaving(false);
+    onSaved();
+  }
+
+  return (
+    <div className="card">
+      <div className="row">
+        <div>
+          <label>SKU (variatie)</label>
+          <input value={sku} onChange={(e) => setSku(e.target.value)} />
+        </div>
+        <div>
+          <label>{attributeName || "Waarde"}</label>
+          <input value={attributeValue} onChange={(e) => setAttributeValue(e.target.value)} placeholder="bv. M, Rood, PETG" />
+        </div>
+      </div>
+
+      <h2 style={{ fontSize: 14, marginTop: 20 }}>Materialen</h2>
+      {inputs.materials.map((line, idx) => {
+        const mat = materialsById.get(line.material_id);
+        return (
+          <div className="line-item" key={idx}>
+            <div className="grow">
+              <select value={line.material_id} onChange={(e) => updateMaterialLine(idx, { material_id: e.target.value })}>
+                {materials.map((m) => <option key={m.id} value={m.id}>{m.name} (€{m.price_per_unit}/{m.unit})</option>)}
+              </select>
+            </div>
+            <div className="small">
+              <input
+                type="number"
+                step="0.01"
+                value={line.quantity}
+                onChange={(e) => updateMaterialLine(idx, { quantity: parseFloat(e.target.value) || 0 })}
+                placeholder={mat?.unit === "kg" ? "gram" : mat?.unit}
+              />
+            </div>
+            <button className="btn danger" type="button" onClick={() => removeMaterialLine(idx)}>x</button>
+          </div>
+        );
+      })}
+      <button className="btn secondary" type="button" onClick={addMaterialLine}>+ Materiaal</button>
+
+      <h2 style={{ fontSize: 14, marginTop: 20 }}>Machinetijd</h2>
+      {inputs.machine_time.map((line, idx) => (
+        <div className="line-item" key={idx}>
+          <div className="grow">
+            <select value={line.machine_id} onChange={(e) => updateMachineLine(idx, { machine_id: e.target.value })}>
+              {machines.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          </div>
+          <div className="small">
+            <input
+              type="number"
+              step="0.01"
+              value={line.hours}
+              onChange={(e) => updateMachineLine(idx, { hours: parseFloat(e.target.value) || 0 })}
+              placeholder="uren"
+            />
+          </div>
+          <button className="btn danger" type="button" onClick={() => removeMachineLine(idx)}>x</button>
+        </div>
+      ))}
+      <button className="btn secondary" type="button" onClick={addMachineLine}>+ Machine</button>
+
+      <div className="row" style={{ marginTop: 16 }}>
+        <div>
+          <label>Arbeidstijd (min)</label>
+          <input type="number" value={inputs.labor_minutes} onChange={(e) => setInputs({ ...inputs, labor_minutes: parseFloat(e.target.value) || 0 })} />
+        </div>
+        <div>
+          <label>Uurloon (€/u)</label>
+          <input type="number" step="0.01" value={inputs.labor_rate} onChange={(e) => setInputs({ ...inputs, labor_rate: parseFloat(e.target.value) || 0 })} />
+        </div>
+        <div>
+          <label>Overige kosten (€)</label>
+          <input type="number" step="0.01" value={inputs.other_costs} onChange={(e) => setInputs({ ...inputs, other_costs: parseFloat(e.target.value) || 0 })} />
+        </div>
+        <div>
+          <label>Marge (%)</label>
+          <input
+            type="number"
+            step="1"
+            value={Math.round(inputs.margin * 100)}
+            onChange={(e) => setInputs({ ...inputs, margin: (parseFloat(e.target.value) || 0) / 100 })}
+          />
+        </div>
+      </div>
+
+      <div className="price-box">
+        <div>Kostprijs: <strong>€{costPrice.toFixed(2)}</strong></div>
+        <div className="big">Verkoopprijs excl. btw: €{salePrice != null ? salePrice.toFixed(2) : "--"}</div>
+        {warnings.map((w, i) => <div className="warning" key={i}>{w}</div>)}
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <button className="btn" onClick={save} disabled={saving}>{saving ? "Opslaan..." : "Opslaan"}</button>
+        <button className="btn danger" style={{ marginLeft: 8 }} onClick={onDelete}>Variant verwijderen</button>
+      </div>
+    </div>
+  );
+}
