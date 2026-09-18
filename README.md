@@ -18,8 +18,15 @@ Eén app voor al je technieken (3D-printen, UV-printen, laser engraving/cutting,
    - Dit maakt de tabellen `machines`, `materials`, `products` en `product_variations` aan,
      zet de beveiliging (Row Level Security) aan zodat enkel ingelogde gebruikers erbij kunnen,
      en zet er wat voorbeeld-machines/materialen in (mag je aanpassen of verwijderen).
-4. Ga naar **Authentication** > **Providers** en zorg dat **Email** aanstaat (staat standaard aan).
-   Dit project gebruikt "magic link" inloggen (link via e-mail, geen wachtwoord).
+4. Ga naar **Authentication** > **Users** > **Add user** en maak jezelf aan:
+   - Vul je e-mailadres en een wachtwoord in
+   - Vink **Auto Confirm User** aan
+   - Klik op **Create user**
+
+   Dit project gebruikt inloggen met e-mail + wachtwoord (niet met een magic link). Dat is bewust zo: de
+   gratis Supabase-tier laat maar een handvol e-mails per uur toe, en een magic link stuurt er bij elke
+   login één -- je loopt daar snel tegen een "email rate limit exceeded"-foutmelding aan. Met een account
+   dat je zelf via de dashboard aanmaakt (met "Auto Confirm User") wordt er nooit een e-mail verstuurd.
 5. Ga naar **Settings** > **API**. Daar vind je twee waarden die je zo nodig hebt:
    - **Project URL**
    - **anon public** key
@@ -41,8 +48,8 @@ Eén app voor al je technieken (3D-printen, UV-printen, laser engraving/cutting,
    ```
    npm run dev
    ```
-   Ga naar `http://localhost:3000` -- je wordt naar de inlogpagina gestuurd. Vul je
-   e-mailadres in, klik op de link die je per mail krijgt, en je bent binnen.
+   Ga naar `http://localhost:3000` -- je wordt naar de inlogpagina gestuurd. Log in met het
+   e-mailadres/wachtwoord dat je in stap 1.4 hebt aangemaakt.
 
 ## 3. Online zetten via Vercel
 
@@ -60,8 +67,8 @@ Eén app voor al je technieken (3D-printen, UV-printen, laser engraving/cutting,
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 5. Klik op **Deploy**. Na een minuutje krijg je een live URL (bv. `jouw-project.vercel.app`).
-6. Ga in Supabase naar **Authentication** > **URL Configuration** en voeg je Vercel-URL toe
-   bij **Redirect URLs** (anders werkt de inloglink niet op de live site).
+   Log in met hetzelfde e-mailadres/wachtwoord als lokaal -- je hoeft niets bij te stellen in
+   Supabase, want er wordt geen redirect-URL gebruikt bij deze inlogmethode.
 
 ## 4. Hoe je de app gebruikt
 
@@ -85,7 +92,7 @@ app/
   products/          Productenlijst, nieuw product, product bewerken (incl. prijsberekening)
   machines/           Machinebeheer
   materials/          Materiaalbeheer
-  login/              Inloggen (magic link)
+  login/              Inloggen (e-mail + wachtwoord)
   api/export/         Genereert de WooCommerce CSV (server-side)
 lib/
   pricing.ts          Prijsberekeningslogica (herbruikt voor alle technieken)
