@@ -47,7 +47,7 @@ export default function ProductsPage() {
 
       <table>
         <thead>
-          <tr><th>Naam</th><th>Techniek</th><th>SKU</th><th>Varianten</th><th>Prijsrange</th><th>Gepubliceerd</th><th></th></tr>
+          <tr><th>Naam</th><th>Techniek</th><th>SKU</th><th>Attributen</th><th>Varianten</th><th>Prijsrange</th><th>Gepubliceerd</th><th></th></tr>
         </thead>
         <tbody>
           {products.map((p) => {
@@ -62,6 +62,7 @@ export default function ProductsPage() {
                 <td><Link href={`/products/${p.id}`}>{p.name}</Link></td>
                 <td><span className="pill">{PROCESS_TYPE_LABELS[p.process_type]}</span></td>
                 <td>{p.sku}</td>
+                <td>{p.attribute_names.join(", ")}</td>
                 <td>{p.product_variations.length}</td>
                 <td>{priceLabel}</td>
                 <td>{p.published ? "Ja" : "Nee"}</td>
@@ -73,7 +74,7 @@ export default function ProductsPage() {
             );
           })}
           {products.length === 0 && (
-            <tr><td colSpan={7} className="muted">Nog geen producten -- klik op "+ Nieuw product" om te starten.</td></tr>
+            <tr><td colSpan={8} className="muted">Nog geen producten -- klik op "+ Nieuw product" om te starten.</td></tr>
           )}
         </tbody>
       </table>

@@ -41,14 +41,14 @@ export type Product = {
   name: string;
   process_type: "3d_print" | "uv_print" | "laser_engraving" | "laser_cutting" | "sublimation";
   published: boolean;
-  attribute_name: string;
+  attribute_names: string[];
 };
 
 export type ProductVariation = {
   id: string;
   product_id: string;
   sku: string;
-  attribute_value: string;
+  attribute_values: Record<string, string>;
   cost_inputs: CostInputs;
   cost_price: number | null;
   sale_price: number | null;

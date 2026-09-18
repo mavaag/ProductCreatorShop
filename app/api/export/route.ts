@@ -12,48 +12,63 @@ export async function GET() {
 
   const { data: products, error } = await supabase
     .from("products")
-    .select("id, sku, name, published, attribute_name, product_variations(sku, attribute_value, sale_price)")
+    .select("id, sku, name, published, attribute_names, product_variations(sku, attribute_values, sale_price)")
     .order("name");
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const headers = [
-    "Type", "SKU", "Name", "Published", "Regular price",
-    "Attribute 1 name", "Attribute 1 value(s)", "Attribute 1 visible", "Attribute 1 global",
-    "Parent",
-  ];
+  // Bepaal het maximum aantal attributen over alle producten heen, zodat er
+  // genoeg "Attribute N ..." kolomgroepen in de header staan voor elk product.
+  const maxAttrs = Math.max(1, ...(products ?? []).map((p) => (p.attribute_names?.length ?? 0)));
+
+  const headers = ["Type", "SKU", "Name", "Published", "Regular price"];
+  for (let i = 1; i <= maxAttrs; i++) {
+    headers.push(`Attribute ${i} name`, `Attribute ${i} value(s)`, `Attribute ${i} visible`, `Attribute ${i} global`);
+  }
+  headers.push("Parent");
+
   const rows: string[][] = [headers];
 
   for (const p of products ?? []) {
-    const variations = (p as any).product_variations as { sku: string; attribute_value: string; sale_price: number | null }[];
-    const allValues = variations.map((v) => v.attribute_value).filter(Boolean).join(" | ");
+    const attrNames: string[] = p.attribute_names ?? [];
+    const variations = (p as any).product_variations as {
+      sku: string;
+      attribute_values: Record<string, string>;
+      sale_price: number | null;
+    }[];
 
-    rows.push([
-      "variable",
-      p.sku,
-      p.name,
-      p.published ? "1" : "0",
-      "",
-      p.attribute_name,
-      allValues,
-      "1",
-      "0",
-      "",
-    ]);
+    const parentAttrCols: string[] = [];
+    for (let i = 0; i < maxAttrs; i++) {
+      const name = attrNames[i];
+      if (!name) {
+        parentAttrCols.push("", "", "", "");
+        continue;
+      }
+      const allValues = Array.from(new Set(variations.map((v) => v.attribute_values?.[name]).filter(Boolean))).join(" | ");
+      parentAttrCols.push(name, allValues, "1", "0");
+    }
+    rows.push(["variable", p.sku, p.name, p.published ? "1" : "0", "", ...parentAttrCols, ""]);
 
     for (const v of variations) {
+      const variantName = attrNames.map((n) => v.attribute_values?.[n]).filter(Boolean).join(", ");
+      const attrCols: string[] = [];
+      for (let i = 0; i < maxAttrs; i++) {
+        const name = attrNames[i];
+        if (!name) {
+          attrCols.push("", "", "", "");
+          continue;
+        }
+        attrCols.push(name, v.attribute_values?.[name] ?? "", "1", "0");
+      }
       rows.push([
         "variation",
         v.sku,
-        `${p.name} - ${v.attribute_value}`,
+        `${p.name}${variantName ? " - " + variantName : ""}`,
         p.published ? "1" : "0",
         v.sale_price != null ? v.sale_price.toFixed(2) : "",
-        p.attribute_name,
-        v.attribute_value,
-        "1",
-        "0",
+        ...attrCols,
         p.sku,
       ]);
     }

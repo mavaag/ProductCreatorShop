@@ -25,15 +25,18 @@ export default function ProductEditPage() {
   const [variations, setVariations] = useState<ProductVariation[]>([]);
   const [machines, setMachines] = useState<Machine[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
+  const [attrDraft, setAttrDraft] = useState<string[]>([]);
+  const [savingAttrs, setSavingAttrs] = useState(false);
 
   const load = useCallback(async () => {
     const [{ data: p }, { data: v }, { data: m }, { data: mat }] = await Promise.all([
       supabase.from("products").select("*").eq("id", productId).single(),
-      supabase.from("product_variations").select("*").eq("product_id", productId).order("attribute_value"),
+      supabase.from("product_variations").select("*").eq("product_id", productId).order("sku"),
       supabase.from("machines").select("*"),
       supabase.from("materials").select("*"),
     ]);
     setProduct(p);
+    setAttrDraft(p?.attribute_names ?? []);
     setVariations(v ?? []);
     setMachines(m ?? []);
     setMaterials(mat ?? []);
@@ -48,7 +51,7 @@ export default function ProductEditPage() {
     const { error } = await supabase.from("product_variations").insert({
       product_id: productId,
       sku: newSku,
-      attribute_value: "",
+      attribute_values: {},
       cost_inputs: EMPTY_COST_INPUTS,
     });
     if (error) alert(error.message);
@@ -67,22 +70,71 @@ export default function ProductEditPage() {
     router.push("/products");
   }
 
+  function updateAttrDraft(idx: number, value: string) {
+    const next = [...attrDraft];
+    next[idx] = value;
+    setAttrDraft(next);
+  }
+  function addAttrDraft() {
+    setAttrDraft([...attrDraft, ""]);
+  }
+  function removeAttrDraft(idx: number) {
+    setAttrDraft(attrDraft.filter((_, i) => i !== idx));
+  }
+
+  async function saveAttrs() {
+    const cleanNames = attrDraft.map((n) => n.trim()).filter(Boolean);
+    if (cleanNames.length === 0) {
+      alert("Geef minstens 1 attribuut op.");
+      return;
+    }
+    setSavingAttrs(true);
+    await supabase.from("products").update({ attribute_names: cleanNames, updated_at: new Date().toISOString() }).eq("id", productId);
+    setSavingAttrs(false);
+    load();
+  }
+
   if (!ready || !product) return null;
 
   const machinesById = new Map(machines.map((m) => [m.id, m]));
   const materialsById = new Map(materials.map((m) => [m.id, m]));
+  const attrsChanged = JSON.stringify(attrDraft.map((n) => n.trim()).filter(Boolean)) !== JSON.stringify(product.attribute_names);
 
   return (
     <div>
       <h1>{product.name}</h1>
       <p className="sub">
         <span className="pill">{PROCESS_TYPE_LABELS[product.process_type]}</span>{" "}
-        SKU: {product.sku} &middot; Kenmerk: {product.attribute_name}
+        SKU: {product.sku}
       </p>
 
       <div style={{ marginBottom: 16 }}>
         <button className="btn secondary" onClick={() => router.push("/products")}>&larr; Terug naar productenlijst</button>
         <button className="btn danger" style={{ marginLeft: 8 }} onClick={deleteProduct}>Product verwijderen</button>
+      </div>
+
+      <div className="card">
+        <h2 style={{ marginTop: 0, fontSize: 14 }}>Attributen (waarop varianten verschillen)</h2>
+        <p className="muted">Bv. Grootte + Kleur samen -- de volgorde bepaalt Attribute 1/2/3 in de WooCommerce-export.</p>
+        {attrDraft.map((name, idx) => (
+          <div className="line-item" key={idx}>
+            <div className="grow">
+              <input value={name} onChange={(e) => updateAttrDraft(idx, e.target.value)} placeholder="bv. Grootte" />
+            </div>
+            {attrDraft.length > 1 && (
+              <button className="btn danger" type="button" onClick={() => removeAttrDraft(idx)}>x</button>
+            )}
+          </div>
+        ))}
+        <button className="btn secondary" type="button" onClick={addAttrDraft}>+ Attribuut toevoegen</button>
+        {attrsChanged && (
+          <div style={{ marginTop: 12 }}>
+            <button className="btn" onClick={saveAttrs} disabled={savingAttrs}>{savingAttrs ? "Opslaan..." : "Attributen opslaan"}</button>
+            <span className="muted" style={{ marginLeft: 8 }}>
+              Bestaande varianten behouden hun huidige waarden voor attributen die je verwijdert of hernoemt; vul die dan opnieuw in per variant.
+            </span>
+          </div>
+        )}
       </div>
 
       <h2>Varianten &amp; prijsberekening</h2>
@@ -96,7 +148,7 @@ export default function ProductEditPage() {
         <VariationEditor
           key={v.id}
           variation={v}
-          attributeName={product.attribute_name}
+          attributeNames={product.attribute_names}
           machines={machines}
           materials={materials}
           machinesById={machinesById}
@@ -113,7 +165,7 @@ export default function ProductEditPage() {
 
 function VariationEditor({
   variation,
-  attributeName,
+  attributeNames,
   machines,
   materials,
   machinesById,
@@ -122,7 +174,7 @@ function VariationEditor({
   onDelete,
 }: {
   variation: ProductVariation;
-  attributeName: string;
+  attributeNames: string[];
   machines: Machine[];
   materials: Material[];
   machinesById: Map<string, Machine>;
@@ -131,7 +183,7 @@ function VariationEditor({
   onDelete: () => void;
 }) {
   const [sku, setSku] = useState(variation.sku);
-  const [attributeValue, setAttributeValue] = useState(variation.attribute_value);
+  const [attributeValues, setAttributeValues] = useState<Record<string, string>>(variation.attribute_values ?? {});
   const [inputs, setInputs] = useState<CostInputs>(variation.cost_inputs ?? EMPTY_COST_INPUTS);
   const [saving, setSaving] = useState(false);
 
@@ -167,7 +219,7 @@ function VariationEditor({
       .from("product_variations")
       .update({
         sku,
-        attribute_value: attributeValue,
+        attribute_values: attributeValues,
         cost_inputs: inputs,
         cost_price: costPrice,
         sale_price: salePrice,
@@ -185,10 +237,16 @@ function VariationEditor({
           <label>SKU (variatie)</label>
           <input value={sku} onChange={(e) => setSku(e.target.value)} />
         </div>
-        <div>
-          <label>{attributeName || "Waarde"}</label>
-          <input value={attributeValue} onChange={(e) => setAttributeValue(e.target.value)} placeholder="bv. M, Rood, PETG" />
-        </div>
+        {attributeNames.map((attrName) => (
+          <div key={attrName}>
+            <label>{attrName}</label>
+            <input
+              value={attributeValues[attrName] ?? ""}
+              onChange={(e) => setAttributeValues({ ...attributeValues, [attrName]: e.target.value })}
+              placeholder={`bv. ${attrName === "Grootte" ? "M" : "waarde"}`}
+            />
+          </div>
+        ))}
       </div>
 
       <h2 style={{ fontSize: 14, marginTop: 20 }}>Materialen</h2>
