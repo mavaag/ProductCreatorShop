@@ -34,7 +34,7 @@ create table if not exists products (
   name text not null,
   process_type text not null default '3d_print', -- '3d_print' | 'uv_print' | 'laser_engraving' | 'laser_cutting' | 'sublimation'
   published boolean not null default true,
-  attribute_name text not null default 'Grootte', -- bv. 'Grootte', 'Kleur', 'Materiaal'
+  attribute_names text[] not null default '{}', -- bv. ARRAY['Grootte','Kleur'] -- volgorde bepaalt Attribute 1/2/3 in de export
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -46,7 +46,7 @@ create table if not exists product_variations (
   id uuid primary key default gen_random_uuid(),
   product_id uuid not null references products(id) on delete cascade,
   sku text not null unique,
-  attribute_value text not null, -- bv. 'M', 'Rood', 'PETG'
+  attribute_values jsonb not null default '{}'::jsonb, -- bv. {"Grootte":"M","Kleur":"Rood"}
   cost_inputs jsonb not null default '{
     "materials": [],
     "machine_time": [],
