@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
+import { machineHourlyCosts } from "@/lib/pricing";
 import { Machine } from "@/lib/types";
 
 const CATEGORIES = [
@@ -14,17 +15,22 @@ const CATEGORIES = [
   { value: "overig", label: "Overig" },
 ];
 
+const BLANK_FORM = {
+  name: "",
+  category: "3d_printer",
+  purchase_price: 0,
+  expected_lifetime_hours: 4000,
+  avg_power_w: 150,
+  electricity_price: 0.30,
+};
+
 export default function MachinesPage() {
   const ready = useAuthGuard();
   const [machines, setMachines] = useState<Machine[]>([]);
-  const [form, setForm] = useState({
-    name: "",
-    category: "3d_printer",
-    purchase_price: 0,
-    expected_lifetime_hours: 4000,
-    avg_power_w: 150,
-    electricity_price: 0.30,
-  });
+  const [form, setForm] = useState(BLANK_FORM);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState(BLANK_FORM);
+  const [saving, setSaving] = useState(false);
 
   async function load() {
     const { data } = await supabase.from("machines").select("*").order("name");
@@ -38,12 +44,32 @@ export default function MachinesPage() {
   async function addMachine(e: React.FormEvent) {
     e.preventDefault();
     await supabase.from("machines").insert(form);
-    setForm({ ...form, name: "" });
+    setForm({ ...BLANK_FORM });
+    load();
+  }
+
+  function startEdit(m: Machine) {
+    setEditingId(m.id);
+    setEditForm({
+      name: m.name,
+      category: m.category,
+      purchase_price: m.purchase_price,
+      expected_lifetime_hours: m.expected_lifetime_hours,
+      avg_power_w: m.avg_power_w,
+      electricity_price: m.electricity_price,
+    });
+  }
+
+  async function saveEdit(id: string) {
+    setSaving(true);
+    await supabase.from("machines").update(editForm).eq("id", id);
+    setSaving(false);
+    setEditingId(null);
     load();
   }
 
   async function deleteMachine(id: string) {
-    if (!confirm("Deze machine verwijderen?")) return;
+    if (!confirm("Deze machine verwijderen? Producten die ernaar verwijzen tonen dan geen prijs meer tot je een andere machine kiest.")) return;
     await supabase.from("machines").delete().eq("id", id);
     load();
   }
@@ -53,26 +79,61 @@ export default function MachinesPage() {
   return (
     <div>
       <h1>Machines</h1>
-      <p className="sub">Aankoopprijs, levensduur en vermogen -- afschrijving en stroomkosten per uur worden automatisch berekend bij de prijsberekening van je producten.</p>
+      <p className="sub">Aankoopprijs, levensduur en vermogen -- afschrijving en stroomkosten per uur worden automatisch berekend en meegeteld bij de prijsberekening van je producten.</p>
 
       <table>
         <thead>
-          <tr><th>Naam</th><th>Categorie</th><th>Aankoopprijs</th><th>Levensduur (u)</th><th>Vermogen (W)</th><th>Elektriciteit (€/kWh)</th><th></th></tr>
+          <tr>
+            <th>Naam</th><th>Categorie</th><th>Aankoopprijs</th><th>Levensduur (u)</th><th>Vermogen (W)</th><th>Elektriciteit (€/kWh)</th>
+            <th>Afschrijving/u</th><th>Stroom/u</th><th></th>
+          </tr>
         </thead>
         <tbody>
-          {machines.map((m) => (
-            <tr key={m.id}>
-              <td>{m.name}</td>
-              <td>{CATEGORIES.find((c) => c.value === m.category)?.label ?? m.category}</td>
-              <td className="mono">€{m.purchase_price}</td>
-              <td className="mono">{m.expected_lifetime_hours}</td>
-              <td className="mono">{m.avg_power_w}</td>
-              <td className="mono">€{m.electricity_price}</td>
-              <td><button className="btn danger" onClick={() => deleteMachine(m.id)}>Verwijder</button></td>
-            </tr>
-          ))}
+          {machines.map((m) => {
+            if (editingId === m.id) {
+              return (
+                <tr key={m.id}>
+                  <td><input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} /></td>
+                  <td>
+                    <select value={editForm.category} onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}>
+                      {CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                    </select>
+                  </td>
+                  <td><input className="mono" type="number" step="0.01" value={editForm.purchase_price} onChange={(e) => setEditForm({ ...editForm, purchase_price: parseFloat(e.target.value) || 0 })} /></td>
+                  <td><input className="mono" type="number" value={editForm.expected_lifetime_hours} onChange={(e) => setEditForm({ ...editForm, expected_lifetime_hours: parseFloat(e.target.value) || 0 })} /></td>
+                  <td><input className="mono" type="number" value={editForm.avg_power_w} onChange={(e) => setEditForm({ ...editForm, avg_power_w: parseFloat(e.target.value) || 0 })} /></td>
+                  <td><input className="mono" type="number" step="0.01" value={editForm.electricity_price} onChange={(e) => setEditForm({ ...editForm, electricity_price: parseFloat(e.target.value) || 0 })} /></td>
+                  <td colSpan={2} className="muted">wordt herberekend na opslaan</td>
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    <button className="btn" onClick={() => saveEdit(m.id)} disabled={saving} style={{ marginRight: 6 }}>{saving ? "..." : "Opslaan"}</button>
+                    <button className="btn secondary" onClick={() => setEditingId(null)}>Annuleer</button>
+                  </td>
+                </tr>
+              );
+            }
+            const { depreciationPerHour, powerCostPerHour } = machineHourlyCosts(m);
+            return (
+              <tr key={m.id}>
+                <td>{m.name}</td>
+                <td>{CATEGORIES.find((c) => c.value === m.category)?.label ?? m.category}</td>
+                <td className="mono">€{m.purchase_price}</td>
+                <td className="mono">{m.expected_lifetime_hours}</td>
+                <td className="mono">{m.avg_power_w}</td>
+                <td className="mono">€{m.electricity_price}</td>
+                <td className="mono">€{depreciationPerHour.toFixed(3)}</td>
+                <td className="mono">€{powerCostPerHour.toFixed(3)}</td>
+                <td style={{ whiteSpace: "nowrap" }}>
+                  <button className="btn secondary" onClick={() => startEdit(m)} style={{ marginRight: 6 }}>Bewerken</button>
+                  <button className="btn danger" onClick={() => deleteMachine(m.id)}>Verwijder</button>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
+      <p className="muted" style={{ marginTop: 8 }}>
+        "Afschrijving/u" en "Stroom/u" zijn precies de twee kostenposten die per machine-uur meegerekend worden in de kostprijs van elk product dat deze machine gebruikt.
+      </p>
 
       <div className="card" style={{ marginTop: 20 }}>
         <h2 style={{ marginTop: 0 }}>Nieuwe machine</h2>

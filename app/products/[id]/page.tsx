@@ -4,7 +4,8 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
-import { calculatePrice } from "@/lib/pricing";
+import { calculatePrice, machineHourlyCosts } from "@/lib/pricing";
+import { toHours } from "@/lib/types";
 import { slugifyForSku, nextAvailableSku } from "@/lib/sku";
 import {
   Product,
@@ -331,32 +332,45 @@ function VariationEditor({
       <p className="muted" style={{ marginTop: -4, marginBottom: 8 }}>
         Voeg meerdere machines toe om hun kosten te combineren -- bv. bij UV-printen of sublimatie eerst de printer, dan de heat press.
       </p>
-      {inputs.machine_time.map((line, idx) => (
-        <div className="line-item" key={idx}>
-          <div className="grow">
-            <select value={line.machine_id} onChange={(e) => updateMachineLine(idx, { machine_id: e.target.value })}>
-              {machines.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-            </select>
+      {inputs.machine_time.map((line, idx) => {
+        const machine = machinesById.get(line.machine_id);
+        const breakdown = machine ? machineHourlyCosts(machine) : null;
+        const lineHours = toHours(line.hours, line.unit);
+        const lineCost = breakdown ? lineHours * (breakdown.depreciationPerHour + breakdown.powerCostPerHour) : 0;
+        return (
+          <div key={idx} style={{ marginBottom: 8 }}>
+            <div className="line-item" style={{ marginBottom: breakdown ? 2 : 8 }}>
+              <div className="grow">
+                <select value={line.machine_id} onChange={(e) => updateMachineLine(idx, { machine_id: e.target.value })}>
+                  {machines.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+              </div>
+              <div className="small">
+                <input
+                  type="number"
+                  step="0.01"
+                  value={line.hours}
+                  onChange={(e) => updateMachineLine(idx, { hours: parseFloat(e.target.value) || 0 })}
+                  placeholder="tijdsduur"
+                />
+              </div>
+              <div className="unit-select">
+                <select value={line.unit ?? "u"} onChange={(e) => updateMachineLine(idx, { unit: e.target.value as TimeUnit })}>
+                  {(Object.entries(TIME_UNIT_LABELS) as [TimeUnit, string][]).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </div>
+              <button className="btn danger" type="button" onClick={() => removeMachineLine(idx)}>x</button>
+            </div>
+            {breakdown && (
+              <p className="mono muted" style={{ fontSize: 11.5, margin: 0 }}>
+                €{breakdown.depreciationPerHour.toFixed(3)}/u afschrijving + €{breakdown.powerCostPerHour.toFixed(3)}/u stroom &times; {lineHours.toFixed(3)}u = €{lineCost.toFixed(3)}
+              </p>
+            )}
           </div>
-          <div className="small">
-            <input
-              type="number"
-              step="0.01"
-              value={line.hours}
-              onChange={(e) => updateMachineLine(idx, { hours: parseFloat(e.target.value) || 0 })}
-              placeholder="tijdsduur"
-            />
-          </div>
-          <div className="unit-select">
-            <select value={line.unit ?? "u"} onChange={(e) => updateMachineLine(idx, { unit: e.target.value as TimeUnit })}>
-              {(Object.entries(TIME_UNIT_LABELS) as [TimeUnit, string][]).map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </select>
-          </div>
-          <button className="btn danger" type="button" onClick={() => removeMachineLine(idx)}>x</button>
-        </div>
-      ))}
+        );
+      })}
       <button className="btn secondary" type="button" onClick={addMachineLine}>+ Machine</button>
 
       <div className="row" style={{ marginTop: 16 }}>

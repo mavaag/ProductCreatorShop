@@ -15,10 +15,15 @@ const CATEGORIES = [
   { value: "overig", label: "Overig" },
 ];
 
+const BLANK_FORM = { name: "", category: "filament", unit: "kg", price_per_unit: 0 };
+
 export default function MaterialsPage() {
   const ready = useAuthGuard();
   const [materials, setMaterials] = useState<Material[]>([]);
-  const [form, setForm] = useState({ name: "", category: "filament", unit: "kg", price_per_unit: 0 });
+  const [form, setForm] = useState(BLANK_FORM);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState(BLANK_FORM);
+  const [saving, setSaving] = useState(false);
 
   async function load() {
     const { data } = await supabase.from("materials").select("*").order("category").order("name");
@@ -32,12 +37,25 @@ export default function MaterialsPage() {
   async function addMaterial(e: React.FormEvent) {
     e.preventDefault();
     await supabase.from("materials").insert(form);
-    setForm({ ...form, name: "" });
+    setForm({ ...BLANK_FORM });
+    load();
+  }
+
+  function startEdit(m: Material) {
+    setEditingId(m.id);
+    setEditForm({ name: m.name, category: m.category, unit: m.unit, price_per_unit: m.price_per_unit });
+  }
+
+  async function saveEdit(id: string) {
+    setSaving(true);
+    await supabase.from("materials").update(editForm).eq("id", id);
+    setSaving(false);
+    setEditingId(null);
     load();
   }
 
   async function deleteMaterial(id: string) {
-    if (!confirm("Dit materiaal verwijderen?")) return;
+    if (!confirm("Dit materiaal verwijderen? Producten die ernaar verwijzen tonen dan geen prijs meer tot je een ander materiaal kiest.")) return;
     await supabase.from("materials").delete().eq("id", id);
     load();
   }
@@ -54,15 +72,42 @@ export default function MaterialsPage() {
           <tr><th>Naam</th><th>Categorie</th><th>Eenheid</th><th>Prijs per eenheid</th><th></th></tr>
         </thead>
         <tbody>
-          {materials.map((m) => (
-            <tr key={m.id}>
-              <td>{m.name}</td>
-              <td>{CATEGORIES.find((c) => c.value === m.category)?.label ?? m.category}</td>
-              <td className="mono">{m.unit}</td>
-              <td className="mono">€{m.price_per_unit}</td>
-              <td><button className="btn danger" onClick={() => deleteMaterial(m.id)}>Verwijder</button></td>
-            </tr>
-          ))}
+          {materials.map((m) => {
+            if (editingId === m.id) {
+              return (
+                <tr key={m.id}>
+                  <td><input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} /></td>
+                  <td>
+                    <select value={editForm.category} onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}>
+                      {CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                    </select>
+                  </td>
+                  <td>
+                    <select value={editForm.unit} onChange={(e) => setEditForm({ ...editForm, unit: e.target.value })}>
+                      {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                    </select>
+                  </td>
+                  <td><input className="mono" type="number" step="0.01" value={editForm.price_per_unit} onChange={(e) => setEditForm({ ...editForm, price_per_unit: parseFloat(e.target.value) || 0 })} /></td>
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    <button className="btn" onClick={() => saveEdit(m.id)} disabled={saving} style={{ marginRight: 6 }}>{saving ? "..." : "Opslaan"}</button>
+                    <button className="btn secondary" onClick={() => setEditingId(null)}>Annuleer</button>
+                  </td>
+                </tr>
+              );
+            }
+            return (
+              <tr key={m.id}>
+                <td>{m.name}</td>
+                <td>{CATEGORIES.find((c) => c.value === m.category)?.label ?? m.category}</td>
+                <td className="mono">{m.unit}</td>
+                <td className="mono">€{m.price_per_unit}</td>
+                <td style={{ whiteSpace: "nowrap" }}>
+                  <button className="btn secondary" onClick={() => startEdit(m)} style={{ marginRight: 6 }}>Bewerken</button>
+                  <button className="btn danger" onClick={() => deleteMaterial(m.id)}>Verwijder</button>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
 
