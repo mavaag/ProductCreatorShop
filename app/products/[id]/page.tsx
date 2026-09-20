@@ -55,18 +55,42 @@ export default function ProductEditPage() {
     // gebruiker attributen invult (zie VariationEditor). De "-NIEUW-" markering
     // laat de editor weten dat dit nog een auto-gegenereerde SKU is.
     const placeholderSku = `${product?.sku}-NIEUW-${Date.now().toString(36).toUpperCase()}`;
-    // Voor UV-printen en sublimatie combineer je vaak twee stappen (printer + heat
-    // press): daarom starten we daar meteen met 2 machinetijd-regels i.p.v. 1.
-    const machineLines = product?.process_type === "sublimation" || product?.process_type === "uv_print" ? 2 : 1;
-    const cost_inputs: CostInputs = {
-      ...EMPTY_COST_INPUTS,
-      machine_time: Array.from({ length: machineLines }, () => ({ machine_id: "", hours: 0 })),
-    };
+
+    // Bestaat er al een variant van dit product? Neem dan zijn materialen, machines,
+    // arbeid, marge en btw over als startpunt -- meestal verschilt enkel het attribuut
+    // (en soms een hoeveelheid), dus dat scheelt telkens alles opnieuw intypen.
+    let cost_inputs: CostInputs;
+    if (variations.length > 0) {
+      cost_inputs = variations[variations.length - 1].cost_inputs;
+    } else {
+      // Geen bestaande variant om van te vertrekken: begin leeg, maar zet voor
+      // UV-printen/sublimatie meteen 2 machinetijd-regels klaar (printer + heat press).
+      const machineLines = product?.process_type === "sublimation" || product?.process_type === "uv_print" ? 2 : 1;
+      cost_inputs = {
+        ...EMPTY_COST_INPUTS,
+        machine_time: Array.from({ length: machineLines }, () => ({ machine_id: "", hours: 0 })),
+      };
+    }
+
     const { error } = await supabase.from("product_variations").insert({
       product_id: productId,
       sku: placeholderSku,
       attribute_values: {},
       cost_inputs,
+    });
+    if (error) alert(error.message);
+    load();
+  }
+
+  async function duplicateVariation(source: ProductVariation) {
+    const placeholderSku = `${product?.sku}-NIEUW-${Date.now().toString(36).toUpperCase()}`;
+    const { error } = await supabase.from("product_variations").insert({
+      product_id: productId,
+      sku: placeholderSku,
+      // Attributen worden mee overgenomen als startpunt -- pas enkel aan wat
+      // effectief verschilt (bv. Grootte), de rest hoeft niet opnieuw.
+      attribute_values: source.attribute_values,
+      cost_inputs: source.cost_inputs,
     });
     if (error) alert(error.message);
     load();
@@ -170,6 +194,7 @@ export default function ProductEditPage() {
           materialsById={materialsById}
           onSaved={load}
           onDelete={() => deleteVariation(v.id)}
+          onDuplicate={() => duplicateVariation(v)}
         />
       ))}
 
@@ -188,6 +213,7 @@ function VariationEditor({
   materialsById,
   onSaved,
   onDelete,
+  onDuplicate,
 }: {
   variation: ProductVariation;
   productSku: string;
@@ -198,6 +224,7 @@ function VariationEditor({
   materialsById: Map<string, Material>;
   onSaved: () => void;
   onDelete: () => void;
+  onDuplicate: () => void;
 }) {
   const [sku, setSku] = useState(variation.sku);
   const [attributeValues, setAttributeValues] = useState<Record<string, string>>(variation.attribute_values ?? {});
@@ -420,6 +447,7 @@ function VariationEditor({
 
       <div style={{ marginTop: 16 }}>
         <button className="btn" onClick={save} disabled={saving}>{saving ? "Opslaan..." : "Opslaan"}</button>
+        <button className="btn secondary" style={{ marginLeft: 8 }} onClick={onDuplicate}>Dupliceer als nieuwe variant</button>
         <button className="btn danger" style={{ marginLeft: 8 }} onClick={onDelete}>Variant verwijderen</button>
       </div>
     </div>
