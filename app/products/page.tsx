@@ -95,7 +95,13 @@ export default function ProductsPage() {
           <p className="sub">Prijsberekening blijft hier bewaard per product -- de export naar WooCommerce bevat enkel de velden die WooCommerce nodig heeft.</p>
         </div>
         <div>
-          <a className="btn secondary" href="/api/export" style={{ marginRight: 8 }}>Exporteer WooCommerce CSV</a>
+          <a
+            className="btn secondary"
+            href={activeTab === "all" ? "/api/export" : `/api/export?type=${activeTab}`}
+            style={{ marginRight: 8 }}
+          >
+            {activeTab === "all" ? "Exporteer alles (WooCommerce CSV)" : `Exporteer ${PROCESS_TYPE_LABELS[activeTab]} (WooCommerce CSV)`}
+          </a>
           <Link className="btn" href="/products/new">+ Nieuw product</Link>
         </div>
       </div>

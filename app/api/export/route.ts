@@ -5,16 +5,26 @@ import { createClient } from "@supabase/supabase-js";
 // Enkel de WooCommerce-relevante velden verlaten deze functie -- cost_inputs, cost_price
 // en sale_price (excl. btw) van de varianten worden bewust NOOIT in de CSV opgenomen.
 // "Regular price" = suggested_price: de afgeronde ,95-verkoopprijs incl. btw.
-export async function GET() {
+// Optioneel: ?type=3d_print|uv_print|laser_engraving|laser_cutting|sublimation exporteert enkel die techniek.
+const PROCESS_TYPES = ["3d_print", "uv_print", "laser_engraving", "laser_cutting", "sublimation"];
+
+export async function GET(request: Request) {
+  const type = new URL(request.url).searchParams.get("type");
+  if (type && !PROCESS_TYPES.includes(type)) {
+    return NextResponse.json({ error: `Onbekende techniek: ${type}` }, { status: 400 });
+  }
+
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL as string,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
   );
 
-  const { data: products, error } = await supabase
+  let query = supabase
     .from("products")
     .select("id, sku, name, published, attribute_names, product_variations(sku, attribute_values, suggested_price)")
     .order("name");
+  if (type) query = query.eq("process_type", type);
+  const { data: products, error } = await query;
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -80,7 +90,7 @@ export async function GET() {
   return new NextResponse(csv, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="woocommerce-export-${new Date().toISOString().slice(0, 10)}.csv"`,
+      "Content-Disposition": `attachment; filename="woocommerce-export-${type ? type + "-" : ""}${new Date().toISOString().slice(0, 10)}.csv"`,
     },
   });
 }
