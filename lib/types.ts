@@ -21,10 +21,24 @@ export type MaterialLine = {
   quantity: number; // in de eenheid van het materiaal (g, ml, vel, stuk, ...)
 };
 
+export type TimeUnit = "u" | "min" | "sec";
+
 export type MachineTimeLine = {
   machine_id: string;
-  hours: number;
+  hours: number; // waarde in de eenheid hieronder (ondanks de veldnaam -- zo blijft bestaande data geldig)
+  unit?: TimeUnit; // ontbreekt in oudere/geïmporteerde data -> dan geldt "u" (uren)
 };
+
+export const TIME_UNIT_LABELS: Record<TimeUnit, string> = { u: "uur", min: "min", sec: "sec" };
+
+/** Zet een tijdsduur in u/min/sec om naar uren, voor gebruik in de prijsberekening. */
+export function toHours(amount: number, unit: TimeUnit | undefined): number {
+  switch (unit) {
+    case "min": return amount / 60;
+    case "sec": return amount / 3600;
+    default: return amount; // "u" of onbekend -> aannemen dat het al in uren staat
+  }
+}
 
 export type CostInputs = {
   materials: MaterialLine[];

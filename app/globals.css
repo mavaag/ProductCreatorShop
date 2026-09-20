@@ -165,6 +165,7 @@ input:focus, select:focus { outline: none; border-color: var(--amber-deep); box-
 .line-item { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 8px; }
 .line-item .grow { flex: 2; }
 .line-item .small { flex: 1; }
+.line-item .unit-select { flex: 0 0 72px; }
 
 /* ---------- Price readout: the one bold moment ---------- */
 .price-box {

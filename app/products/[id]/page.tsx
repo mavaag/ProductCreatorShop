@@ -14,6 +14,8 @@ import {
   CostInputs,
   EMPTY_COST_INPUTS,
   PROCESS_TYPE_LABELS,
+  TimeUnit,
+  TIME_UNIT_LABELS,
 } from "@/lib/types";
 
 export default function ProductEditPage() {
@@ -239,13 +241,13 @@ function VariationEditor({
     setInputs({ ...inputs, materials: inputs.materials.filter((_, i) => i !== idx) });
   }
 
-  function updateMachineLine(idx: number, patch: Partial<{ machine_id: string; hours: number }>) {
+  function updateMachineLine(idx: number, patch: Partial<{ machine_id: string; hours: number; unit: TimeUnit }>) {
     const next = [...inputs.machine_time];
     next[idx] = { ...next[idx], ...patch };
     setInputs({ ...inputs, machine_time: next });
   }
   function addMachineLine() {
-    setInputs({ ...inputs, machine_time: [...inputs.machine_time, { machine_id: machines[0]?.id ?? "", hours: 0 }] });
+    setInputs({ ...inputs, machine_time: [...inputs.machine_time, { machine_id: machines[0]?.id ?? "", hours: 0, unit: "u" }] });
   }
   function removeMachineLine(idx: number) {
     setInputs({ ...inputs, machine_time: inputs.machine_time.filter((_, i) => i !== idx) });
@@ -342,8 +344,15 @@ function VariationEditor({
               step="0.01"
               value={line.hours}
               onChange={(e) => updateMachineLine(idx, { hours: parseFloat(e.target.value) || 0 })}
-              placeholder="uren"
+              placeholder="tijdsduur"
             />
+          </div>
+          <div className="unit-select">
+            <select value={line.unit ?? "u"} onChange={(e) => updateMachineLine(idx, { unit: e.target.value as TimeUnit })}>
+              {(Object.entries(TIME_UNIT_LABELS) as [TimeUnit, string][]).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
           </div>
           <button className="btn danger" type="button" onClick={() => removeMachineLine(idx)}>x</button>
         </div>

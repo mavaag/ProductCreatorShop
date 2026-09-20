@@ -1,4 +1,4 @@
-import { CostInputs, Machine, Material, DEFAULT_VAT_RATE } from "./types";
+import { CostInputs, Machine, Material, DEFAULT_VAT_RATE, toHours } from "./types";
 
 /**
  * Berekent afschrijving (€/u) en stroomkosten (€/u) voor een machine.
@@ -65,7 +65,8 @@ export function calculatePrice(
       continue;
     }
     const { depreciationPerHour, powerCostPerHour } = machineHourlyCosts(machine);
-    cost += line.hours * (depreciationPerHour + powerCostPerHour);
+    const hoursValue = toHours(line.hours, line.unit);
+    cost += hoursValue * (depreciationPerHour + powerCostPerHour);
   }
 
   cost += (costInputs.labor_minutes / 60) * costInputs.labor_rate;
