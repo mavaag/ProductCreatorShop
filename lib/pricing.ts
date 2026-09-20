@@ -40,10 +40,13 @@ export function calculatePrice(
   salePrice: number | null; // excl. btw -- dit is wat naar WooCommerce geëxporteerd wordt
   salePriceInclVat: number | null;
   suggestedPrice: number | null;
+  breakdown: CostBreakdown;
   warnings: string[];
 } {
   const warnings: string[] = [];
   let cost = 0;
+  let materialCost = 0;
+  let machineCost = 0;
 
   for (const line of costInputs.materials ?? []) {
     const material = materialsById.get(line.material_id);
@@ -55,7 +58,7 @@ export function calculatePrice(
     // dus rekenen we om naar kg. Voor alle andere eenheden (ml, vel, stuk, m2) is quantity al
     // in dezelfde eenheid als price_per_unit.
     const qty = material.unit === "kg" ? line.quantity / 1000 : line.quantity;
-    cost += qty * material.price_per_unit;
+    materialCost += qty * material.price_per_unit;
   }
 
   for (const line of costInputs.machine_time ?? []) {
@@ -66,11 +69,12 @@ export function calculatePrice(
     }
     const { depreciationPerHour, powerCostPerHour } = machineHourlyCosts(machine);
     const hoursValue = toHours(line.hours, line.unit);
-    cost += hoursValue * (depreciationPerHour + powerCostPerHour);
+    machineCost += hoursValue * (depreciationPerHour + powerCostPerHour);
   }
 
-  cost += (costInputs.labor_minutes / 60) * costInputs.labor_rate;
-  cost += costInputs.other_costs ?? 0;
+  const laborCost = (costInputs.labor_minutes / 60) * costInputs.labor_rate;
+  const otherCost = costInputs.other_costs ?? 0;
+  cost = materialCost + machineCost + laborCost + otherCost;
 
   const margin = costInputs.margin ?? 0;
   const salePrice = margin < 1 ? cost / (1 - margin) : null;
@@ -87,8 +91,26 @@ export function calculatePrice(
     salePrice: salePrice !== null ? round2(salePrice) : null,
     salePriceInclVat: salePriceInclVat !== null ? round2(salePriceInclVat) : null,
     suggestedPrice,
+    breakdown: { materials: materialCost, machines: machineCost, labor: laborCost, other: otherCost },
     warnings,
   };
+}
+
+export type CostBreakdown = { materials: number; machines: number; labor: number; other: number };
+
+/**
+ * Netto-marge op de uiteindelijke (afgeronde, excl. btw) verkoopprijs -- dus inclusief
+ * het effect van het naar boven afronden op ,95. Dit is de marge die je echt overhoudt.
+ */
+export function effectiveMargin(costPrice: number | null, suggestedPriceInclVat: number | null, vatRate: number): number | null {
+  if (costPrice == null || suggestedPriceInclVat == null || suggestedPriceInclVat <= 0) return null;
+  const exVat = suggestedPriceInclVat / (1 + vatRate);
+  return (exVat - costPrice) / exVat;
+}
+
+/** Totaal aantal machine-uren van een variant (voor "winst per machine-uur"). */
+export function totalMachineHours(costInputs: CostInputs): number {
+  return (costInputs.machine_time ?? []).reduce((sum, l) => sum + toHours(l.hours, l.unit), 0);
 }
 
 function round2(n: number) {

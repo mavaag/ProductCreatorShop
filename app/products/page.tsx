@@ -5,6 +5,9 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
 import { Product, ProductVariation, PROCESS_TYPE_LABELS } from "@/lib/types";
+import { downloadExport } from "@/lib/download";
+import { duplicateProduct } from "@/lib/duplicate";
+import { setMarginForProducts } from "@/lib/recalc";
 
 type ProcessType = Product["process_type"];
 type ProductWithVariations = Product & { product_variations: ProductVariation[] };
@@ -34,6 +37,10 @@ export default function ProductsPage() {
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [publishFilter, setPublishFilter] = useState<PublishFilter>("all");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkMargin, setBulkMargin] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
 
   async function load() {
     const { data } = await supabase
@@ -50,6 +57,100 @@ export default function ProductsPage() {
   async function deleteProduct(id: string) {
     if (!confirm("Dit product (en al zijn varianten) verwijderen?")) return;
     await supabase.from("products").delete().eq("id", id);
+    load();
+  }
+
+  function isChanged(p: ProductWithVariations) {
+    if (!p.last_exported_at || p.updated_at > p.last_exported_at) return true;
+    return p.product_variations.some((v) => v.suggested_price != null && Number(v.suggested_price) !== Number(v.exported_price));
+  }
+
+  async function runExport(params: Record<string, string>, label: string) {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const count = await downloadExport({ ...params, ...(activeTab !== "all" ? { type: activeTab } : {}), mark: "1" });
+      setMessage(`${label}: ${count} product(en) geëxporteerd.`);
+      load();
+    } catch (e: any) {
+      setMessage(e.message);
+    }
+    setBusy(false);
+  }
+
+  async function runSync() {
+    if (!confirm("Verkoopprijzen van bestaande producten nu rechtstreeks in WooCommerce bijwerken?")) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const { data } = await supabase.auth.getSession();
+      const res = await fetch("/api/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token}` },
+        body: JSON.stringify(activeTab !== "all" ? { type: activeTab } : {}),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? `Synchronisatie mislukt (${res.status})`);
+      const parts = [`${body.updated} prijs/prijzen bijgewerkt`, `${body.unchanged} ongewijzigd`];
+      if (body.missingProducts.length) parts.push(`niet in de shop (importeer via CSV): ${body.missingProducts.join(", ")}`);
+      if (body.missingVariations.length) parts.push(`varianten niet in de shop: ${body.missingVariations.join(", ")}`);
+      if (body.errors.length) parts.push(`fouten: ${body.errors.join("; ")}`);
+      setMessage(`Synchronisatie: ${parts.join(" -- ")}`);
+      load();
+    } catch (e: any) {
+      setMessage(e.message);
+    }
+    setBusy(false);
+  }
+
+  async function duplicate(p: ProductWithVariations) {
+    setBusy(true);
+    try {
+      const id = await duplicateProduct(supabase, p);
+      window.location.href = `/products/${id}`;
+    } catch (e: any) {
+      setMessage(e.message);
+      setBusy(false);
+    }
+  }
+
+  function toggle(id: string) {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelected(next);
+  }
+
+  async function bulkPublish(published: boolean) {
+    setBusy(true);
+    await supabase.from("products").update({ published, updated_at: new Date().toISOString() }).in("id", Array.from(selected));
+    setMessage(`${selected.size} product(en) ${published ? "gepubliceerd" : "gedepubliceerd"}.`);
+    setBusy(false);
+    load();
+  }
+
+  async function bulkDelete() {
+    if (!confirm(`${selected.size} product(en) met al hun varianten verwijderen?`)) return;
+    setBusy(true);
+    await supabase.from("products").delete().in("id", Array.from(selected));
+    setSelected(new Set());
+    setMessage("Producten verwijderd.");
+    setBusy(false);
+    load();
+  }
+
+  async function bulkSetMargin() {
+    const pct = parseFloat(bulkMargin);
+    if (!(pct >= 0 && pct < 100)) {
+      setMessage("Geef een marge tussen 0 en 99 (%).");
+      return;
+    }
+    if (!confirm(`Marge van alle varianten van ${selected.size} product(en) op ${pct}% zetten en de prijzen herberekenen?`)) return;
+    setBusy(true);
+    const n = await setMarginForProducts(supabase, Array.from(selected), pct / 100);
+    setMessage(`${n} variant(en) herberekend met ${pct}% marge.`);
+    setBulkMargin("");
+    setBusy(false);
     load();
   }
 
@@ -95,15 +196,28 @@ export default function ProductsPage() {
           <p className="sub">Prijsberekening blijft hier bewaard per product -- de export naar WooCommerce bevat enkel de velden die WooCommerce nodig heeft.</p>
         </div>
         <div>
-          <a
-            className="btn secondary"
-            href={activeTab === "all" ? "/api/export" : `/api/export?type=${activeTab}`}
-            style={{ marginRight: 8 }}
-          >
-            {activeTab === "all" ? "Exporteer alles (WooCommerce CSV)" : `Exporteer ${PROCESS_TYPE_LABELS[activeTab]} (WooCommerce CSV)`}
-          </a>
           <Link className="btn" href="/products/new">+ Nieuw product</Link>
         </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h2 style={{ marginTop: 0, fontSize: 14 }}>
+          WooCommerce-export {activeTab === "all" ? "(alle technieken)" : `(${PROCESS_TYPE_LABELS[activeTab]})`}
+        </h2>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button className="btn secondary" disabled={busy} onClick={() => runExport({}, "Volledige export")}>Alles exporteren</button>
+          <button className="btn secondary" disabled={busy} onClick={() => runExport({ changed: "1" }, "Export van wijzigingen")}>
+            Enkel nieuw/gewijzigd
+          </button>
+          <button className="btn secondary" disabled={busy} onClick={() => runExport({ prices: "1" }, "Prijsexport")}>
+            Enkel prijzen (bestaande producten bijwerken)
+          </button>
+          <button className="btn secondary" disabled={busy} onClick={runSync}>Prijzen direct naar WooCommerce sturen</button>
+        </div>
+        <p className="muted" style={{ marginBottom: 0 }}>
+          Elke export markeert de producten als geëxporteerd. "Enkel nieuw/gewijzigd" neemt dan enkel wat sindsdien nieuw of aangepast is; met "Alles exporteren" heb je altijd de volledige set. Voor "Enkel prijzen" kies je bij het importeren in WooCommerce "Bestaande producten bijwerken".
+        </p>
+        {message && <p className="mono" style={{ marginBottom: 0 }}>{message}</p>}
       </div>
 
       <div className="tabs">
@@ -143,9 +257,37 @@ export default function ProductsPage() {
         </div>
       </div>
 
+      {selected.size > 0 && (
+        <div className="card" style={{ marginBottom: 16, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <strong>{selected.size} geselecteerd</strong>
+          <button className="btn secondary" disabled={busy} onClick={() => bulkPublish(true)}>Publiceren</button>
+          <button className="btn secondary" disabled={busy} onClick={() => bulkPublish(false)}>Depubliceren</button>
+          <input
+            type="number"
+            style={{ width: 110 }}
+            placeholder="Marge %"
+            value={bulkMargin}
+            onChange={(e) => setBulkMargin(e.target.value)}
+          />
+          <button className="btn secondary" disabled={busy || !bulkMargin} onClick={bulkSetMargin}>Marge toepassen</button>
+          <button className="btn danger" disabled={busy} onClick={bulkDelete}>Verwijderen</button>
+          <button className="btn secondary" onClick={() => setSelected(new Set())}>Selectie wissen</button>
+        </div>
+      )}
+
       <table>
         <thead>
-          <tr><th>Naam</th><th>Techniek</th><th>SKU</th><th>Attributen</th><th>Varianten</th><th>Verkoopprijs</th><th>Gepubliceerd</th><th></th></tr>
+          <tr>
+            <th style={{ width: 32 }}>
+              <input
+                type="checkbox"
+                style={{ width: "auto" }}
+                aria-label="Alles selecteren"
+                checked={filtered.length > 0 && filtered.every((p) => selected.has(p.id))}
+                onChange={(e) => setSelected(e.target.checked ? new Set(filtered.map((p) => p.id)) : new Set())}
+              />
+            </th>
+            <th>Naam</th><th>Techniek</th><th>SKU</th><th>Attributen</th><th>Varianten</th><th>Verkoopprijs</th><th>Gepubliceerd</th><th>Export</th><th></th></tr>
         </thead>
         <tbody>
           {filtered.map((p) => {
@@ -157,6 +299,9 @@ export default function ProductsPage() {
                 : `€${min.toFixed(2)}`;
             return (
               <tr key={p.id}>
+                <td>
+                  <input type="checkbox" style={{ width: "auto" }} aria-label={`Selecteer ${p.name}`} checked={selected.has(p.id)} onChange={() => toggle(p.id)} />
+                </td>
                 <td><Link href={`/products/${p.id}`}>{p.name}</Link></td>
                 <td><span className="pill">{PROCESS_TYPE_LABELS[p.process_type]}</span></td>
                 <td className="mono">{p.sku}</td>
@@ -164,15 +309,17 @@ export default function ProductsPage() {
                 <td className="mono">{p.product_variations.length}</td>
                 <td className="mono">{priceLabel}</td>
                 <td>{p.published ? "Ja" : "Nee"}</td>
-                <td>
+                <td>{isChanged(p) ? <span className="pill">{p.last_exported_at ? "Gewijzigd" : "Nieuw"}</span> : <span className="muted">Up-to-date</span>}</td>
+                <td style={{ whiteSpace: "nowrap" }}>
                   <Link className="btn secondary" href={`/products/${p.id}`} style={{ marginRight: 6 }}>Bewerken</Link>
+                  <button className="btn secondary" disabled={busy} onClick={() => duplicate(p)} style={{ marginRight: 6 }}>Dupliceer</button>
                   <button className="btn danger" onClick={() => deleteProduct(p.id)}>Verwijder</button>
                 </td>
               </tr>
             );
           })}
           {filtered.length === 0 && (
-            <tr><td colSpan={8} className="muted">
+            <tr><td colSpan={10} className="muted">
               {products.length === 0
                 ? 'Nog geen producten -- klik op "+ Nieuw product" om te starten.'
                 : "Geen producten gevonden voor deze filter/zoekopdracht."}

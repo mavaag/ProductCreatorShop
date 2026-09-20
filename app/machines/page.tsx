@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
 import { machineHourlyCosts } from "@/lib/pricing";
 import { Machine } from "@/lib/types";
+import { offerRecalculation } from "@/lib/recalc";
 
 const CATEGORIES = [
   { value: "3d_printer", label: "3D-printer" },
@@ -63,6 +64,7 @@ export default function MachinesPage() {
   async function saveEdit(id: string) {
     setSaving(true);
     await supabase.from("machines").update(editForm).eq("id", id);
+    await offerRecalculation(supabase, "Machinewijziging");
     setSaving(false);
     setEditingId(null);
     load();

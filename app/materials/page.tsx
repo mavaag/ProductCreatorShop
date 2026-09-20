@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
-import { Material } from "@/lib/types";
+import Link from "next/link";
+import { Material, ProductVariation } from "@/lib/types";
+import { offerRecalculation } from "@/lib/recalc";
 
 const UNITS = ["g", "kg", "ml", "vel", "stuk", "m2"];
 const CATEGORIES = [
@@ -15,19 +17,55 @@ const CATEGORIES = [
   { value: "overig", label: "Overig" },
 ];
 
-const BLANK_FORM = { name: "", category: "filament", unit: "kg", price_per_unit: 0 };
+type MaterialForm = { name: string; category: string; unit: string; price_per_unit: number; stock_quantity: string; min_stock: string };
+const BLANK_FORM: MaterialForm = { name: "", category: "filament", unit: "kg", price_per_unit: 0, stock_quantity: "", min_stock: "" };
+
+// Lege invoer betekent "voorraad niet bijgehouden" (null in de database).
+function toNumberOrNull(value: string): number | null {
+  if (value.trim() === "") return null;
+  const n = parseFloat(value.replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+}
+function toPayload(f: MaterialForm) {
+  return { name: f.name, category: f.category, unit: f.unit, price_per_unit: f.price_per_unit, stock_quantity: toNumberOrNull(f.stock_quantity), min_stock: toNumberOrNull(f.min_stock) };
+}
+
+type Usage = { productId: string; productName: string; variations: number };
+
+function isLowStock(m: Material) {
+  return m.stock_quantity != null && m.min_stock != null && m.stock_quantity <= m.min_stock;
+}
 
 export default function MaterialsPage() {
   const ready = useAuthGuard();
   const [materials, setMaterials] = useState<Material[]>([]);
-  const [form, setForm] = useState(BLANK_FORM);
+  const [usage, setUsage] = useState<Record<string, Usage[]>>({});
+  const [openUsage, setOpenUsage] = useState<string | null>(null);
+  const [form, setForm] = useState<MaterialForm>(BLANK_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState(BLANK_FORM);
+  const [editForm, setEditForm] = useState<MaterialForm>(BLANK_FORM);
   const [saving, setSaving] = useState(false);
 
   async function load() {
     const { data } = await supabase.from("materials").select("*").order("category").order("name");
     setMaterials(data ?? []);
+
+    // In welke producten zit elk materiaal? (afgeleid uit de materiaallijnen van alle varianten)
+    const [{ data: variations }, { data: products }] = await Promise.all([
+      supabase.from("product_variations").select("id, product_id, cost_inputs"),
+      supabase.from("products").select("id, name"),
+    ]);
+    const names = new Map((products ?? []).map((p: any) => [p.id as string, p.name as string]));
+    const perMaterial: Record<string, Map<string, Usage>> = {};
+    for (const v of (variations ?? []) as Pick<ProductVariation, "id" | "product_id" | "cost_inputs">[]) {
+      for (const line of v.cost_inputs?.materials ?? []) {
+        const byProduct = (perMaterial[line.material_id] ??= new Map());
+        const entry = byProduct.get(v.product_id) ?? { productId: v.product_id, productName: names.get(v.product_id) ?? "?", variations: 0 };
+        entry.variations++;
+        byProduct.set(v.product_id, entry);
+      }
+    }
+    setUsage(Object.fromEntries(Object.entries(perMaterial).map(([id, m]) => [id, Array.from(m.values()).sort((a, b) => a.productName.localeCompare(b.productName))])));
   }
 
   useEffect(() => {
@@ -36,19 +74,28 @@ export default function MaterialsPage() {
 
   async function addMaterial(e: React.FormEvent) {
     e.preventDefault();
-    await supabase.from("materials").insert(form);
+    await supabase.from("materials").insert(toPayload(form));
     setForm({ ...BLANK_FORM });
     load();
   }
 
   function startEdit(m: Material) {
     setEditingId(m.id);
-    setEditForm({ name: m.name, category: m.category, unit: m.unit, price_per_unit: m.price_per_unit });
+    setEditForm({
+      name: m.name,
+      category: m.category,
+      unit: m.unit,
+      price_per_unit: m.price_per_unit,
+      stock_quantity: m.stock_quantity != null ? String(m.stock_quantity) : "",
+      min_stock: m.min_stock != null ? String(m.min_stock) : "",
+    });
   }
 
   async function saveEdit(id: string) {
     setSaving(true);
-    await supabase.from("materials").update(editForm).eq("id", id);
+    const priceChanged = materials.find((m) => m.id === id)?.price_per_unit !== editForm.price_per_unit;
+    await supabase.from("materials").update(toPayload(editForm)).eq("id", id);
+    if (priceChanged) await offerRecalculation(supabase, `Materiaalprijs: ${editForm.name}`);
     setSaving(false);
     setEditingId(null);
     load();
@@ -67,9 +114,16 @@ export default function MaterialsPage() {
       <h1>Materialen</h1>
       <p className="sub">Filament, inkt, papier, blanco objecten, lasermateriaal, ... -- prijs per eenheid (filament geef je in per kg, de rest per ml/vel/stuk/m²).</p>
 
+      {materials.some(isLowStock) && (
+        <div className="warning" style={{ marginBottom: 16 }}>
+          <strong>Voorraad bijna op:</strong>{" "}
+          {materials.filter(isLowStock).map((m) => `${m.name} (${m.stock_quantity} ${m.unit}, minimum ${m.min_stock})`).join(" -- ")}
+        </div>
+      )}
+
       <table>
         <thead>
-          <tr><th>Naam</th><th>Categorie</th><th>Eenheid</th><th>Prijs per eenheid</th><th></th></tr>
+          <tr><th>Naam</th><th>Categorie</th><th>Eenheid</th><th>Prijs per eenheid</th><th>Voorraad / minimum</th><th>Gebruikt in</th><th></th></tr>
         </thead>
         <tbody>
           {materials.map((m) => {
@@ -88,6 +142,13 @@ export default function MaterialsPage() {
                     </select>
                   </td>
                   <td><input className="mono" type="number" step="0.01" value={editForm.price_per_unit} onChange={(e) => setEditForm({ ...editForm, price_per_unit: parseFloat(e.target.value) || 0 })} /></td>
+                  <td>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <input className="mono" placeholder="voorraad" value={editForm.stock_quantity} onChange={(e) => setEditForm({ ...editForm, stock_quantity: e.target.value })} />
+                      <input className="mono" placeholder="minimum" value={editForm.min_stock} onChange={(e) => setEditForm({ ...editForm, min_stock: e.target.value })} />
+                    </div>
+                  </td>
+                  <td></td>
                   <td style={{ whiteSpace: "nowrap" }}>
                     <button className="btn" onClick={() => saveEdit(m.id)} disabled={saving} style={{ marginRight: 6 }}>{saving ? "..." : "Opslaan"}</button>
                     <button className="btn secondary" onClick={() => setEditingId(null)}>Annuleer</button>
@@ -101,6 +162,29 @@ export default function MaterialsPage() {
                 <td>{CATEGORIES.find((c) => c.value === m.category)?.label ?? m.category}</td>
                 <td className="mono">{m.unit}</td>
                 <td className="mono">€{m.price_per_unit}</td>
+                <td className="mono">
+                  {m.stock_quantity == null ? <span className="muted">niet bijgehouden</span> : (
+                    <span style={isLowStock(m) ? { color: "var(--rust)", fontWeight: 600 } : undefined}>
+                      {m.stock_quantity} {m.unit}{m.min_stock != null ? ` / min. ${m.min_stock}` : ""}
+                    </span>
+                  )}
+                </td>
+                <td>
+                  {(usage[m.id]?.length ?? 0) === 0 ? <span className="muted">--</span> : (
+                    <>
+                      <a href="#" onClick={(e) => { e.preventDefault(); setOpenUsage(openUsage === m.id ? null : m.id); }}>
+                        {usage[m.id].length} product(en)
+                      </a>
+                      {openUsage === m.id && (
+                        <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+                          {usage[m.id].map((u) => (
+                            <li key={u.productId}><Link href={`/products/${u.productId}`}>{u.productName}</Link> <span className="muted">({u.variations} var.)</span></li>
+                          ))}
+                        </ul>
+                      )}
+                    </>
+                  )}
+                </td>
                 <td style={{ whiteSpace: "nowrap" }}>
                   <button className="btn secondary" onClick={() => startEdit(m)} style={{ marginRight: 6 }}>Bewerken</button>
                   <button className="btn danger" onClick={() => deleteMaterial(m.id)}>Verwijder</button>
@@ -136,6 +220,16 @@ export default function MaterialsPage() {
             <div>
               <label>Prijs per eenheid (€)</label>
               <input type="number" step="0.01" value={form.price_per_unit} onChange={(e) => setForm({ ...form, price_per_unit: parseFloat(e.target.value) || 0 })} />
+            </div>
+          </div>
+          <div className="row">
+            <div>
+              <label>Voorraad (optioneel, in de eenheid hierboven)</label>
+              <input value={form.stock_quantity} onChange={(e) => setForm({ ...form, stock_quantity: e.target.value })} placeholder="leeg = niet bijhouden" />
+            </div>
+            <div>
+              <label>Waarschuwing onder (optioneel)</label>
+              <input value={form.min_stock} onChange={(e) => setForm({ ...form, min_stock: e.target.value })} placeholder="bv. 2" />
             </div>
           </div>
           <button className="btn" type="submit" style={{ marginTop: 16 }}>Materiaal toevoegen</button>

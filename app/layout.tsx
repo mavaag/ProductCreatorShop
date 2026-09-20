@@ -33,6 +33,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Link href="/products">Producten</Link>
             <Link href="/machines">Machines</Link>
             <Link href="/materials">Materialen</Link>
+            <Link href="/margins">Marges</Link>
+            <Link href="/prices">Prijzen</Link>
           </div>
         </nav>
         <main className="container">{children}</main>

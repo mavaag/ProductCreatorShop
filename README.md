@@ -85,6 +85,22 @@ Eén app voor al je technieken (3D-printen, UV-printen, laser engraving/cutting,
 6. Wil je later een prijs aanpassen? Zoek het product op, pas de berekening aan, sla op,
    en exporteer opnieuw -- je hoeft niets van je vorige werk over te typen.
 
+## 5. Beheerfuncties
+
+Voer eerst `supabase/migration_004_beheerfuncties.sql` uit in de Supabase SQL Editor (bewaart je data).
+
+- **Product dupliceren** (productenlijst en productpagina): kopieert product + varianten als niet-gepubliceerd startpunt.
+- **Bulkacties**: selecteer producten in de lijst om te (de)publiceren, de marge in één keer aan te passen of te verwijderen.
+- **Varianten genereren**: vul per attribuut waarden in (bv. S, M, L) en maak alle combinaties in één keer aan.
+- **Prijzen herberekenen** (menu *Prijzen*): na een materiaal-, machine- of stroomprijswijziging zie je eerst wat er verandert en pas je het in één keer toe. Bij het opslaan van een materiaal- of machinewijziging wordt dit ook meteen voorgesteld.
+- **Prijsgeschiedenis**: elke prijswijziging wordt bewaard en is per variant op te vragen.
+- **Marge-overzicht** (menu *Marges*): werkelijke marge na afronden, winst per stuk en per machine-uur, met een instelbare minimale marge. De productpagina waarschuwt als een variant eronder zakt.
+- **Kostenopbouw** per variant (materiaal / machine / arbeid / overig).
+- **WooCommerce-velden** per product: beschrijving, categorieën, afbeelding-URL('s), gewicht en verzendklasse gaan mee in de export.
+- **Export**: alles, enkel nieuw/gewijzigd sinds de vorige export, of enkel prijzen (om bestaande producten bij te werken). Per techniek als je op een tabblad staat.
+- **Rechtstreeks synchroniseren** van prijzen naar WooCommerce via de REST API: stel `WOOCOMMERCE_URL`, `WOOCOMMERCE_CONSUMER_KEY` en `WOOCOMMERCE_CONSUMER_SECRET` in (zie `.env.local.example`, en in Vercel bij de environment variables). Producten die nog niet in de shop bestaan worden niet aangemaakt, maar gemeld -- importeer die eenmalig via de CSV.
+- **Materialen**: voorraad + minimumvoorraad met waarschuwing, en overzicht in welke producten elk materiaal zit.
+
 ## Projectstructuur
 
 ```
@@ -94,6 +110,9 @@ app/
   materials/          Materiaalbeheer
   login/              Inloggen (e-mail + wachtwoord)
   api/export/         Genereert de WooCommerce CSV (server-side)
+  api/sync/           Stuurt prijzen rechtstreeks naar WooCommerce (REST API)
+  margins/            Marge-overzicht
+  prices/             Prijzen herberekenen
 lib/
   pricing.ts          Prijsberekeningslogica (herbruikt voor alle technieken)
   types.ts            Gedeelde TypeScript-types
