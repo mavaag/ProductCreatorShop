@@ -64,10 +64,10 @@ export default function MachinesPage() {
             <tr key={m.id}>
               <td>{m.name}</td>
               <td>{CATEGORIES.find((c) => c.value === m.category)?.label ?? m.category}</td>
-              <td>€{m.purchase_price}</td>
-              <td>{m.expected_lifetime_hours}</td>
-              <td>{m.avg_power_w}</td>
-              <td>€{m.electricity_price}</td>
+              <td className="mono">€{m.purchase_price}</td>
+              <td className="mono">{m.expected_lifetime_hours}</td>
+              <td className="mono">{m.avg_power_w}</td>
+              <td className="mono">€{m.electricity_price}</td>
               <td><button className="btn danger" onClick={() => deleteMachine(m.id)}>Verwijder</button></td>
             </tr>
           ))}

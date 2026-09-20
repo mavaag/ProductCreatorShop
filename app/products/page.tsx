@@ -22,7 +22,7 @@ type SortKey = "name" | "sku" | "price_low" | "price_high" | "variations";
 type PublishFilter = "all" | "published" | "unpublished";
 
 function priceRange(p: ProductWithVariations) {
-  const prices = p.product_variations.map((v) => v.sale_price).filter((x): x is number => x != null);
+  const prices = p.product_variations.map((v) => v.suggested_price).filter((x): x is number => x != null);
   if (prices.length === 0) return { min: null as number | null, max: null as number | null };
   return { min: Math.min(...prices), max: Math.max(...prices) };
 }
@@ -139,7 +139,7 @@ export default function ProductsPage() {
 
       <table>
         <thead>
-          <tr><th>Naam</th><th>Techniek</th><th>SKU</th><th>Attributen</th><th>Varianten</th><th>Prijsrange</th><th>Gepubliceerd</th><th></th></tr>
+          <tr><th>Naam</th><th>Techniek</th><th>SKU</th><th>Attributen</th><th>Varianten</th><th>Verkoopprijs</th><th>Gepubliceerd</th><th></th></tr>
         </thead>
         <tbody>
           {filtered.map((p) => {
@@ -153,10 +153,10 @@ export default function ProductsPage() {
               <tr key={p.id}>
                 <td><Link href={`/products/${p.id}`}>{p.name}</Link></td>
                 <td><span className="pill">{PROCESS_TYPE_LABELS[p.process_type]}</span></td>
-                <td>{p.sku}</td>
+                <td className="mono">{p.sku}</td>
                 <td>{p.attribute_names.join(", ")}</td>
-                <td>{p.product_variations.length}</td>
-                <td>{priceLabel}</td>
+                <td className="mono">{p.product_variations.length}</td>
+                <td className="mono">{priceLabel}</td>
                 <td>{p.published ? "Ja" : "Nee"}</td>
                 <td>
                   <Link className="btn secondary" href={`/products/${p.id}`} style={{ marginRight: 6 }}>Bewerken</Link>

@@ -63,7 +63,7 @@ export default function NewProductPage() {
           <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
 
           <label>Parent SKU</label>
-          <input required value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder="bv. VAAS-001" />
+          <input className="mono" required value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder="bv. VAAS-001" />
 
           <label>Techniek</label>
           <select value={form.process_type} onChange={(e) => setForm({ ...form, process_type: e.target.value })}>

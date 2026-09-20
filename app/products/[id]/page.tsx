@@ -184,10 +184,10 @@ function VariationEditor({
 }) {
   const [sku, setSku] = useState(variation.sku);
   const [attributeValues, setAttributeValues] = useState<Record<string, string>>(variation.attribute_values ?? {});
-  const [inputs, setInputs] = useState<CostInputs>(variation.cost_inputs ?? EMPTY_COST_INPUTS);
+  const [inputs, setInputs] = useState<CostInputs>({ ...EMPTY_COST_INPUTS, ...(variation.cost_inputs ?? {}) });
   const [saving, setSaving] = useState(false);
 
-  const { costPrice, salePrice, warnings } = calculatePrice(inputs, machinesById, materialsById);
+  const { costPrice, salePrice, salePriceInclVat, suggestedPrice, warnings } = calculatePrice(inputs, machinesById, materialsById);
 
   function updateMaterialLine(idx: number, patch: Partial<{ material_id: string; quantity: number }>) {
     const next = [...inputs.materials];
@@ -223,6 +223,7 @@ function VariationEditor({
         cost_inputs: inputs,
         cost_price: costPrice,
         sale_price: salePrice,
+        suggested_price: suggestedPrice,
         updated_at: new Date().toISOString(),
       })
       .eq("id", variation.id);
@@ -235,7 +236,7 @@ function VariationEditor({
       <div className="row">
         <div>
           <label>SKU (variatie)</label>
-          <input value={sku} onChange={(e) => setSku(e.target.value)} />
+          <input className="mono" value={sku} onChange={(e) => setSku(e.target.value)} />
         </div>
         {attributeNames.map((attrName) => (
           <div key={attrName}>
@@ -318,11 +319,26 @@ function VariationEditor({
             onChange={(e) => setInputs({ ...inputs, margin: (parseFloat(e.target.value) || 0) / 100 })}
           />
         </div>
+        <div>
+          <label>Btw (%)</label>
+          <input
+            type="number"
+            step="1"
+            value={Math.round(inputs.vat_rate * 100)}
+            onChange={(e) => setInputs({ ...inputs, vat_rate: (parseFloat(e.target.value) || 0) / 100 })}
+          />
+        </div>
       </div>
 
       <div className="price-box">
-        <div>Kostprijs: <strong>€{costPrice.toFixed(2)}</strong></div>
-        <div className="big">Verkoopprijs excl. btw: €{salePrice != null ? salePrice.toFixed(2) : "--"}</div>
+        <div className="mono readout-row">Kostprijs<span>€{costPrice.toFixed(2)}</span></div>
+        <div className="mono readout-row">Verkoopprijs excl. btw<span>€{salePrice != null ? salePrice.toFixed(2) : "--"}</span></div>
+        <div className="mono readout-row">Verkoopprijs incl. btw<span>€{salePriceInclVat != null ? salePriceInclVat.toFixed(2) : "--"}</span></div>
+        <div className="readout-suggested">
+          <span>Voorgestelde verkoopprijs</span>
+          <span className="big">€{suggestedPrice != null ? suggestedPrice.toFixed(2) : "--"}</span>
+        </div>
+        <p className="readout-note">Afgerond naar boven op een ,95-prijs (charm pricing) -- nooit onder je berekende prijs incl. btw. Pas gerust zelf aan.</p>
         {warnings.map((w, i) => <div className="warning" key={i}>{w}</div>)}
       </div>
 
