@@ -58,8 +58,8 @@ export default function MaterialsPage() {
             <tr key={m.id}>
               <td>{m.name}</td>
               <td>{CATEGORIES.find((c) => c.value === m.category)?.label ?? m.category}</td>
-              <td>{m.unit}</td>
-              <td>€{m.price_per_unit}</td>
+              <td className="mono">{m.unit}</td>
+              <td className="mono">€{m.price_per_unit}</td>
               <td><button className="btn danger" onClick={() => deleteMaterial(m.id)}>Verwijder</button></td>
             </tr>
           ))}

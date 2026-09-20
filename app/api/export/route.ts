@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 // Deze route draait server-side en gebruikt dezelfde public/anon Supabase-config.
-// Enkel de WooCommerce-relevante velden verlaten deze functie -- cost_inputs en
-// cost_price van de varianten worden bewust NOOIT in de CSV opgenomen.
+// Enkel de WooCommerce-relevante velden verlaten deze functie -- cost_inputs, cost_price
+// en sale_price (excl. btw) van de varianten worden bewust NOOIT in de CSV opgenomen.
+// "Regular price" = suggested_price: de afgeronde ,95-verkoopprijs incl. btw.
 export async function GET() {
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL as string,
@@ -12,7 +13,7 @@ export async function GET() {
 
   const { data: products, error } = await supabase
     .from("products")
-    .select("id, sku, name, published, attribute_names, product_variations(sku, attribute_values, sale_price)")
+    .select("id, sku, name, published, attribute_names, product_variations(sku, attribute_values, suggested_price)")
     .order("name");
 
   if (error) {
@@ -36,7 +37,7 @@ export async function GET() {
     const variations = (p as any).product_variations as {
       sku: string;
       attribute_values: Record<string, string>;
-      sale_price: number | null;
+      suggested_price: number | null;
     }[];
 
     const parentAttrCols: string[] = [];
@@ -67,7 +68,7 @@ export async function GET() {
         v.sku,
         `${p.name}${variantName ? " - " + variantName : ""}`,
         p.published ? "1" : "0",
-        v.sale_price != null ? v.sale_price.toFixed(2) : "",
+        v.suggested_price != null ? v.suggested_price.toFixed(2) : "",
         ...attrCols,
         p.sku,
       ]);
