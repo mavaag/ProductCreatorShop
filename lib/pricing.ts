@@ -1,4 +1,4 @@
-import { CostInputs, Machine, Material } from "./types";
+import { CostInputs, Machine, Material, DEFAULT_VAT_RATE } from "./types";
 
 /**
  * Berekent afschrijving (€/u) en stroomkosten (€/u) voor een machine.
@@ -13,16 +13,35 @@ export function machineHourlyCosts(machine: Machine) {
 }
 
 /**
- * Berekent kostprijs en verkoopprijs (excl. btw) voor één productvariatie,
- * op basis van zijn cost_inputs + de machines/materialen waarnaar die verwijzen.
- * Werkt identiek voor 3D-printen, UV-printen, laser engraving/cutting en sublimatie --
- * het enige verschil zit in welke materialen/machines de gebruiker koppelt.
+ * Rondt een prijs af naar een "psychologische" verkoopprijs die eindigt op ,95 --
+ * altijd naar BOVEN afgerond, zodat de voorgestelde prijs nooit onder je berekende
+ * (incl. btw) prijs uitkomt. Dit is een eenvoudige vuistregel, geen boekhoudkundig advies --
+ * pas gerust zelf aan als je liever een ronde prijs of een andere eindcijfer gebruikt.
+ */
+export function suggestRetailPrice(priceInclVat: number): number {
+  let candidate = Math.ceil(priceInclVat) - 0.05;
+  if (candidate < priceInclVat) candidate += 1;
+  return round2(candidate);
+}
+
+/**
+ * Berekent kostprijs, verkoopprijs excl./incl. btw en een voorgestelde afgeronde
+ * verkoopprijs voor één productvariatie, op basis van zijn cost_inputs + de
+ * machines/materialen waarnaar die verwijzen. Werkt identiek voor 3D-printen,
+ * UV-printen, laser engraving/cutting en sublimatie -- het enige verschil zit in
+ * welke materialen/machines de gebruiker koppelt.
  */
 export function calculatePrice(
   costInputs: CostInputs,
   machinesById: Map<string, Machine>,
   materialsById: Map<string, Material>
-): { costPrice: number; salePrice: number | null; warnings: string[] } {
+): {
+  costPrice: number;
+  salePrice: number | null; // excl. btw -- dit is wat naar WooCommerce geëxporteerd wordt
+  salePriceInclVat: number | null;
+  suggestedPrice: number | null;
+  warnings: string[];
+} {
   const warnings: string[] = [];
   let cost = 0;
 
@@ -58,7 +77,17 @@ export function calculatePrice(
     warnings.push("Marge moet lager zijn dan 100% om een verkoopprijs te kunnen berekenen.");
   }
 
-  return { costPrice: round2(cost), salePrice: salePrice !== null ? round2(salePrice) : null, warnings };
+  const vatRate = costInputs.vat_rate ?? DEFAULT_VAT_RATE;
+  const salePriceInclVat = salePrice !== null ? salePrice * (1 + vatRate) : null;
+  const suggestedPrice = salePriceInclVat !== null ? suggestRetailPrice(salePriceInclVat) : null;
+
+  return {
+    costPrice: round2(cost),
+    salePrice: salePrice !== null ? round2(salePrice) : null,
+    salePriceInclVat: salePriceInclVat !== null ? round2(salePriceInclVat) : null,
+    suggestedPrice,
+    warnings,
+  };
 }
 
 function round2(n: number) {

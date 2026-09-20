@@ -33,6 +33,7 @@ export type CostInputs = {
   labor_rate: number; // €/u
   other_costs: number; // €
   margin: number; // 0-1, bv. 0.45 = 45%
+  vat_rate: number; // 0-1, bv. 0.21 = 21% -- ontbreekt in oudere/geïmporteerde data, dan valt de app terug op 21%
 };
 
 export type Product = {
@@ -51,7 +52,8 @@ export type ProductVariation = {
   attribute_values: Record<string, string>;
   cost_inputs: CostInputs;
   cost_price: number | null;
-  sale_price: number | null;
+  sale_price: number | null; // excl. btw
+  suggested_price: number | null; // afgeronde ,95-prijs incl. btw -- dit wordt geëxporteerd naar WooCommerce
 };
 
 export const PROCESS_TYPE_LABELS: Record<Product["process_type"], string> = {
@@ -62,6 +64,8 @@ export const PROCESS_TYPE_LABELS: Record<Product["process_type"], string> = {
   sublimation: "Sublimatie",
 };
 
+export const DEFAULT_VAT_RATE = 0.21; // Belgisch standaardtarief -- pas aan per variant indien nodig
+
 export const EMPTY_COST_INPUTS: CostInputs = {
   materials: [],
   machine_time: [],
@@ -69,4 +73,5 @@ export const EMPTY_COST_INPUTS: CostInputs = {
   labor_rate: 18,
   other_costs: 0,
   margin: 0.45,
+  vat_rate: DEFAULT_VAT_RATE,
 };
