@@ -14,6 +14,8 @@ export type Material = {
   category: string;
   unit: string;
   price_per_unit: number;
+  stock_quantity: number | null; // null = voorraad niet bijgehouden
+  min_stock: number | null;
 };
 
 export type MaterialLine = {
@@ -57,6 +59,13 @@ export type Product = {
   process_type: "3d_print" | "uv_print" | "laser_engraving" | "laser_cutting" | "sublimation";
   published: boolean;
   attribute_names: string[];
+  description: string;
+  categories: string; // WooCommerce-notatie, bv. "Woondecoratie > Vazen, Cadeaus"
+  image_url: string; // één of meerdere URL's, gescheiden door komma
+  weight_kg: number | null;
+  shipping_class: string;
+  last_exported_at: string | null;
+  updated_at: string;
 };
 
 export type ProductVariation = {
@@ -68,7 +77,21 @@ export type ProductVariation = {
   cost_price: number | null;
   sale_price: number | null; // excl. btw
   suggested_price: number | null; // afgeronde ,95-prijs incl. btw -- dit wordt geëxporteerd naar WooCommerce
+  exported_price: number | null; // suggested_price zoals die de laatste keer geëxporteerd werd
 };
+
+export type PriceHistoryEntry = {
+  id: string;
+  variation_id: string;
+  cost_price: number | null;
+  sale_price: number | null;
+  suggested_price: number | null;
+  margin: number | null;
+  reason: string;
+  created_at: string;
+};
+
+export const DEFAULT_MIN_MARGIN = 0.3;
 
 export const PROCESS_TYPE_LABELS: Record<Product["process_type"], string> = {
   "3d_print": "3D-printen",

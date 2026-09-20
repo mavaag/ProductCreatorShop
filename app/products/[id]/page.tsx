@@ -4,7 +4,11 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
-import { calculatePrice, machineHourlyCosts } from "@/lib/pricing";
+import { calculatePrice, machineHourlyCosts, effectiveMargin } from "@/lib/pricing";
+import { duplicateProduct } from "@/lib/duplicate";
+import { recordPriceHistory } from "@/lib/recalc";
+import { loadMinMargin } from "@/lib/settings";
+import { cartesian, comboKey, parseValueList } from "@/lib/variants";
 import { toHours } from "@/lib/types";
 import { slugifyForSku, nextAvailableSku } from "@/lib/sku";
 import {
@@ -17,6 +21,8 @@ import {
   PROCESS_TYPE_LABELS,
   TimeUnit,
   TIME_UNIT_LABELS,
+  PriceHistoryEntry,
+  DEFAULT_MIN_MARGIN,
 } from "@/lib/types";
 
 export default function ProductEditPage() {
@@ -31,6 +37,12 @@ export default function ProductEditPage() {
   const [materials, setMaterials] = useState<Material[]>([]);
   const [attrDraft, setAttrDraft] = useState<string[]>([]);
   const [savingAttrs, setSavingAttrs] = useState(false);
+  const [minMargin, setMinMargin] = useState(DEFAULT_MIN_MARGIN);
+  const [wc, setWc] = useState({ description: "", categories: "", image_url: "", weight_kg: "", shipping_class: "" });
+  const [savingWc, setSavingWc] = useState(false);
+  const [genValues, setGenValues] = useState<Record<string, string>>({});
+  const [generating, setGenerating] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const [{ data: p }, { data: v }, { data: m }, { data: mat }] = await Promise.all([
@@ -40,6 +52,15 @@ export default function ProductEditPage() {
       supabase.from("materials").select("*"),
     ]);
     setProduct(p);
+    if (p) {
+      setWc({
+        description: p.description ?? "",
+        categories: p.categories ?? "",
+        image_url: p.image_url ?? "",
+        weight_kg: p.weight_kg != null ? String(p.weight_kg) : "",
+        shipping_class: p.shipping_class ?? "",
+      });
+    }
     setAttrDraft(p?.attribute_names ?? []);
     setVariations(v ?? []);
     setMachines(m ?? []);
@@ -47,8 +68,22 @@ export default function ProductEditPage() {
   }, [productId]);
 
   useEffect(() => {
-    if (ready) load();
+    if (ready) {
+      load();
+      loadMinMargin(supabase).then(setMinMargin);
+    }
   }, [ready, load]);
+
+  // Startpunt voor een nieuwe variant: de laatste variant als die er is, anders een leeg model.
+  // Voor UV-printen/sublimatie staan meteen 2 machinetijd-regels klaar (printer + heat press).
+  function templateCostInputs(): CostInputs {
+    if (variations.length > 0) return variations[variations.length - 1].cost_inputs;
+    const machineLines = product?.process_type === "sublimation" || product?.process_type === "uv_print" ? 2 : 1;
+    return {
+      ...EMPTY_COST_INPUTS,
+      machine_time: Array.from({ length: machineLines }, () => ({ machine_id: "", hours: 0 })),
+    };
+  }
 
   async function addVariation() {
     // Tijdelijke, gegarandeerd unieke SKU -- wordt automatisch vervangen zodra de
@@ -59,18 +94,7 @@ export default function ProductEditPage() {
     // Bestaat er al een variant van dit product? Neem dan zijn materialen, machines,
     // arbeid, marge en btw over als startpunt -- meestal verschilt enkel het attribuut
     // (en soms een hoeveelheid), dus dat scheelt telkens alles opnieuw intypen.
-    let cost_inputs: CostInputs;
-    if (variations.length > 0) {
-      cost_inputs = variations[variations.length - 1].cost_inputs;
-    } else {
-      // Geen bestaande variant om van te vertrekken: begin leeg, maar zet voor
-      // UV-printen/sublimatie meteen 2 machinetijd-regels klaar (printer + heat press).
-      const machineLines = product?.process_type === "sublimation" || product?.process_type === "uv_print" ? 2 : 1;
-      cost_inputs = {
-        ...EMPTY_COST_INPUTS,
-        machine_time: Array.from({ length: machineLines }, () => ({ machine_id: "", hours: 0 })),
-      };
-    }
+    const cost_inputs = templateCostInputs();
 
     const { error } = await supabase.from("product_variations").insert({
       product_id: productId,
@@ -93,6 +117,88 @@ export default function ProductEditPage() {
       cost_inputs: source.cost_inputs,
     });
     if (error) alert(error.message);
+    load();
+  }
+
+  async function duplicateThisProduct() {
+    if (!product) return;
+    try {
+      const id = await duplicateProduct(supabase, product);
+      router.push(`/products/${id}`);
+    } catch (e: any) {
+      alert(e.message);
+    }
+  }
+
+  async function saveWc() {
+    setSavingWc(true);
+    const weight = wc.weight_kg.trim() === "" ? null : parseFloat(wc.weight_kg.replace(",", "."));
+    const { error } = await supabase
+      .from("products")
+      .update({
+        description: wc.description,
+        categories: wc.categories.trim(),
+        image_url: wc.image_url.trim(),
+        weight_kg: weight != null && Number.isFinite(weight) ? weight : null,
+        shipping_class: wc.shipping_class.trim(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", productId);
+    setSavingWc(false);
+    if (error) alert(error.message);
+    load();
+  }
+
+  const genCombos = product
+    ? (() => {
+        const parsed: Record<string, string[]> = {};
+        for (const n of product.attribute_names) parsed[n] = parseValueList(genValues[n] ?? "");
+        const existing = new Set(variations.map((v) => comboKey(product.attribute_names, v.attribute_values ?? {})));
+        return cartesian(product.attribute_names, parsed).filter((c) => !existing.has(comboKey(product.attribute_names, c)));
+      })()
+    : [];
+
+  async function generateVariations() {
+    if (!product || genCombos.length === 0) return;
+    if (genCombos.length > 1 && !confirm(`${genCombos.length} nieuwe varianten aanmaken met de prijsberekening van je laatste variant als startpunt?`)) return;
+    setGenerating(true);
+    const template = templateCostInputs();
+    const machinesById = new Map(machines.map((m) => [m.id, m]));
+    const materialsById = new Map(materials.map((m) => [m.id, m]));
+    const price = calculatePrice({ ...EMPTY_COST_INPUTS, ...template }, machinesById, materialsById);
+    let created = 0;
+    for (const combo of genCombos) {
+      const values = product.attribute_names.map((n) => combo[n]).filter((v) => v && v.trim());
+      const sku = await nextAvailableSku(supabase, "product_variations", `${product.sku}-` + values.map(slugifyForSku).join("-"));
+      const { data: row, error } = await supabase
+        .from("product_variations")
+        .insert({
+          product_id: productId,
+          sku,
+          attribute_values: combo,
+          cost_inputs: template,
+          cost_price: price.costPrice,
+          sale_price: price.salePrice,
+          suggested_price: price.suggestedPrice,
+        })
+        .select("id")
+        .single();
+      if (error || !row) {
+        alert(error?.message ?? "Variant aanmaken mislukt");
+        break;
+      }
+      await recordPriceHistory(
+        supabase,
+        row.id,
+        { cost_price: price.costPrice, sale_price: price.salePrice, suggested_price: price.suggestedPrice, margin: template.margin },
+        "Variant gegenereerd"
+      );
+      created++;
+    }
+    await supabase.from("products").update({ updated_at: new Date().toISOString() }).eq("id", productId);
+    setGenValues({});
+    setGenerating(false);
+    setNotice(`${created} variant(en) aangemaakt. Controleer de hoeveelheden per variant en pas aan waar nodig.`);
     load();
   }
 
@@ -148,8 +254,10 @@ export default function ProductEditPage() {
 
       <div style={{ marginBottom: 16 }}>
         <button className="btn secondary" onClick={() => router.push("/products")}>&larr; Terug naar productenlijst</button>
+        <button className="btn secondary" style={{ marginLeft: 8 }} onClick={duplicateThisProduct}>Product dupliceren</button>
         <button className="btn danger" style={{ marginLeft: 8 }} onClick={deleteProduct}>Product verwijderen</button>
       </div>
+      {notice && <div className="card" style={{ background: "var(--moss-soft)" }}>{notice}</div>}
 
       <div className="card">
         <h2 style={{ marginTop: 0, fontSize: 14 }}>Attributen (waarop varianten verschillen)</h2>
@@ -175,6 +283,65 @@ export default function ProductEditPage() {
         )}
       </div>
 
+      <div className="card">
+        <h2 style={{ marginTop: 0, fontSize: 14 }}>WooCommerce-gegevens</h2>
+        <p className="muted">Deze velden gaan mee in de export naar WooCommerce (bij het hoofdproduct).</p>
+        <label>Beschrijving</label>
+        <textarea
+          value={wc.description}
+          onChange={(e) => setWc({ ...wc, description: e.target.value })}
+          rows={4}
+          style={{ width: "100%", padding: "8px 10px", border: "1px solid var(--line)", borderRadius: 3, font: "inherit" }}
+        />
+        <div className="row">
+          <div>
+            <label>Categorieën</label>
+            <input value={wc.categories} onChange={(e) => setWc({ ...wc, categories: e.target.value })} placeholder="bv. Woondecoratie > Vazen, Cadeaus" />
+          </div>
+          <div>
+            <label>Verzendklasse</label>
+            <input value={wc.shipping_class} onChange={(e) => setWc({ ...wc, shipping_class: e.target.value })} placeholder="slug uit WooCommerce, bv. klein-pakket" />
+          </div>
+          <div>
+            <label>Gewicht (kg)</label>
+            <input value={wc.weight_kg} onChange={(e) => setWc({ ...wc, weight_kg: e.target.value })} placeholder="bv. 0.25" />
+          </div>
+        </div>
+        <label>Afbeelding(en) -- URL, meerdere gescheiden door een komma</label>
+        <input value={wc.image_url} onChange={(e) => setWc({ ...wc, image_url: e.target.value })} placeholder="https://..." />
+        {wc.image_url.trim() && (
+          <img
+            src={wc.image_url.split(",")[0].trim()}
+            alt="Voorbeeld"
+            style={{ maxHeight: 120, marginTop: 10, border: "1px solid var(--line)", borderRadius: 3 }}
+            onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}
+          />
+        )}
+        <div style={{ marginTop: 12 }}>
+          <button className="btn" onClick={saveWc} disabled={savingWc}>{savingWc ? "Opslaan..." : "WooCommerce-gegevens opslaan"}</button>
+        </div>
+      </div>
+
+      <div className="card">
+        <h2 style={{ marginTop: 0, fontSize: 14 }}>Varianten genereren</h2>
+        <p className="muted">
+          Vul per attribuut de waarden in, gescheiden door een komma. Alle nieuwe combinaties worden aangemaakt met de prijsberekening van je laatste variant als startpunt; bestaande combinaties worden overgeslagen.
+        </p>
+        <div className="row">
+          {product.attribute_names.map((name) => (
+            <div key={name}>
+              <label>{name}</label>
+              <input value={genValues[name] ?? ""} onChange={(e) => setGenValues({ ...genValues, [name]: e.target.value })} placeholder="bv. S, M, L" />
+            </div>
+          ))}
+        </div>
+        <div style={{ marginTop: 12 }}>
+          <button className="btn" onClick={generateVariations} disabled={generating || genCombos.length === 0}>
+            {generating ? "Aanmaken..." : `${genCombos.length} nieuwe variant(en) aanmaken`}
+          </button>
+        </div>
+      </div>
+
       <h2>Varianten &amp; prijsberekening</h2>
       <p className="muted">
         Elke variant heeft zijn eigen prijsberekening (materialen, machinetijd, arbeid, marge). Deze gegevens blijven
@@ -192,7 +359,10 @@ export default function ProductEditPage() {
           materials={materials}
           machinesById={machinesById}
           materialsById={materialsById}
-          onSaved={load}
+          minMargin={minMargin}
+          onSaved={() => {
+            supabase.from("products").update({ updated_at: new Date().toISOString() }).eq("id", productId).then(() => load());
+          }}
           onDelete={() => deleteVariation(v.id)}
           onDuplicate={() => duplicateVariation(v)}
         />
@@ -211,6 +381,7 @@ function VariationEditor({
   materials,
   machinesById,
   materialsById,
+  minMargin,
   onSaved,
   onDelete,
   onDuplicate,
@@ -222,6 +393,7 @@ function VariationEditor({
   materials: Material[];
   machinesById: Map<string, Machine>;
   materialsById: Map<string, Material>;
+  minMargin: number;
   onSaved: () => void;
   onDelete: () => void;
   onDuplicate: () => void;
@@ -255,7 +427,22 @@ function VariationEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attributeValues, skuAuto]);
 
-  const { costPrice, salePrice, salePriceInclVat, suggestedPrice, warnings } = calculatePrice(inputs, machinesById, materialsById);
+  const { costPrice, salePrice, salePriceInclVat, suggestedPrice, breakdown, warnings } = calculatePrice(inputs, machinesById, materialsById);
+  const realMargin = effectiveMargin(costPrice, suggestedPrice, inputs.vat_rate ?? 0.21);
+  const belowMin = realMargin != null && realMargin < minMargin;
+  const [history, setHistory] = useState<PriceHistoryEntry[] | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+
+  useEffect(() => {
+    if (!showHistory) return;
+    supabase
+      .from("price_history")
+      .select("*")
+      .eq("variation_id", variation.id)
+      .order("created_at", { ascending: false })
+      .limit(25)
+      .then(({ data }) => setHistory((data as PriceHistoryEntry[]) ?? []));
+  }, [showHistory, variation.id, variation.suggested_price]);
 
   function updateMaterialLine(idx: number, patch: Partial<{ material_id: string; quantity: number }>) {
     const next = [...inputs.materials];
@@ -295,6 +482,12 @@ function VariationEditor({
         updated_at: new Date().toISOString(),
       })
       .eq("id", variation.id);
+    await recordPriceHistory(
+      supabase,
+      variation.id,
+      { cost_price: costPrice, sale_price: salePrice, suggested_price: suggestedPrice, margin: inputs.margin },
+      "Handmatig opgeslagen"
+    );
     setSaving(false);
     onSaved();
   }
@@ -442,13 +635,77 @@ function VariationEditor({
           <span className="big">€{suggestedPrice != null ? suggestedPrice.toFixed(2) : "--"}</span>
         </div>
         <p className="readout-note">Afgerond naar boven op een ,95-prijs (charm pricing) -- nooit onder je berekende prijs incl. btw. Pas gerust zelf aan.</p>
+        {realMargin != null && (
+          <div className="mono readout-row" style={{ marginTop: 6 }}>Werkelijke marge na afronding<span>{(realMargin * 100).toFixed(1)}%</span></div>
+        )}
+        {belowMin && (
+          <div className="warning">
+            Marge onder je minimum van {Math.round(minMargin * 100)}% -- controleer de kosten of verhoog de marge.
+          </div>
+        )}
         {warnings.map((w, i) => <div className="warning" key={i}>{w}</div>)}
+      </div>
+
+      <CostBreakdownBar breakdown={breakdown} total={costPrice} />
+
+      <div style={{ marginTop: 12 }}>
+        <button className="btn secondary" type="button" onClick={() => setShowHistory(!showHistory)}>
+          {showHistory ? "Prijsgeschiedenis verbergen" : "Prijsgeschiedenis tonen"}
+        </button>
+        {showHistory && (
+          <table style={{ marginTop: 8 }}>
+            <thead><tr><th>Datum</th><th>Kostprijs</th><th>Verkoopprijs</th><th>Marge</th><th>Reden</th></tr></thead>
+            <tbody>
+              {(history ?? []).map((h) => (
+                <tr key={h.id}>
+                  <td className="mono">{new Date(h.created_at).toLocaleString("nl-BE", { dateStyle: "short", timeStyle: "short" })}</td>
+                  <td className="mono">{h.cost_price != null ? `€${Number(h.cost_price).toFixed(2)}` : "--"}</td>
+                  <td className="mono">{h.suggested_price != null ? `€${Number(h.suggested_price).toFixed(2)}` : "--"}</td>
+                  <td className="mono">{h.margin != null ? `${Math.round(Number(h.margin) * 100)}%` : "--"}</td>
+                  <td>{h.reason}</td>
+                </tr>
+              ))}
+              {history && history.length === 0 && <tr><td colSpan={5} className="muted">Nog geen geschiedenis.</td></tr>}
+            </tbody>
+          </table>
+        )}
       </div>
 
       <div style={{ marginTop: 16 }}>
         <button className="btn" onClick={save} disabled={saving}>{saving ? "Opslaan..." : "Opslaan"}</button>
         <button className="btn secondary" style={{ marginLeft: 8 }} onClick={onDuplicate}>Dupliceer als nieuwe variant</button>
         <button className="btn danger" style={{ marginLeft: 8 }} onClick={onDelete}>Variant verwijderen</button>
+      </div>
+    </div>
+  );
+}
+
+const BREAKDOWN_PARTS: { key: "materials" | "machines" | "labor" | "other"; label: string; color: string }[] = [
+  { key: "materials", label: "Materiaal", color: "#c98500" },
+  { key: "machines", label: "Machine", color: "#43684a" },
+  { key: "labor", label: "Arbeid", color: "#4b5560" },
+  { key: "other", label: "Overig", color: "#b8452e" },
+];
+
+function CostBreakdownBar({ breakdown, total }: { breakdown: { materials: number; machines: number; labor: number; other: number }; total: number }) {
+  const sum = breakdown.materials + breakdown.machines + breakdown.labor + breakdown.other;
+  if (sum <= 0) return null;
+  return (
+    <div style={{ marginTop: 12 }}>
+      <label style={{ marginTop: 0 }}>Kostenopbouw (€{total.toFixed(2)})</label>
+      <div style={{ display: "flex", height: 14, borderRadius: 3, overflow: "hidden", border: "1px solid var(--line)" }} role="img" aria-label="Kostenopbouw">
+        {BREAKDOWN_PARTS.map((part) => {
+          const value = breakdown[part.key];
+          return value > 0 ? <div key={part.key} style={{ width: `${(value / sum) * 100}%`, background: part.color }} title={`${part.label}: €${value.toFixed(2)}`} /> : null;
+        })}
+      </div>
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 6 }} className="muted">
+        {BREAKDOWN_PARTS.map((part) => (
+          <span key={part.key}>
+            <span style={{ display: "inline-block", width: 9, height: 9, background: part.color, marginRight: 5 }} />
+            {part.label} <span className="mono">€{breakdown[part.key].toFixed(2)} ({Math.round((breakdown[part.key] / sum) * 100)}%)</span>
+          </span>
+        ))}
       </div>
     </div>
   );
