@@ -21,10 +21,24 @@ export type MaterialLine = {
   quantity: number; // in de eenheid van het materiaal (g, ml, vel, stuk, ...)
 };
 
+export type TimeUnit = "u" | "min" | "sec";
+
 export type MachineTimeLine = {
   machine_id: string;
-  hours: number;
+  hours: number; // waarde in de eenheid hieronder (ondanks de veldnaam -- zo blijft bestaande data geldig)
+  unit?: TimeUnit; // ontbreekt in oudere/geïmporteerde data -> dan geldt "u" (uren)
 };
+
+export const TIME_UNIT_LABELS: Record<TimeUnit, string> = { u: "uur", min: "min", sec: "sec" };
+
+/** Zet een tijdsduur in u/min/sec om naar uren, voor gebruik in de prijsberekening. */
+export function toHours(amount: number, unit: TimeUnit | undefined): number {
+  switch (unit) {
+    case "min": return amount / 60;
+    case "sec": return amount / 3600;
+    default: return amount; // "u" of onbekend -> aannemen dat het al in uren staat
+  }
+}
 
 export type CostInputs = {
   materials: MaterialLine[];
@@ -33,6 +47,7 @@ export type CostInputs = {
   labor_rate: number; // €/u
   other_costs: number; // €
   margin: number; // 0-1, bv. 0.45 = 45%
+  vat_rate: number; // 0-1, bv. 0.21 = 21% -- ontbreekt in oudere/geïmporteerde data, dan valt de app terug op 21%
 };
 
 export type Product = {
@@ -51,7 +66,8 @@ export type ProductVariation = {
   attribute_values: Record<string, string>;
   cost_inputs: CostInputs;
   cost_price: number | null;
-  sale_price: number | null;
+  sale_price: number | null; // excl. btw
+  suggested_price: number | null; // afgeronde ,95-prijs incl. btw -- dit wordt geëxporteerd naar WooCommerce
 };
 
 export const PROCESS_TYPE_LABELS: Record<Product["process_type"], string> = {
@@ -62,6 +78,8 @@ export const PROCESS_TYPE_LABELS: Record<Product["process_type"], string> = {
   sublimation: "Sublimatie",
 };
 
+export const DEFAULT_VAT_RATE = 0.21; // Belgisch standaardtarief -- pas aan per variant indien nodig
+
 export const EMPTY_COST_INPUTS: CostInputs = {
   materials: [],
   machine_time: [],
@@ -69,4 +87,5 @@ export const EMPTY_COST_INPUTS: CostInputs = {
   labor_rate: 18,
   other_costs: 0,
   margin: 0.45,
+  vat_rate: DEFAULT_VAT_RATE,
 };

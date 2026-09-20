@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
 import { PROCESS_TYPE_LABELS } from "@/lib/types";
+import { slugifyForSku, nextAvailableSku } from "@/lib/sku";
 
 export default function NewProductPage() {
   const ready = useAuthGuard();
@@ -17,6 +18,31 @@ export default function NewProductPage() {
   });
   const [attributeNames, setAttributeNames] = useState<string[]>(["Grootte"]);
   const [error, setError] = useState<string | null>(null);
+  const [skuAuto, setSkuAuto] = useState(true); // false zodra de gebruiker zelf in het SKU-veld typt
+  const [generatingSku, setGeneratingSku] = useState(false);
+
+  // Genereert automatisch een SKU op basis van de productnaam, zolang de gebruiker
+  // het veld niet zelf heeft aangepast. Controleert meteen of de SKU al bestaat.
+  useEffect(() => {
+    if (!skuAuto) return;
+    const base = slugifyForSku(form.name);
+    if (!base) {
+      setForm((f) => ({ ...f, sku: "" }));
+      return;
+    }
+    let cancelled = false;
+    setGeneratingSku(true);
+    nextAvailableSku(supabase, "products", base).then((sku) => {
+      if (!cancelled) {
+        setForm((f) => ({ ...f, sku }));
+        setGeneratingSku(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.name, skuAuto]);
 
   function updateAttrName(idx: number, value: string) {
     const next = [...attributeNames];
@@ -63,7 +89,30 @@ export default function NewProductPage() {
           <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
 
           <label>Parent SKU</label>
-          <input required value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder="bv. VAAS-001" />
+          <input
+            className="mono"
+            required
+            value={form.sku}
+            onChange={(e) => {
+              setSkuAuto(false);
+              setForm({ ...form, sku: e.target.value });
+            }}
+            placeholder="bv. VAAS-001"
+          />
+          <p className="muted" style={{ marginTop: 4 }}>
+            {generatingSku
+              ? "SKU wordt gegenereerd..."
+              : skuAuto
+                ? "Automatisch gegenereerd op basis van de naam -- pas gerust zelf aan."
+                : (
+                  <>
+                    Zelf aangepast.{" "}
+                    <a href="#" onClick={(e) => { e.preventDefault(); setSkuAuto(true); }} style={{ color: "var(--amber-ink)" }}>
+                      Opnieuw automatisch genereren
+                    </a>
+                  </>
+                )}
+          </p>
 
           <label>Techniek</label>
           <select value={form.process_type} onChange={(e) => setForm({ ...form, process_type: e.target.value })}>

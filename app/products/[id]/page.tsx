@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
 import { calculatePrice } from "@/lib/pricing";
+import { slugifyForSku, nextAvailableSku } from "@/lib/sku";
 import {
   Product,
   ProductVariation,
@@ -13,6 +14,8 @@ import {
   CostInputs,
   EMPTY_COST_INPUTS,
   PROCESS_TYPE_LABELS,
+  TimeUnit,
+  TIME_UNIT_LABELS,
 } from "@/lib/types";
 
 export default function ProductEditPage() {
@@ -47,12 +50,22 @@ export default function ProductEditPage() {
   }, [ready, load]);
 
   async function addVariation() {
-    const newSku = `${product?.sku}-${variations.length + 1}`;
+    // Tijdelijke, gegarandeerd unieke SKU -- wordt automatisch vervangen zodra de
+    // gebruiker attributen invult (zie VariationEditor). De "-NIEUW-" markering
+    // laat de editor weten dat dit nog een auto-gegenereerde SKU is.
+    const placeholderSku = `${product?.sku}-NIEUW-${Date.now().toString(36).toUpperCase()}`;
+    // Voor UV-printen en sublimatie combineer je vaak twee stappen (printer + heat
+    // press): daarom starten we daar meteen met 2 machinetijd-regels i.p.v. 1.
+    const machineLines = product?.process_type === "sublimation" || product?.process_type === "uv_print" ? 2 : 1;
+    const cost_inputs: CostInputs = {
+      ...EMPTY_COST_INPUTS,
+      machine_time: Array.from({ length: machineLines }, () => ({ machine_id: "", hours: 0 })),
+    };
     const { error } = await supabase.from("product_variations").insert({
       product_id: productId,
-      sku: newSku,
+      sku: placeholderSku,
       attribute_values: {},
-      cost_inputs: EMPTY_COST_INPUTS,
+      cost_inputs,
     });
     if (error) alert(error.message);
     load();
@@ -148,6 +161,7 @@ export default function ProductEditPage() {
         <VariationEditor
           key={v.id}
           variation={v}
+          productSku={product.sku}
           attributeNames={product.attribute_names}
           machines={machines}
           materials={materials}
@@ -165,6 +179,7 @@ export default function ProductEditPage() {
 
 function VariationEditor({
   variation,
+  productSku,
   attributeNames,
   machines,
   materials,
@@ -174,6 +189,7 @@ function VariationEditor({
   onDelete,
 }: {
   variation: ProductVariation;
+  productSku: string;
   attributeNames: string[];
   machines: Machine[];
   materials: Material[];
@@ -184,10 +200,34 @@ function VariationEditor({
 }) {
   const [sku, setSku] = useState(variation.sku);
   const [attributeValues, setAttributeValues] = useState<Record<string, string>>(variation.attribute_values ?? {});
-  const [inputs, setInputs] = useState<CostInputs>(variation.cost_inputs ?? EMPTY_COST_INPUTS);
+  const [inputs, setInputs] = useState<CostInputs>({ ...EMPTY_COST_INPUTS, ...(variation.cost_inputs ?? {}) });
   const [saving, setSaving] = useState(false);
+  // Enkel varianten die net met "+ Variant toevoegen" zijn aangemaakt (herkenbaar aan
+  // de "-NIEUW-" markering) krijgen automatische SKU-generatie -- bestaande varianten
+  // met een SKU die je zelf (of via import) al hebt gezet, blijven onaangeroerd.
+  const [skuAuto, setSkuAuto] = useState(variation.sku.includes("-NIEUW-"));
+  const [generatingSku, setGeneratingSku] = useState(false);
 
-  const { costPrice, salePrice, warnings } = calculatePrice(inputs, machinesById, materialsById);
+  useEffect(() => {
+    if (!skuAuto) return;
+    const values = attributeNames.map((n) => attributeValues[n]).filter((v) => v && v.trim());
+    if (values.length === 0) return; // nog niets ingevuld om een SKU uit af te leiden
+    const base = `${productSku}-` + values.map(slugifyForSku).join("-");
+    let cancelled = false;
+    setGeneratingSku(true);
+    nextAvailableSku(supabase, "product_variations", base, variation.id).then((generated) => {
+      if (!cancelled) {
+        setSku(generated);
+        setGeneratingSku(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attributeValues, skuAuto]);
+
+  const { costPrice, salePrice, salePriceInclVat, suggestedPrice, warnings } = calculatePrice(inputs, machinesById, materialsById);
 
   function updateMaterialLine(idx: number, patch: Partial<{ material_id: string; quantity: number }>) {
     const next = [...inputs.materials];
@@ -201,13 +241,13 @@ function VariationEditor({
     setInputs({ ...inputs, materials: inputs.materials.filter((_, i) => i !== idx) });
   }
 
-  function updateMachineLine(idx: number, patch: Partial<{ machine_id: string; hours: number }>) {
+  function updateMachineLine(idx: number, patch: Partial<{ machine_id: string; hours: number; unit: TimeUnit }>) {
     const next = [...inputs.machine_time];
     next[idx] = { ...next[idx], ...patch };
     setInputs({ ...inputs, machine_time: next });
   }
   function addMachineLine() {
-    setInputs({ ...inputs, machine_time: [...inputs.machine_time, { machine_id: machines[0]?.id ?? "", hours: 0 }] });
+    setInputs({ ...inputs, machine_time: [...inputs.machine_time, { machine_id: machines[0]?.id ?? "", hours: 0, unit: "u" }] });
   }
   function removeMachineLine(idx: number) {
     setInputs({ ...inputs, machine_time: inputs.machine_time.filter((_, i) => i !== idx) });
@@ -223,6 +263,7 @@ function VariationEditor({
         cost_inputs: inputs,
         cost_price: costPrice,
         sale_price: salePrice,
+        suggested_price: suggestedPrice,
         updated_at: new Date().toISOString(),
       })
       .eq("id", variation.id);
@@ -235,7 +276,19 @@ function VariationEditor({
       <div className="row">
         <div>
           <label>SKU (variatie)</label>
-          <input value={sku} onChange={(e) => setSku(e.target.value)} />
+          <input
+            className="mono"
+            value={sku}
+            onChange={(e) => {
+              setSkuAuto(false);
+              setSku(e.target.value);
+            }}
+          />
+          {(skuAuto || generatingSku) && (
+            <p className="muted" style={{ marginTop: 4, marginBottom: 0 }}>
+              {generatingSku ? "SKU wordt gegenereerd..." : "Automatisch op basis van de attributen -- pas gerust zelf aan."}
+            </p>
+          )}
         </div>
         {attributeNames.map((attrName) => (
           <div key={attrName}>
@@ -275,6 +328,9 @@ function VariationEditor({
       <button className="btn secondary" type="button" onClick={addMaterialLine}>+ Materiaal</button>
 
       <h2 style={{ fontSize: 14, marginTop: 20 }}>Machinetijd</h2>
+      <p className="muted" style={{ marginTop: -4, marginBottom: 8 }}>
+        Voeg meerdere machines toe om hun kosten te combineren -- bv. bij UV-printen of sublimatie eerst de printer, dan de heat press.
+      </p>
       {inputs.machine_time.map((line, idx) => (
         <div className="line-item" key={idx}>
           <div className="grow">
@@ -288,8 +344,15 @@ function VariationEditor({
               step="0.01"
               value={line.hours}
               onChange={(e) => updateMachineLine(idx, { hours: parseFloat(e.target.value) || 0 })}
-              placeholder="uren"
+              placeholder="tijdsduur"
             />
+          </div>
+          <div className="unit-select">
+            <select value={line.unit ?? "u"} onChange={(e) => updateMachineLine(idx, { unit: e.target.value as TimeUnit })}>
+              {(Object.entries(TIME_UNIT_LABELS) as [TimeUnit, string][]).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
           </div>
           <button className="btn danger" type="button" onClick={() => removeMachineLine(idx)}>x</button>
         </div>
@@ -318,11 +381,26 @@ function VariationEditor({
             onChange={(e) => setInputs({ ...inputs, margin: (parseFloat(e.target.value) || 0) / 100 })}
           />
         </div>
+        <div>
+          <label>Btw (%)</label>
+          <input
+            type="number"
+            step="1"
+            value={Math.round(inputs.vat_rate * 100)}
+            onChange={(e) => setInputs({ ...inputs, vat_rate: (parseFloat(e.target.value) || 0) / 100 })}
+          />
+        </div>
       </div>
 
       <div className="price-box">
-        <div>Kostprijs: <strong>€{costPrice.toFixed(2)}</strong></div>
-        <div className="big">Verkoopprijs excl. btw: €{salePrice != null ? salePrice.toFixed(2) : "--"}</div>
+        <div className="mono readout-row">Kostprijs<span>€{costPrice.toFixed(2)}</span></div>
+        <div className="mono readout-row">Verkoopprijs excl. btw<span>€{salePrice != null ? salePrice.toFixed(2) : "--"}</span></div>
+        <div className="mono readout-row">Verkoopprijs incl. btw<span>€{salePriceInclVat != null ? salePriceInclVat.toFixed(2) : "--"}</span></div>
+        <div className="readout-suggested">
+          <span>Voorgestelde verkoopprijs</span>
+          <span className="big">€{suggestedPrice != null ? suggestedPrice.toFixed(2) : "--"}</span>
+        </div>
+        <p className="readout-note">Afgerond naar boven op een ,95-prijs (charm pricing) -- nooit onder je berekende prijs incl. btw. Pas gerust zelf aan.</p>
         {warnings.map((w, i) => <div className="warning" key={i}>{w}</div>)}
       </div>
 
