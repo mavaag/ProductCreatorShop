@@ -1,17 +1,23 @@
 import "./globals.css";
 import Link from "next/link";
-import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
+import { Rajdhani, Share_Tech_Mono, Orbitron } from "next/font/google";
 
-const plexSans = IBM_Plex_Sans({
+const sans = Rajdhani({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: ["500", "600", "700"],
   variable: "--font-sans",
   display: "swap",
 });
-const plexMono = IBM_Plex_Mono({
+const mono = Share_Tech_Mono({
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
+  weight: "400",
   variable: "--font-mono",
+  display: "swap",
+});
+const display = Orbitron({
+  subsets: ["latin"],
+  weight: ["600", "700"],
+  variable: "--font-display",
   display: "swap",
 });
 
@@ -22,7 +28,7 @@ export const metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="nl" className={`${plexSans.variable} ${plexMono.variable}`}>
+    <html lang="nl" className={`${sans.variable} ${mono.variable} ${display.variable}`}>
       <body>
         <nav className="topnav">
           <Link href="/products" className="brand">
