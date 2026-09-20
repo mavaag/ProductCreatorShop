@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-// Synchroniseert de verkoopprijzen (suggested_price) van BESTAANDE producten rechtstreeks naar
-// WooCommerce via de REST API, zonder CSV-import. Producten die nog niet in de shop bestaan
-// worden niet aangemaakt maar gerapporteerd -- die importeer je eenmalig via de CSV-export.
+// Synchroniseert rechtstreeks met WooCommerce via de REST API, zonder CSV-import:
+//   * producten die al in de shop staan (zelfde SKU): enkel de verkoopprijzen (suggested_price) van de varianten
+//   * producten die nog niet bestaan: worden enkel aangemaakt als createMissing true is (variabel product met
+//     attributen, varianten + prijzen, beschrijving, categorieën, afbeelding(en), gewicht en verzendklasse).
+//     Anders worden ze gerapporteerd.
 //
 // Vereist server-side omgevingsvariabelen (nooit NEXT_PUBLIC_, de sleutels mogen niet naar de browser):
 //   WOOCOMMERCE_URL              bv. https://jouwshop.be
@@ -11,9 +13,20 @@ import { createClient } from "@supabase/supabase-js";
 //   WOOCOMMERCE_CONSUMER_SECRET
 // De aanvrager moet ingelogd zijn (Supabase-sessietoken in de Authorization-header).
 //
-// Body (JSON, optioneel): { type?: string, dryRun?: boolean }
+// Body (JSON, optioneel): { type?: string, dryRun?: boolean, createMissing?: boolean }
+// dryRun schrijft niets weg (noch in WooCommerce, noch in de database) en meldt wat er zou gebeuren.
 
-type Report = { updated: number; unchanged: number; missingProducts: string[]; missingVariations: string[]; errors: string[] };
+type Report = {
+  updated: number;
+  unchanged: number;
+  created: string[]; // SKU's van (te) creëren producten
+  notes: string[];
+  missingProducts: string[];
+  missingVariations: string[];
+  errors: string[];
+};
+
+type WcFn = (path: string, init?: RequestInit) => Promise<any>;
 
 export async function POST(request: Request) {
   const base = process.env.WOOCOMMERCE_URL?.replace(/\/+$/, "");
@@ -40,14 +53,18 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const type: string | undefined = body.type;
   const dryRun = body.dryRun === true;
+  const createMissing = body.createMissing === true;
 
-  let query = supabase.from("products").select("id, sku, name, product_variations(id, sku, suggested_price)").order("name");
+  let query = supabase
+    .from("products")
+    .select("id, sku, name, published, attribute_names, description, categories, image_url, weight_kg, shipping_class, product_variations(id, sku, attribute_values, suggested_price)")
+    .order("name");
   if (type) query = query.eq("process_type", type);
   const { data: products, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const auth = "Basic " + Buffer.from(`${key}:${secret}`).toString("base64");
-  const wc = async (path: string, init?: RequestInit) => {
+  const wc: WcFn = async (path, init) => {
     const res = await fetch(`${base}/wp-json/wc/v3${path}`, {
       ...init,
       headers: { Authorization: auth, "Content-Type": "application/json", ...(init?.headers ?? {}) },
@@ -56,14 +73,33 @@ export async function POST(request: Request) {
     return res.json();
   };
 
-  const report: Report = { updated: 0, unchanged: 0, missingProducts: [], missingVariations: [], errors: [] };
+  const report: Report = { updated: 0, unchanged: 0, created: [], notes: [], missingProducts: [], missingVariations: [], errors: [] };
+  const categoryCache = new Map<string, number>();
 
   for (const p of (products ?? []) as any[]) {
     try {
       const found = await wc(`/products?sku=${encodeURIComponent(p.sku)}`);
       const parent = found?.[0];
       if (!parent) {
-        report.missingProducts.push(p.sku);
+        if (!createMissing) {
+          report.missingProducts.push(p.sku);
+          continue;
+        }
+        if (dryRun) {
+          report.created.push(p.sku);
+          continue;
+        }
+        const ok = await createProduct(wc, p, report, categoryCache);
+        if (ok) {
+          report.created.push(p.sku);
+          const now = new Date().toISOString();
+          await supabase.from("products").update({ last_exported_at: now }).eq("id", p.id);
+          await Promise.all(
+            (p.product_variations as { id: string; suggested_price: number | null }[])
+              .filter((v) => v.suggested_price != null)
+              .map((v) => supabase.from("product_variations").update({ exported_price: v.suggested_price }).eq("id", v.id))
+          );
+        }
         continue;
       }
       const remote = new Map<string, { id: number; regular_price: string }>();
@@ -111,4 +147,97 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({ dryRun, ...report });
+}
+
+/** Maakt een variabel product met al zijn varianten aan in WooCommerce. Geeft true terug als dat gelukt is. */
+async function createProduct(wc: WcFn, p: any, report: Report, categoryCache: Map<string, number>): Promise<boolean> {
+  const attrNames: string[] = p.attribute_names ?? [];
+  const variations = p.product_variations as { sku: string; attribute_values: Record<string, string>; suggested_price: number | null }[];
+
+  const attributes = attrNames
+    .map((name) => ({
+      name,
+      visible: true,
+      variation: true,
+      options: Array.from(new Set(variations.map((v) => v.attribute_values?.[name]).filter((x): x is string => !!x && !!x.trim()))),
+    }))
+    .filter((a) => a.options.length > 0);
+
+  const categoryIds: { id: number }[] = [];
+  for (const path of String(p.categories ?? "").split(",").map((c: string) => c.trim()).filter(Boolean)) {
+    try {
+      categoryIds.push({ id: await resolveCategory(wc, path, categoryCache) });
+    } catch (e: any) {
+      report.notes.push(`${p.sku}: categorie "${path}" niet gelukt (${e.message})`);
+    }
+  }
+
+  const images = String(p.image_url ?? "").split(",").map((u: string) => u.trim()).filter(Boolean).map((src: string) => ({ src }));
+
+  const payload: Record<string, unknown> = {
+    name: p.name,
+    type: "variable",
+    sku: p.sku,
+    status: p.published ? "publish" : "draft",
+    description: p.description ?? "",
+    attributes,
+    categories: categoryIds,
+  };
+  if (p.weight_kg != null) payload.weight = String(p.weight_kg);
+  if (p.shipping_class) payload.shipping_class = p.shipping_class;
+
+  let created: any;
+  try {
+    created = await wc("/products", { method: "POST", body: JSON.stringify({ ...payload, images }) });
+  } catch (e: any) {
+    if (images.length === 0) {
+      report.errors.push(`${p.sku}: ${e.message}`);
+      return false;
+    }
+    // WooCommerce weigert het hele product als een afbeelding niet te downloaden is -- probeer zonder.
+    try {
+      created = await wc("/products", { method: "POST", body: JSON.stringify(payload) });
+      report.notes.push(`${p.sku}: aangemaakt zonder afbeelding (${e.message.slice(0, 120)})`);
+    } catch (e2: any) {
+      report.errors.push(`${p.sku}: ${e2.message}`);
+      return false;
+    }
+  }
+
+  const toCreate = variations.map((v) => ({
+    sku: v.sku,
+    ...(v.suggested_price != null ? { regular_price: Number(v.suggested_price).toFixed(2) } : {}),
+    attributes: attrNames.filter((n) => v.attribute_values?.[n]).map((n) => ({ name: n, option: v.attribute_values[n] })),
+  }));
+  try {
+    for (let i = 0; i < toCreate.length; i += 100) {
+      await wc(`/products/${created.id}/variations/batch`, { method: "POST", body: JSON.stringify({ create: toCreate.slice(i, i + 100) }) });
+    }
+  } catch (e: any) {
+    report.errors.push(`${p.sku}: product aangemaakt maar varianten mislukt (${e.message})`);
+    return false;
+  }
+  return true;
+}
+
+/** Zoekt een categoriepad zoals "Woondecoratie > Vazen" op (of maakt het aan) en geeft het id van de laatste categorie. */
+async function resolveCategory(wc: WcFn, path: string, cache: Map<string, number>): Promise<number> {
+  const parts = path.split(">").map((x) => x.trim()).filter(Boolean);
+  let parentId = 0;
+  let key = "";
+  for (const name of parts) {
+    key += `/${name.toLowerCase()}`;
+    const cached = cache.get(key);
+    if (cached) {
+      parentId = cached;
+      continue;
+    }
+    const found: any[] = await wc(`/products/categories?per_page=100&search=${encodeURIComponent(name)}`);
+    const match = found.find((c) => String(c.name).replace(/&amp;/g, "&").toLowerCase() === name.toLowerCase() && Number(c.parent) === parentId);
+    const id: number =
+      match?.id ?? (await wc("/products/categories", { method: "POST", body: JSON.stringify({ name, ...(parentId ? { parent: parentId } : {}) }) })).id;
+    cache.set(key, id);
+    parentId = id;
+  }
+  return parentId;
 }

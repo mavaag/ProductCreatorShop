@@ -98,7 +98,7 @@ Voer eerst `supabase/migration_004_beheerfuncties.sql` uit in de Supabase SQL Ed
 - **Kostenopbouw** per variant (materiaal / machine / arbeid / overig).
 - **WooCommerce-velden** per product: beschrijving, categorieën, afbeelding-URL('s), gewicht en verzendklasse gaan mee in de export.
 - **Export**: alles, enkel nieuw/gewijzigd sinds de vorige export, of enkel prijzen (om bestaande producten bij te werken). Per techniek als je op een tabblad staat.
-- **Rechtstreeks synchroniseren** van prijzen naar WooCommerce via de REST API: stel `WOOCOMMERCE_URL`, `WOOCOMMERCE_CONSUMER_KEY` en `WOOCOMMERCE_CONSUMER_SECRET` in (zie `.env.local.example`, en in Vercel bij de environment variables). Producten die nog niet in de shop bestaan worden niet aangemaakt, maar gemeld -- importeer die eenmalig via de CSV.
+- **Rechtstreeks synchroniseren** met WooCommerce via de REST API: stel `WOOCOMMERCE_URL`, `WOOCOMMERCE_CONSUMER_KEY` en `WOOCOMMERCE_CONSUMER_SECRET` in (zie `.env.local.example`, en in Vercel bij de environment variables). "Prijzen direct naar WooCommerce sturen" past enkel de prijzen van bestaande producten aan (gekoppeld via SKU). "Nieuwe producten aanmaken in WooCommerce" maakt ook producten aan die er nog niet zijn (variabel product met attributen, varianten en prijzen, beschrijving, categorieën, afbeelding(en), gewicht, verzendklasse), na een overzicht om te bevestigen.
 - **Materialen**: voorraad + minimumvoorraad met waarschuwing, en overzicht in welke producten elk materiaal zit.
 
 ## Projectstructuur

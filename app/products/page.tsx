@@ -78,22 +78,46 @@ export default function ProductsPage() {
     setBusy(false);
   }
 
-  async function runSync() {
-    if (!confirm("Verkoopprijzen van bestaande producten nu rechtstreeks in WooCommerce bijwerken?")) return;
+  async function callSync(options: { createMissing: boolean; dryRun: boolean }) {
+    const { data } = await supabase.auth.getSession();
+    const res = await fetch("/api/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token}` },
+      body: JSON.stringify({ ...options, ...(activeTab !== "all" ? { type: activeTab } : {}) }),
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error ?? `Synchronisatie mislukt (${res.status})`);
+    return body;
+  }
+
+  // createMissing false: enkel prijzen van bestaande producten. true: ook nieuwe producten aanmaken,
+  // na een droge run die eerst toont wat er precies zou gebeuren.
+  async function runSync(createMissing: boolean) {
     setBusy(true);
     setMessage(null);
     try {
-      const { data } = await supabase.auth.getSession();
-      const res = await fetch("/api/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token}` },
-        body: JSON.stringify(activeTab !== "all" ? { type: activeTab } : {}),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? `Synchronisatie mislukt (${res.status})`);
+      if (createMissing) {
+        const plan = await callSync({ createMissing: true, dryRun: true });
+        const names = plan.created.length ? plan.created.join(", ") : "geen";
+        const proceed = confirm(
+          `Nieuw aan te maken in WooCommerce (${plan.created.length}): ${names}\n\n` +
+            `Prijzen bij te werken bij bestaande producten: ${plan.updated}\n\n` +
+            `Gepubliceerde producten staan meteen live in je shop, niet-gepubliceerde komen als concept. Doorgaan?`
+        );
+        if (!proceed) {
+          setBusy(false);
+          return;
+        }
+      } else if (!confirm("Verkoopprijzen van bestaande producten nu rechtstreeks in WooCommerce bijwerken?")) {
+        setBusy(false);
+        return;
+      }
+      const body = await callSync({ createMissing, dryRun: false });
       const parts = [`${body.updated} prijs/prijzen bijgewerkt`, `${body.unchanged} ongewijzigd`];
-      if (body.missingProducts.length) parts.push(`niet in de shop (importeer via CSV): ${body.missingProducts.join(", ")}`);
+      if (body.created.length) parts.push(`aangemaakt: ${body.created.join(", ")}`);
+      if (body.missingProducts.length) parts.push(`nog niet in de shop: ${body.missingProducts.join(", ")}`);
       if (body.missingVariations.length) parts.push(`varianten niet in de shop: ${body.missingVariations.join(", ")}`);
+      if (body.notes.length) parts.push(`opmerkingen: ${body.notes.join("; ")}`);
       if (body.errors.length) parts.push(`fouten: ${body.errors.join("; ")}`);
       setMessage(`Synchronisatie: ${parts.join(" -- ")}`);
       load();
@@ -212,7 +236,8 @@ export default function ProductsPage() {
           <button className="btn secondary" disabled={busy} onClick={() => runExport({ prices: "1" }, "Prijsexport")}>
             Enkel prijzen (bestaande producten bijwerken)
           </button>
-          <button className="btn secondary" disabled={busy} onClick={runSync}>Prijzen direct naar WooCommerce sturen</button>
+          <button className="btn secondary" disabled={busy} onClick={() => runSync(false)}>Prijzen direct naar WooCommerce sturen</button>
+          <button className="btn" disabled={busy} onClick={() => runSync(true)}>Nieuwe producten aanmaken in WooCommerce</button>
         </div>
         <p className="muted" style={{ marginBottom: 0 }}>
           Elke export markeert de producten als geëxporteerd. "Enkel nieuw/gewijzigd" neemt dan enkel wat sindsdien nieuw of aangepast is; met "Alles exporteren" heb je altijd de volledige set. Voor "Enkel prijzen" kies je bij het importeren in WooCommerce "Bestaande producten bijwerken".
