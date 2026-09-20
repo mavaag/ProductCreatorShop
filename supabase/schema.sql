@@ -56,7 +56,8 @@ create table if not exists product_variations (
     "margin": 0.45
   }'::jsonb,
   cost_price numeric,          -- laatst berekende kostprijs (cache, voor snelle lijstweergave)
-  sale_price numeric,          -- laatst berekende verkoopprijs excl. btw -- DIT wordt wel geëxporteerd
+  sale_price numeric,          -- laatst berekende verkoopprijs excl. btw
+  suggested_price numeric,     -- afgeronde ,95-verkoopprijs incl. btw -- DIT wordt geëxporteerd naar WooCommerce
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
