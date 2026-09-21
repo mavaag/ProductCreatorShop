@@ -37,3 +37,20 @@ export async function nextAvailableSku(
   while (taken.has(`${base}-${i}`)) i++;
   return `${base}-${i}`;
 }
+
+/** Korte code per techniek, die achter de productnaam in de SKU komt (bv. VAAS-SUBL). */
+export const PROCESS_SKU_CODES: Record<string, string> = {
+  "3d_print": "3DPR",
+  uv_print: "UVPR",
+  laser_engraving: "ENGR",
+  laser_cutting: "CUTT",
+  sublimation: "SUBL",
+};
+
+/** Bouwt de basis-SKU van een product: naam-slug + techniekcode, bv. "VAAS-SUBL". */
+export function productSkuBase(name: string, processType: string): string {
+  const slug = slugifyForSku(name);
+  if (!slug) return "";
+  const code = PROCESS_SKU_CODES[processType];
+  return code ? `${slug}-${code}` : slug;
+}

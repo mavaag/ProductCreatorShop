@@ -40,6 +40,8 @@ export default function ProductEditPage() {
   const [minMargin, setMinMargin] = useState(DEFAULT_MIN_MARGIN);
   const [wc, setWc] = useState({ description: "", categories: "", image_url: "", weight_kg: "", shipping_class: "" });
   const [savingWc, setSavingWc] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
   const [genValues, setGenValues] = useState<Record<string, string>>({});
   const [generating, setGenerating] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -173,6 +175,24 @@ export default function ProductEditPage() {
     } catch (e: any) {
       alert(e.message);
     }
+  }
+
+  async function saveName() {
+    const name = nameDraft.trim();
+    if (!name) return;
+    if (name !== product?.name) {
+      const { error } = await supabase
+        .from("products")
+        .update({ name, updated_at: new Date().toISOString() })
+        .eq("id", productId);
+      if (error) {
+        alert(error.message);
+        return;
+      }
+      setNotice("Naam aangepast. Gebruik de WooCommerce-sync om de nieuwe naam ook in de webshop bij te werken (de SKU blijft ongewijzigd).");
+      load();
+    }
+    setEditingName(false);
   }
 
   async function saveWc() {
@@ -407,7 +427,33 @@ export default function ProductEditPage() {
 
   return (
     <div>
-      <h1>{product.name}</h1>
+      {editingName ? (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+          <input
+            autoFocus
+            value={nameDraft}
+            onChange={(e) => setNameDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") saveName();
+              if (e.key === "Escape") setEditingName(false);
+            }}
+            style={{ flex: 1, fontSize: 18 }}
+          />
+          <button className="btn" onClick={saveName}>Opslaan</button>
+          <button className="btn secondary" onClick={() => setEditingName(false)}>Annuleren</button>
+        </div>
+      ) : (
+        <h1>
+          {product.name}{" "}
+          <button
+            className="btn secondary"
+            style={{ fontSize: 12, verticalAlign: "middle" }}
+            onClick={() => { setNameDraft(product.name); setEditingName(true); }}
+          >
+            Naam wijzigen
+          </button>
+        </h1>
+      )}
       <p className="sub">
         <span className="pill">{PROCESS_TYPE_LABELS[product.process_type]}</span>{" "}
         SKU: {product.sku}
