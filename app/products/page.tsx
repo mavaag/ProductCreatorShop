@@ -43,6 +43,7 @@ export default function ProductsPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [exportProgress, setExportProgress] = useState<string | null>(null);
   const [syncProgress, setSyncProgress] = useState<{ current: number; total: number; product: string } | null>(null);
+  const [importProgress, setImportProgress] = useState<{ current: number; total: number; product: string } | null>(null);
 
   async function load() {
     const { data } = await supabase
@@ -235,6 +236,77 @@ export default function ProductsPage() {
     load();
   }
 
+  async function runImportMeta() {
+    if (!confirm("Description en categorieën van alle producten uit WooCommerce importeren en lokaal bijwerken?")) return;
+    setBusy(true);
+    setMessage(null);
+    setImportProgress(null);
+
+    try {
+      // Haal de producten op die geïmporteerd gaan worden
+      setImportProgress({ current: 0, total: 0, product: "Producten ophalen..." });
+      let query = supabase.from("products").select("id, sku, name").order("name");
+      if (activeTab !== "all") query = query.eq("process_type", activeTab);
+      const { data: productsToImport } = await query;
+      const total = productsToImport?.length ?? 0;
+
+      if (total === 0) {
+        setImportProgress(null);
+        setMessage("Geen producten om te importeren.");
+        setBusy(false);
+        return;
+      }
+
+      // Toon initiële voortgang
+      setImportProgress({ current: 0, total, product: "Verbinding maken met WooCommerce..." });
+
+      // Simuleer voortgang tijdens het importeren (elke 500ms een product verder)
+      let estimatedProgress = 0;
+      const progressInterval = setInterval(() => {
+        if (estimatedProgress < total - 1) {
+          estimatedProgress++;
+          const currentProduct = (productsToImport ?? [])[estimatedProgress] as any;
+          setImportProgress({
+            current: estimatedProgress,
+            total,
+            product: `${currentProduct?.name ?? "..."}`
+          });
+        }
+      }, 500);
+
+      try {
+        const { data } = await supabase.auth.getSession();
+        const res = await fetch("/api/woocommerce/import-meta", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token}` },
+        });
+
+        const body = await res.json();
+        clearInterval(progressInterval);
+
+        if (!res.ok) {
+          throw new Error(body.error ?? `Import mislukt (${res.status})`);
+        }
+
+        // Toon 100% voltooid
+        setImportProgress({ current: total, total, product: "Import voltooid!" });
+        setTimeout(() => setImportProgress(null), 1500);
+
+        const parts = [`${body.updated} bijgewerkt`, `${body.unchanged} ongewijzigd`, `${body.notFound} niet gevonden in WooCommerce`];
+        if (body.errors.length) parts.push(`fouten: ${body.errors.join("; ")}`);
+        setMessage(`Import: ${parts.join(" -- ")}`);
+        load();
+      } catch (error) {
+        clearInterval(progressInterval);
+        throw error;
+      }
+    } catch (e: any) {
+      setMessage(e.message);
+      setImportProgress(null);
+    }
+    setBusy(false);
+  }
+
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: products.length };
     for (const p of products) c[p.process_type] = (c[p.process_type] ?? 0) + 1;
@@ -296,6 +368,14 @@ export default function ProductsPage() {
           <button className="btn secondary" disabled={busy} onClick={() => runSync(false)}>Prijzen direct naar WooCommerce sturen</button>
           <button className="btn" disabled={busy} onClick={() => runSync(true)}>Nieuwe producten aanmaken in WooCommerce</button>
         </div>
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
+          <p className="muted" style={{ marginTop: 0, marginBottom: 8, fontSize: 12 }}>
+            WooCommerce → Lokale database
+          </p>
+          <button className="btn secondary" disabled={busy} onClick={runImportMeta}>
+            📥 Description & categorieën importeren uit WooCommerce
+          </button>
+        </div>
         <p className="muted" style={{ marginBottom: 0 }}>
           Elke export markeert de producten als geëxporteerd. "Enkel nieuw/gewijzigd" neemt dan enkel wat sindsdien nieuw of aangepast is; met "Alles exporteren" heb je altijd de volledige set. Voor "Enkel prijzen" kies je bij het importeren in WooCommerce "Bestaande producten bijwerken".
         </p>
@@ -356,6 +436,45 @@ export default function ProductsPage() {
             )}
             <p className="mono" style={{ margin: 0, fontSize: 12, color: "#0ff" }}>
               {syncProgress.product}
+            </p>
+          </div>
+        )}
+        {importProgress && (
+          <div style={{ marginTop: 12, padding: 12, background: "rgba(0, 255, 255, 0.1)", border: "1px solid rgba(0, 255, 255, 0.3)", borderRadius: 4 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <strong style={{ color: "#0ff" }}>Importeren...</strong>
+              {importProgress.total > 0 && (
+                <span className="mono" style={{ color: "#0ff" }}>
+                  {importProgress.current} / {importProgress.total}
+                </span>
+              )}
+            </div>
+            {importProgress.total > 0 ? (
+              <div style={{ width: "100%", height: 8, background: "rgba(0, 0, 0, 0.3)", borderRadius: 4, overflow: "hidden", marginBottom: 8 }}>
+                <div
+                  style={{
+                    width: `${importProgress.total > 0 ? (importProgress.current / importProgress.total) * 100 : 0}%`,
+                    height: "100%",
+                    background: "linear-gradient(90deg, #f0f, #0ff)",
+                    transition: "width 0.3s ease",
+                    boxShadow: "0 0 10px rgba(255, 0, 255, 0.5)"
+                  }}
+                />
+              </div>
+            ) : (
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+                <div style={{
+                  width: 20,
+                  height: 20,
+                  border: "3px solid rgba(255, 0, 255, 0.3)",
+                  borderTop: "3px solid #f0f",
+                  borderRadius: "50%",
+                  animation: "spin 1s linear infinite"
+                }} />
+              </div>
+            )}
+            <p className="mono" style={{ margin: 0, fontSize: 12, color: "#f0f" }}>
+              {importProgress.product}
             </p>
           </div>
         )}
