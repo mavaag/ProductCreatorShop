@@ -821,30 +821,22 @@ function VariationEditor({
             onChange={(e) => setInputs({ ...inputs, margin: (parseFloat(e.target.value) || 0) / 100 })}
           />
         </div>
-        <div>
-          <label>Btw (%)</label>
-          <input
-            type="number"
-            step="1"
-            value={Math.round(inputs.vat_rate * 100)}
-            onChange={(e) => setInputs({ ...inputs, vat_rate: (parseFloat(e.target.value) || 0) / 100 })}
-          />
-        </div>
       </div>
 
       <div className="price-box">
         <div className="mono readout-row">Kostprijs<span>€{costPrice.toFixed(2)}</span></div>
-        <div className="mono readout-row">Verkoopprijs excl. btw<span>€{salePrice != null ? salePrice.toFixed(2) : "--"}</span></div>
-        <div className="mono readout-row">Verkoopprijs incl. btw<span>€{salePriceInclVat != null ? salePriceInclVat.toFixed(2) : "--"}</span></div>
         <div className="mono readout-row" style={{ color: "var(--moss-ink)", fontWeight: 600 }}>
-          Winst (excl. btw)
+          Winst
           <span>{salePrice != null ? `€${(salePrice - costPrice).toFixed(2)}` : "--"}</span>
         </div>
         <div className="readout-suggested">
           <span>Voorgestelde verkoopprijs</span>
           <span className="big">€{suggestedPrice != null ? suggestedPrice.toFixed(2) : "--"}</span>
         </div>
-        <p className="readout-note">Afgerond naar boven op een ,95-prijs (charm pricing) -- nooit onder je berekende prijs incl. btw. Pas gerust zelf aan.</p>
+        <p className="readout-note">
+          Gebaseerd op je kostprijs (€{costPrice.toFixed(2)}) + {Math.round(inputs.margin * 100)}% marge, afgerond naar ,95 (charm pricing).
+          Pas gerust zelf aan indien gewenst.
+        </p>
         {realMargin != null && (
           <div className="mono readout-row" style={{ marginTop: 6 }}>Werkelijke marge na afronding<span>{(realMargin * 100).toFixed(1)}%</span></div>
         )}
