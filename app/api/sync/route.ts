@@ -176,7 +176,14 @@ async function createProduct(wc: WcFn, p: any, report: Report, categoryCache: Ma
   const categoryIds: { id: number }[] = [];
   for (const path of String(p.categories ?? "").split(",").map((c: string) => c.trim()).filter(Boolean)) {
     try {
-      categoryIds.push({ id: await resolveCategory(wc, path, categoryCache) });
+      // Haal alle category IDs op (inclusief alle parent categorieën)
+      const allIds = await resolveCategoryWithParents(wc, path, categoryCache);
+      for (const id of allIds) {
+        // Voeg alleen toe als nog niet in de lijst (duplicaten vermijden)
+        if (!categoryIds.some(c => c.id === id)) {
+          categoryIds.push({ id });
+        }
+      }
     } catch (e: any) {
       report.notes.push(`${p.sku}: categorie "${path}" niet gelukt (${e.message})`);
     }
@@ -250,4 +257,38 @@ async function resolveCategory(wc: WcFn, path: string, cache: Map<string, number
     parentId = id;
   }
   return parentId;
+}
+
+/**
+ * Zoekt een categoriepad zoals "3D Printing > KeyChains" op en geeft ALLE category IDs terug,
+ * inclusief alle parent categorieën. Bijvoorbeeld: ["3D Printing", "3D Printing > KeyChains"]
+ * geeft terug: [id van "3D Printing", id van "KeyChains"]
+ */
+async function resolveCategoryWithParents(wc: WcFn, path: string, cache: Map<string, number>): Promise<number[]> {
+  const parts = path.split(">").map((x) => x.trim()).filter(Boolean);
+  const allIds: number[] = [];
+  let parentId = 0;
+  let key = "";
+
+  for (const name of parts) {
+    key += `/${name.toLowerCase()}`;
+    const cached = cache.get(key);
+
+    if (cached) {
+      parentId = cached;
+      allIds.push(cached);
+      continue;
+    }
+
+    const found: any[] = await wc(`/products/categories?per_page=100&search=${encodeURIComponent(name)}`);
+    const match = found.find((c) => String(c.name).replace(/&amp;/g, "&").toLowerCase() === name.toLowerCase() && Number(c.parent) === parentId);
+    const id: number =
+      match?.id ?? (await wc("/products/categories", { method: "POST", body: JSON.stringify({ name, ...(parentId ? { parent: parentId } : {}) }) })).id;
+
+    cache.set(key, id);
+    allIds.push(id);
+    parentId = id;
+  }
+
+  return allIds;
 }
