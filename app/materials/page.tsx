@@ -17,8 +17,8 @@ const CATEGORIES = [
   { value: "overig", label: "Overig" },
 ];
 
-type MaterialForm = { name: string; category: string; unit: string; price_per_unit: number; stock_quantity: string; min_stock: string };
-const BLANK_FORM: MaterialForm = { name: "", category: "filament", unit: "kg", price_per_unit: 0, stock_quantity: "", min_stock: "" };
+type MaterialForm = { name: string; category: string; unit: string; price_per_unit: number; stock_quantity: string; min_stock: string; supplier_name: string; supplier_url: string };
+const BLANK_FORM: MaterialForm = { name: "", category: "filament", unit: "kg", price_per_unit: 0, stock_quantity: "", min_stock: "", supplier_name: "", supplier_url: "" };
 
 // Lege invoer betekent "voorraad niet bijgehouden" (null in de database).
 function toNumberOrNull(value: string): number | null {
@@ -27,7 +27,16 @@ function toNumberOrNull(value: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 function toPayload(f: MaterialForm) {
-  return { name: f.name, category: f.category, unit: f.unit, price_per_unit: f.price_per_unit, stock_quantity: toNumberOrNull(f.stock_quantity), min_stock: toNumberOrNull(f.min_stock) };
+  return {
+    name: f.name,
+    category: f.category,
+    unit: f.unit,
+    price_per_unit: f.price_per_unit,
+    stock_quantity: toNumberOrNull(f.stock_quantity),
+    min_stock: toNumberOrNull(f.min_stock),
+    supplier_name: f.supplier_name.trim() || null,
+    supplier_url: f.supplier_url.trim() || null
+  };
 }
 
 type Usage = { productId: string; productName: string; variations: number };
@@ -46,9 +55,19 @@ export default function MaterialsPage() {
   const [editForm, setEditForm] = useState<MaterialForm>(BLANK_FORM);
   const [saving, setSaving] = useState(false);
 
+  const [suppliers, setSuppliers] = useState<string[]>([]);
+
   async function load() {
     const { data } = await supabase.from("materials").select("*").order("category").order("name");
     setMaterials(data ?? []);
+
+    // Haal unieke leveranciers op voor de dropdown
+    const uniqueSuppliers = Array.from(new Set(
+      (data ?? [])
+        .map((m: Material) => m.supplier_name)
+        .filter((s): s is string => !!s && s.trim() !== "")
+    )).sort();
+    setSuppliers(uniqueSuppliers);
 
     // In welke producten zit elk materiaal? (afgeleid uit de materiaallijnen van alle varianten)
     const [{ data: variations }, { data: products }] = await Promise.all([
@@ -88,6 +107,8 @@ export default function MaterialsPage() {
       price_per_unit: m.price_per_unit,
       stock_quantity: m.stock_quantity != null ? String(m.stock_quantity) : "",
       min_stock: m.min_stock != null ? String(m.min_stock) : "",
+      supplier_name: m.supplier_name ?? "",
+      supplier_url: m.supplier_url ?? "",
     });
   }
 
@@ -123,7 +144,7 @@ export default function MaterialsPage() {
 
       <table>
         <thead>
-          <tr><th>Naam</th><th>Categorie</th><th>Eenheid</th><th>Prijs per eenheid</th><th>Voorraad / minimum</th><th>Gebruikt in</th><th></th></tr>
+          <tr><th>Naam</th><th>Categorie</th><th>Eenheid</th><th>Prijs per eenheid</th><th>Voorraad / minimum</th><th>Leverancier</th><th>Gebruikt in</th><th></th></tr>
         </thead>
         <tbody>
           {materials.map((m) => {
@@ -148,6 +169,20 @@ export default function MaterialsPage() {
                       <input className="mono" placeholder="minimum" value={editForm.min_stock} onChange={(e) => setEditForm({ ...editForm, min_stock: e.target.value })} />
                     </div>
                   </td>
+                  <td>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      <input
+                        list="suppliers-edit"
+                        placeholder="Shop naam"
+                        value={editForm.supplier_name}
+                        onChange={(e) => setEditForm({ ...editForm, supplier_name: e.target.value })}
+                      />
+                      <datalist id="suppliers-edit">
+                        {suppliers.map((s) => <option key={s} value={s} />)}
+                      </datalist>
+                      <input placeholder="Link (optioneel)" value={editForm.supplier_url} onChange={(e) => setEditForm({ ...editForm, supplier_url: e.target.value })} />
+                    </div>
+                  </td>
                   <td></td>
                   <td style={{ whiteSpace: "nowrap" }}>
                     <button className="btn" onClick={() => saveEdit(m.id)} disabled={saving} style={{ marginRight: 6 }}>{saving ? "..." : "Opslaan"}</button>
@@ -167,6 +202,19 @@ export default function MaterialsPage() {
                     <span style={isLowStock(m) ? { color: "var(--rust)", fontWeight: 600 } : undefined}>
                       {m.stock_quantity} {m.unit}{m.min_stock != null ? ` / min. ${m.min_stock}` : ""}
                     </span>
+                  )}
+                </td>
+                <td>
+                  {!m.supplier_name ? <span className="muted">--</span> : (
+                    <>
+                      {m.supplier_url ? (
+                        <a href={m.supplier_url} target="_blank" rel="noopener noreferrer" style={{ color: "#0ff" }}>
+                          {m.supplier_name}
+                        </a>
+                      ) : (
+                        <span>{m.supplier_name}</span>
+                      )}
+                    </>
                   )}
                 </td>
                 <td>
@@ -230,6 +278,24 @@ export default function MaterialsPage() {
             <div>
               <label>Waarschuwing onder (optioneel)</label>
               <input value={form.min_stock} onChange={(e) => setForm({ ...form, min_stock: e.target.value })} placeholder="bv. 2" />
+            </div>
+          </div>
+          <div className="row">
+            <div>
+              <label>Leverancier / Shop naam (optioneel)</label>
+              <input
+                list="suppliers-new"
+                value={form.supplier_name}
+                onChange={(e) => setForm({ ...form, supplier_name: e.target.value })}
+                placeholder="Kies bestaande of typ nieuwe..."
+              />
+              <datalist id="suppliers-new">
+                {suppliers.map((s) => <option key={s} value={s} />)}
+              </datalist>
+            </div>
+            <div>
+              <label>Link naar product (optioneel)</label>
+              <input type="url" value={form.supplier_url} onChange={(e) => setForm({ ...form, supplier_url: e.target.value })} placeholder="https://..." />
             </div>
           </div>
           <button className="btn" type="submit" style={{ marginTop: 16 }}>Materiaal toevoegen</button>
