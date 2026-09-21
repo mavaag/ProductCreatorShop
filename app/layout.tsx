@@ -22,7 +22,7 @@ const display = Orbitron({
 });
 
 export const metadata = {
-  title: "Werkplaats — productbeheer",
+  title: "Product Beheer Webshop",
   description: "Producten, prijsberekening en WooCommerce-export",
 };
 
@@ -32,8 +32,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <nav className="topnav">
           <Link href="/products" className="brand">
-            <span className="brand-dot" aria-hidden="true" />
-            Werkplaats
+            <img
+              src="https://3dprintforyou.be/wp-content/uploads/2025/09/Logo2-1.png"
+              alt="3D Print For You Logo"
+              className="brand-logo"
+              style={{ height: '32px', marginRight: '12px' }}
+            />
+            Product Beheer Webshop
           </Link>
           <div className="navlinks">
             <Link href="/products">Producten</Link>

@@ -167,7 +167,7 @@ export default function ProductsPage() {
         }
       } else {
         setSyncProgress(null);
-        if (!confirm("Verkoopprijzen van bestaande producten nu rechtstreeks in WooCommerce bijwerken?")) {
+        if (!confirm("Bestaande producten synchroniseren met WooCommerce?\n\nDit update: prijzen, beschrijving, categorieën, afbeeldingen, gewicht en verzendklasse.")) {
           setBusy(false);
           return;
         }
@@ -411,8 +411,8 @@ export default function ProductsPage() {
           <button className="btn secondary" disabled={busy} onClick={() => runExport({ prices: "1" }, "Prijsexport")}>
             Enkel prijzen (bestaande producten bijwerken)
           </button>
-          <button className="btn secondary" disabled={busy} onClick={() => runSync(false)}>Prijzen direct naar WooCommerce sturen</button>
-          <button className="btn" disabled={busy} onClick={() => runSync(true)}>Nieuwe producten aanmaken in WooCommerce</button>
+          <button className="btn secondary" disabled={busy} onClick={() => runSync(false)}>Bestaande producten synchroniseren</button>
+          <button className="btn" disabled={busy} onClick={() => runSync(true)}>Alle producten synchroniseren (+ nieuwe aanmaken)</button>
         </div>
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
           <p className="muted" style={{ marginTop: 0, marginBottom: 8, fontSize: 12 }}>

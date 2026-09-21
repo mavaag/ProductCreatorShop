@@ -48,6 +48,7 @@ export default function ProductEditPage() {
   const [savingAll, setSavingAll] = useState(false);
   const [bulkMargin, setBulkMargin] = useState<string>("");
   const [applyingBulkMargin, setApplyingBulkMargin] = useState(false);
+  const [wooAttributeTerms, setWooAttributeTerms] = useState<Record<string, string[]>>({});
 
   const load = useCallback(async () => {
     const [{ data: p }, { data: v }, { data: m }, { data: mat }] = await Promise.all([
@@ -77,6 +78,7 @@ export default function ProductEditPage() {
       load();
       loadMinMargin(supabase).then(setMinMargin);
       loadWooCategories();
+      loadWooAttributeTerms();
     }
   }, [ready, load]);
 
@@ -95,6 +97,26 @@ export default function ProductEditPage() {
       // Stilletjes falen - gebruiker kan nog steeds handmatig typen
     }
     setLoadingCategories(false);
+  }
+
+  async function loadWooAttributeTerms() {
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const res = await fetch("/api/woocommerce/attributes", {
+        headers: { Authorization: `Bearer ${session.session?.access_token}` }
+      });
+      if (res.ok) {
+        const body = await res.json();
+        // Convert array to object: { "Kleur": ["Rood", "Blauw"], "Maat": ["S", "M", "L"] }
+        const termsMap: Record<string, string[]> = {};
+        for (const attr of body.attributes) {
+          termsMap[attr.name] = attr.terms;
+        }
+        setWooAttributeTerms(termsMap);
+      }
+    } catch (e) {
+      // Stilletjes falen - gebruiker kan nog steeds handmatig typen
+    }
   }
 
   // Startpunt voor een nieuwe variant: de laatste variant als die er is, anders een leeg model.
@@ -553,6 +575,7 @@ export default function ProductEditPage() {
           variation={v}
           productSku={product.sku}
           attributeNames={product.attribute_names}
+          wooAttributeTerms={wooAttributeTerms}
           machines={machines}
           materials={materials}
           machinesById={machinesById}
@@ -575,6 +598,7 @@ function VariationEditor({
   variation,
   productSku,
   attributeNames,
+  wooAttributeTerms,
   machines,
   materials,
   machinesById,
@@ -587,6 +611,7 @@ function VariationEditor({
   variation: ProductVariation;
   productSku: string;
   attributeNames: string[];
+  wooAttributeTerms: Record<string, string[]>;
   machines: Machine[];
   materials: Material[];
   machinesById: Map<string, Machine>;
@@ -605,6 +630,14 @@ function VariationEditor({
   // met een SKU die je zelf (of via import) al hebt gezet, blijven onaangeroerd.
   const [skuAuto, setSkuAuto] = useState(variation.sku.includes("-NIEUW-"));
   const [generatingSku, setGeneratingSku] = useState(false);
+
+  // Sync lokale state met de variant prop wanneer deze van buitenaf wordt bijgewerkt
+  // (bv. na bulk acties zoals "Marge toepassen" of "Alles opslaan")
+  useEffect(() => {
+    setSku(variation.sku);
+    setAttributeValues(variation.attribute_values ?? {});
+    setInputs({ ...EMPTY_COST_INPUTS, ...(variation.cost_inputs ?? {}) });
+  }, [variation.sku, variation.attribute_values, variation.cost_inputs]);
 
   useEffect(() => {
     if (!skuAuto) return;
@@ -709,16 +742,26 @@ function VariationEditor({
             </p>
           )}
         </div>
-        {attributeNames.map((attrName) => (
-          <div key={attrName}>
-            <label>{attrName}</label>
-            <input
-              value={attributeValues[attrName] ?? ""}
-              onChange={(e) => setAttributeValues({ ...attributeValues, [attrName]: e.target.value })}
-              placeholder={`bv. ${attrName === "Grootte" ? "M" : "waarde"}`}
-            />
-          </div>
-        ))}
+        {attributeNames.map((attrName) => {
+          const terms = wooAttributeTerms[attrName] || [];
+          const hasTerms = terms.length > 0;
+          return (
+            <div key={attrName}>
+              <label>{attrName}</label>
+              <input
+                list={hasTerms ? `woo-terms-${variation.id}-${attrName}` : undefined}
+                value={attributeValues[attrName] ?? ""}
+                onChange={(e) => setAttributeValues({ ...attributeValues, [attrName]: e.target.value })}
+                placeholder={`bv. ${attrName === "Grootte" ? "M" : "waarde"}`}
+              />
+              {hasTerms && (
+                <datalist id={`woo-terms-${variation.id}-${attrName}`}>
+                  {terms.map((term) => <option key={term} value={term} />)}
+                </datalist>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       <h2 style={{ fontSize: 14, marginTop: 20 }}>Materialen</h2>
@@ -813,30 +856,22 @@ function VariationEditor({
             onChange={(e) => setInputs({ ...inputs, margin: (parseFloat(e.target.value) || 0) / 100 })}
           />
         </div>
-        <div>
-          <label>Btw (%)</label>
-          <input
-            type="number"
-            step="1"
-            value={Math.round(inputs.vat_rate * 100)}
-            onChange={(e) => setInputs({ ...inputs, vat_rate: (parseFloat(e.target.value) || 0) / 100 })}
-          />
-        </div>
       </div>
 
       <div className="price-box">
         <div className="mono readout-row">Kostprijs<span>€{costPrice.toFixed(2)}</span></div>
-        <div className="mono readout-row">Verkoopprijs excl. btw<span>€{salePrice != null ? salePrice.toFixed(2) : "--"}</span></div>
-        <div className="mono readout-row">Verkoopprijs incl. btw<span>€{salePriceInclVat != null ? salePriceInclVat.toFixed(2) : "--"}</span></div>
         <div className="mono readout-row" style={{ color: "var(--moss-ink)", fontWeight: 600 }}>
-          Winst (excl. btw)
+          Winst
           <span>{salePrice != null ? `€${(salePrice - costPrice).toFixed(2)}` : "--"}</span>
         </div>
         <div className="readout-suggested">
           <span>Voorgestelde verkoopprijs</span>
           <span className="big">€{suggestedPrice != null ? suggestedPrice.toFixed(2) : "--"}</span>
         </div>
-        <p className="readout-note">Afgerond naar boven op een ,95-prijs (charm pricing) -- nooit onder je berekende prijs incl. btw. Pas gerust zelf aan.</p>
+        <p className="readout-note">
+          Gebaseerd op je kostprijs (€{costPrice.toFixed(2)}) + {Math.round(inputs.margin * 100)}% marge, afgerond naar ,95 (charm pricing).
+          Pas gerust zelf aan indien gewenst.
+        </p>
         {realMargin != null && (
           <div className="mono readout-row" style={{ marginTop: 6 }}>Werkelijke marge na afronding<span>{(realMargin * 100).toFixed(1)}%</span></div>
         )}
