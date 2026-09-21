@@ -446,11 +446,15 @@ export default function ProductEditPage() {
         <h1>
           {product.name}{" "}
           <button
-            className="btn secondary"
-            style={{ fontSize: 12, verticalAlign: "middle" }}
+            className="icon-btn"
+            title="Naam wijzigen"
+            aria-label="Naam wijzigen"
             onClick={() => { setNameDraft(product.name); setEditingName(true); }}
           >
-            Naam wijzigen
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square" strokeLinejoin="miter" aria-hidden="true">
+              <path d="M4 20l1-5L16 4l4 4L9 19l-5 1z" />
+              <path d="M14 6l4 4" />
+            </svg>
           </button>
         </h1>
       )}

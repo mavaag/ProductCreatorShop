@@ -346,3 +346,23 @@ input[type="checkbox"] { accent-color: var(--magenta); }
   .container { padding: 20px 14px 56px; }
   h1 { font-size: 19px; }
 }
+
+/* Klein icoon-knopje (bv. potlood naast een titel) */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  vertical-align: middle;
+  background: transparent;
+  color: var(--cyan);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px));
+  transition: color 0.15s, border-color 0.15s, filter 0.15s;
+}
+.icon-btn:hover { color: var(--magenta); border-color: var(--magenta); filter: drop-shadow(0 0 5px rgba(255, 43, 214, 0.7)); }
+.icon-btn:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }
+.icon-btn svg { width: 16px; height: 16px; }
