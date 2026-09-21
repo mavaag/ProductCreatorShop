@@ -15,12 +15,12 @@ export function machineHourlyCosts(machine: Machine) {
 /**
  * Rondt een prijs af naar een "psychologische" verkoopprijs die eindigt op ,95 --
  * altijd naar BOVEN afgerond, zodat de voorgestelde prijs nooit onder je berekende
- * (incl. btw) prijs uitkomt. Dit is een eenvoudige vuistregel, geen boekhoudkundig advies --
+ * verkoopprijs uitkomt. Dit is een eenvoudige vuistregel, geen boekhoudkundig advies --
  * pas gerust zelf aan als je liever een ronde prijs of een andere eindcijfer gebruikt.
  */
-export function suggestRetailPrice(priceInclVat: number): number {
-  let candidate = Math.ceil(priceInclVat) - 0.05;
-  if (candidate < priceInclVat) candidate += 1;
+export function suggestRetailPrice(price: number): number {
+  let candidate = Math.ceil(price) - 0.05;
+  if (candidate < price) candidate += 1;
   return round2(candidate);
 }
 
@@ -84,7 +84,8 @@ export function calculatePrice(
 
   const vatRate = costInputs.vat_rate ?? DEFAULT_VAT_RATE;
   const salePriceInclVat = salePrice !== null ? salePrice * (1 + vatRate) : null;
-  const suggestedPrice = salePriceInclVat !== null ? suggestRetailPrice(salePriceInclVat) : null;
+  // Voor hobbyverkoop zonder BTW: suggestedPrice is gebaseerd op verkoopprijs ZONDER BTW
+  const suggestedPrice = salePrice !== null ? suggestRetailPrice(salePrice) : null;
 
   return {
     costPrice: round2(cost),
@@ -99,13 +100,13 @@ export function calculatePrice(
 export type CostBreakdown = { materials: number; machines: number; labor: number; other: number };
 
 /**
- * Netto-marge op de uiteindelijke (afgeronde, excl. btw) verkoopprijs -- dus inclusief
+ * Netto-marge op de uiteindelijke (afgeronde) verkoopprijs -- dus inclusief
  * het effect van het naar boven afronden op ,95. Dit is de marge die je echt overhoudt.
  */
-export function effectiveMargin(costPrice: number | null, suggestedPriceInclVat: number | null, vatRate: number): number | null {
-  if (costPrice == null || suggestedPriceInclVat == null || suggestedPriceInclVat <= 0) return null;
-  const exVat = suggestedPriceInclVat / (1 + vatRate);
-  return (exVat - costPrice) / exVat;
+export function effectiveMargin(costPrice: number | null, suggestedPrice: number | null, vatRate: number): number | null {
+  if (costPrice == null || suggestedPrice == null || suggestedPrice <= 0) return null;
+  // Voor hobbyverkoop: suggestedPrice is al excl. BTW, dus geen conversie nodig
+  return (suggestedPrice - costPrice) / suggestedPrice;
 }
 
 /** Totaal aantal machine-uren van een variant (voor "winst per machine-uur"). */
