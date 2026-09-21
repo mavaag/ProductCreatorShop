@@ -606,6 +606,14 @@ function VariationEditor({
   const [skuAuto, setSkuAuto] = useState(variation.sku.includes("-NIEUW-"));
   const [generatingSku, setGeneratingSku] = useState(false);
 
+  // Sync lokale state met de variant prop wanneer deze van buitenaf wordt bijgewerkt
+  // (bv. na bulk acties zoals "Marge toepassen" of "Alles opslaan")
+  useEffect(() => {
+    setSku(variation.sku);
+    setAttributeValues(variation.attribute_values ?? {});
+    setInputs({ ...EMPTY_COST_INPUTS, ...(variation.cost_inputs ?? {}) });
+  }, [variation.sku, variation.attribute_values, variation.cost_inputs]);
+
   useEffect(() => {
     if (!skuAuto) return;
     const values = attributeNames.map((n) => attributeValues[n]).filter((v) => v && v.trim());
