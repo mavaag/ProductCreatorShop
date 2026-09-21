@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 // Synchroniseert rechtstreeks met WooCommerce via de REST API, zonder CSV-import:
-//   * producten die al in de shop staan (zelfde SKU): enkel de verkoopprijzen (suggested_price) van de varianten
+//   * producten die al in de shop staan (zelfde SKU): update product metadata (naam, beschrijving, categorieën,
+//     afbeeldingen, gewicht, verzendklasse, status) + update de verkoopprijzen (suggested_price) van de varianten
 //   * producten die nog niet bestaan: worden enkel aangemaakt als createMissing true is (variabel product met
 //     attributen, varianten + prijzen, beschrijving, categorieën, afbeelding(en), gewicht en verzendklasse).
 //     Anders worden ze gerapporteerd.
@@ -135,6 +136,12 @@ export async function POST(request: Request) {
         synced.push(v.id);
       }
 
+      // Update product metadata (naam, beschrijving, categorieën, afbeeldingen, etc.)
+      if (!dryRun) {
+        await updateProductMetadata(wc, parent.id, p, report, categoryCache);
+      }
+
+      // Update prijzen van varianten
       if (updates.length > 0 && !dryRun) {
         for (let i = 0; i < updates.length; i += 100) {
           await wc(`/products/${parent.id}/variations/batch`, { method: "POST", body: JSON.stringify({ update: updates.slice(i, i + 100) }) });
@@ -235,6 +242,43 @@ async function createProduct(wc: WcFn, p: any, report: Report, categoryCache: Ma
     return false;
   }
   return true;
+}
+
+/** Update de metadata van een bestaand product in WooCommerce (naam, beschrijving, categorieën, afbeeldingen, etc.). */
+async function updateProductMetadata(wc: WcFn, productId: number, p: any, report: Report, categoryCache: Map<string, number>): Promise<void> {
+  try {
+    // Verzamel categorieën (inclusief parent categorieën)
+    const categoryIds: { id: number }[] = [];
+    for (const path of String(p.categories ?? "").split(",").map((c: string) => c.trim()).filter(Boolean)) {
+      try {
+        const allIds = await resolveCategoryWithParents(wc, path, categoryCache);
+        for (const id of allIds) {
+          if (!categoryIds.some(c => c.id === id)) {
+            categoryIds.push({ id });
+          }
+        }
+      } catch (e: any) {
+        report.notes.push(`${p.sku}: categorie "${path}" niet gelukt (${e.message})`);
+      }
+    }
+
+    const images = String(p.image_url ?? "").split(",").map((u: string) => u.trim()).filter(Boolean).map((src: string) => ({ src }));
+
+    const payload: Record<string, unknown> = {
+      name: p.name,
+      status: p.published ? "publish" : "draft",
+      description: p.description ?? "",
+      categories: categoryIds,
+    };
+    if (p.weight_kg != null) payload.weight = String(p.weight_kg);
+    if (p.shipping_class) payload.shipping_class = p.shipping_class;
+    if (images.length > 0) payload.images = images;
+
+    await wc(`/products/${productId}`, { method: "PUT", body: JSON.stringify(payload) });
+    console.log(`[WooCommerce Sync] Product ${p.sku} metadata bijgewerkt`);
+  } catch (e: any) {
+    report.notes.push(`${p.sku}: metadata update mislukt (${e.message})`);
+  }
 }
 
 /** Zoekt een categoriepad zoals "Woondecoratie > Vazen" op (of maakt het aan) en geeft het id van de laatste categorie. */
