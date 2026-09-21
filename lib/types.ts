@@ -16,6 +16,8 @@ export type Material = {
   price_per_unit: number;
   stock_quantity: number | null; // null = voorraad niet bijgehouden
   min_stock: number | null;
+  supplier_name: string | null;
+  supplier_url: string | null;
 };
 
 export type MaterialLine = {

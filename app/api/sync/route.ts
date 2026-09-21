@@ -24,6 +24,7 @@ type Report = {
   missingProducts: string[];
   missingVariations: string[];
   errors: string[];
+  progress?: { current: number; total: number; productName: string };
 };
 
 type WcFn = (path: string, init?: RequestInit) => Promise<any>;
@@ -75,8 +76,14 @@ export async function POST(request: Request) {
 
   const report: Report = { updated: 0, unchanged: 0, created: [], notes: [], missingProducts: [], missingVariations: [], errors: [] };
   const categoryCache = new Map<string, number>();
+  const allProducts = (products ?? []) as any[];
+  const total = allProducts.length;
 
-  for (const p of (products ?? []) as any[]) {
+  console.log(`[WooCommerce Sync] Start: ${total} producten te synchroniseren`);
+
+  for (let i = 0; i < allProducts.length; i++) {
+    const p = allProducts[i];
+    console.log(`[WooCommerce Sync] ${i + 1}/${total}: ${p.name} (${p.sku})`);
     try {
       const found = await wc(`/products?sku=${encodeURIComponent(p.sku)}`);
       const parent = found?.[0];
@@ -142,9 +149,12 @@ export async function POST(request: Request) {
         await Promise.all(vs.map((v) => supabase.from("product_variations").update({ exported_price: v.suggested_price }).eq("id", v.id)));
       }
     } catch (e: any) {
+      console.error(`[WooCommerce Sync] Fout bij ${p.sku}:`, e.message);
       report.errors.push(`${p.sku}: ${e.message}`);
     }
   }
+
+  console.log(`[WooCommerce Sync] Voltooid: ${report.updated} bijgewerkt, ${report.created.length} aangemaakt, ${report.errors.length} fouten`);
 
   return NextResponse.json({ dryRun, ...report });
 }
