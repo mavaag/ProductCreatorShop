@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
 import { PROCESS_TYPE_LABELS } from "@/lib/types";
-import { slugifyForSku, nextAvailableSku } from "@/lib/sku";
+import { productSkuBase, nextAvailableSku } from "@/lib/sku";
 
 export default function NewProductPage() {
   const ready = useAuthGuard();
@@ -50,7 +50,7 @@ export default function NewProductPage() {
   // het veld niet zelf heeft aangepast. Controleert meteen of de SKU al bestaat.
   useEffect(() => {
     if (!skuAuto) return;
-    const base = slugifyForSku(form.name);
+    const base = productSkuBase(form.name, form.process_type);
     if (!base) {
       setForm((f) => ({ ...f, sku: "" }));
       return;
@@ -67,7 +67,7 @@ export default function NewProductPage() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.name, skuAuto]);
+  }, [form.name, form.process_type, skuAuto]);
 
   function updateAttrName(idx: number, value: string) {
     const next = [...attributeNames];
@@ -128,7 +128,7 @@ export default function NewProductPage() {
             {generatingSku
               ? "SKU wordt gegenereerd..."
               : skuAuto
-                ? "Automatisch gegenereerd op basis van de naam -- pas gerust zelf aan."
+                ? "Automatisch gegenereerd op basis van de naam en techniek -- pas gerust zelf aan."
                 : (
                   <>
                     Zelf aangepast.{" "}
