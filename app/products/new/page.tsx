@@ -20,6 +20,31 @@ export default function NewProductPage() {
   const [error, setError] = useState<string | null>(null);
   const [skuAuto, setSkuAuto] = useState(true); // false zodra de gebruiker zelf in het SKU-veld typt
   const [generatingSku, setGeneratingSku] = useState(false);
+  const [wooAttributes, setWooAttributes] = useState<string[]>([]);
+  const [loadingAttributes, setLoadingAttributes] = useState(false);
+
+  // Haal WooCommerce attributen op bij het laden van de pagina
+  useEffect(() => {
+    if (!ready) return;
+    async function loadWooAttributes() {
+      setLoadingAttributes(true);
+      try {
+        const { data: session } = await supabase.auth.getSession();
+        const res = await fetch("/api/woocommerce/attributes", {
+          headers: { Authorization: `Bearer ${session.session?.access_token}` }
+        });
+        if (res.ok) {
+          const body = await res.json();
+          const attrNames = body.attributes.map((a: any) => a.name);
+          setWooAttributes(attrNames);
+        }
+      } catch (e) {
+        // Stilletjes falen - gebruiker kan nog steeds handmatig typen
+      }
+      setLoadingAttributes(false);
+    }
+    loadWooAttributes();
+  }, [ready]);
 
   // Genereert automatisch een SKU op basis van de productnaam, zolang de gebruiker
   // het veld niet zelf heeft aangepast. Controleert meteen of de SKU al bestaat.
@@ -121,11 +146,12 @@ export default function NewProductPage() {
             ))}
           </select>
 
-          <label>Attributen waarop varianten verschillen</label>
+          <label>Attributen waarop varianten verschillen {loadingAttributes && <span className="muted">(laden...)</span>}</label>
           {attributeNames.map((name, idx) => (
             <div className="line-item" key={idx}>
               <div className="grow">
                 <input
+                  list="woo-attributes"
                   value={name}
                   onChange={(e) => updateAttrName(idx, e.target.value)}
                   placeholder="bv. Grootte, Kleur, Materiaal"
@@ -136,6 +162,16 @@ export default function NewProductPage() {
               )}
             </div>
           ))}
+          {wooAttributes.length > 0 && (
+            <datalist id="woo-attributes">
+              {wooAttributes.map((attr) => <option key={attr} value={attr} />)}
+            </datalist>
+          )}
+          {!loadingAttributes && wooAttributes.length === 0 && (
+            <p className="muted" style={{ marginTop: 4, marginBottom: 8, fontSize: 12 }}>
+              WooCommerce attributen ophalen mislukt. Typ handmatig of controleer je WooCommerce instellingen.
+            </p>
+          )}
           <button className="btn secondary" type="button" onClick={addAttrName}>+ Attribuut toevoegen</button>
 
           <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 16 }}>
