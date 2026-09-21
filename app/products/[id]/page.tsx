@@ -229,9 +229,45 @@ export default function ProductEditPage() {
   }
 
   async function deleteProduct() {
-    if (!confirm("Dit hele product (met alle varianten) verwijderen?")) return;
-    await supabase.from("products").delete().eq("id", productId);
-    router.push("/products");
+    if (!product) return;
+
+    if (!confirm(`"${product.name}" (en al zijn varianten) verwijderen uit de lokale database?`)) return;
+
+    // Vraag of het ook uit WooCommerce verwijderd moet worden
+    const deleteFromWoo = confirm(
+      `Ook uit WooCommerce verwijderen?\n\n` +
+      `Klik OK om het product zowel lokaal als in WooCommerce te verwijderen.\n` +
+      `Klik Annuleren om alleen lokaal te verwijderen (het product blijft in WooCommerce staan).`
+    );
+
+    try {
+      // Verwijder uit WooCommerce indien gewenst
+      if (deleteFromWoo) {
+        const { data } = await supabase.auth.getSession();
+        const res = await fetch("/api/woocommerce/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token}` },
+          body: JSON.stringify({ sku: product.sku })
+        });
+
+        const body = await res.json();
+
+        if (!res.ok || !body.deleted) {
+          const proceed = confirm(
+            `Waarschuwing: ${body.message || body.error || "Product niet gevonden in WooCommerce"}\n\n` +
+            `Toch doorgaan met lokaal verwijderen?`
+          );
+          if (!proceed) return;
+        }
+      }
+
+      // Verwijder uit lokale database
+      await supabase.from("products").delete().eq("id", productId);
+      router.push("/products");
+
+    } catch (e: any) {
+      alert(`Fout bij verwijderen: ${e.message}`);
+    }
   }
 
   function updateAttrDraft(idx: number, value: string) {
@@ -313,6 +349,12 @@ export default function ProductEditPage() {
           rows={4}
           style={{ width: "100%", padding: "8px 10px", border: "1px solid var(--line)", borderRadius: 3, font: "inherit" }}
         />
+        {wc.description.trim() && (
+          <div style={{ marginTop: 8, padding: 12, background: "rgba(0, 255, 255, 0.05)", border: "1px solid rgba(0, 255, 255, 0.2)", borderRadius: 4 }}>
+            <p className="muted" style={{ marginTop: 0, marginBottom: 8, fontSize: 12 }}>Preview (HTML gerenderd):</p>
+            <div dangerouslySetInnerHTML={{ __html: wc.description }} />
+          </div>
+        )}
         <div className="row">
           <div>
             <label>Categorieën {loadingCategories && <span className="muted">(laden...)</span>}</label>

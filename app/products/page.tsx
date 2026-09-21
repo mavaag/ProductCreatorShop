@@ -58,9 +58,55 @@ export default function ProductsPage() {
   }, [ready]);
 
   async function deleteProduct(id: string) {
-    if (!confirm("Dit product (en al zijn varianten) verwijderen?")) return;
-    await supabase.from("products").delete().eq("id", id);
-    load();
+    const product = products.find(p => p.id === id);
+    if (!product) return;
+
+    if (!confirm(`"${product.name}" (en al zijn varianten) verwijderen uit de lokale database?`)) return;
+
+    // Vraag of het ook uit WooCommerce verwijderd moet worden
+    const deleteFromWoo = confirm(
+      `Ook uit WooCommerce verwijderen?\n\n` +
+      `Klik OK om het product zowel lokaal als in WooCommerce te verwijderen.\n` +
+      `Klik Annuleren om alleen lokaal te verwijderen (het product blijft in WooCommerce staan).`
+    );
+
+    setBusy(true);
+    setMessage(null);
+
+    try {
+      // Verwijder uit WooCommerce indien gewenst
+      if (deleteFromWoo) {
+        const { data } = await supabase.auth.getSession();
+        const res = await fetch("/api/woocommerce/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token}` },
+          body: JSON.stringify({ sku: product.sku })
+        });
+
+        const body = await res.json();
+
+        if (res.ok && body.deleted) {
+          setMessage(`Product "${product.name}" verwijderd uit WooCommerce.`);
+        } else if (res.ok && !body.deleted) {
+          setMessage(`Product niet gevonden in WooCommerce. Alleen lokaal verwijderd.`);
+        } else {
+          throw new Error(body.error ?? "Fout bij verwijderen uit WooCommerce");
+        }
+      }
+
+      // Verwijder uit lokale database
+      await supabase.from("products").delete().eq("id", id);
+
+      if (!deleteFromWoo) {
+        setMessage(`Product "${product.name}" verwijderd uit lokale database. Het product blijft bestaan in WooCommerce.`);
+      }
+
+      load();
+    } catch (e: any) {
+      setMessage(`Fout: ${e.message}`);
+    }
+
+    setBusy(false);
   }
 
   function isChanged(p: ProductWithVariations) {
