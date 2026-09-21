@@ -45,6 +45,9 @@ export default function ProductEditPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [wcCategories, setWcCategories] = useState<string[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(false);
+  const [savingAll, setSavingAll] = useState(false);
+  const [bulkMargin, setBulkMargin] = useState<string>("");
+  const [applyingBulkMargin, setApplyingBulkMargin] = useState(false);
 
   const load = useCallback(async () => {
     const [{ data: p }, { data: v }, { data: m }, { data: mat }] = await Promise.all([
@@ -294,6 +297,86 @@ export default function ProductEditPage() {
     load();
   }
 
+  async function saveAllVariations() {
+    if (variations.length === 0) return;
+    if (!confirm(`Alle ${variations.length} varianten opslaan?`)) return;
+
+    setSavingAll(true);
+    const machinesById = new Map(machines.map((m) => [m.id, m]));
+    const materialsById = new Map(materials.map((m) => [m.id, m]));
+
+    for (const v of variations) {
+      const inputs = { ...EMPTY_COST_INPUTS, ...(v.cost_inputs ?? {}) };
+      const { costPrice, salePrice, suggestedPrice } = calculatePrice(inputs, machinesById, materialsById);
+
+      await supabase
+        .from("product_variations")
+        .update({
+          cost_price: costPrice,
+          sale_price: salePrice,
+          suggested_price: suggestedPrice,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", v.id);
+
+      await recordPriceHistory(
+        supabase,
+        v.id,
+        { cost_price: costPrice, sale_price: salePrice, suggested_price: suggestedPrice, margin: inputs.margin },
+        "Bulk opgeslagen"
+      );
+    }
+
+    await supabase.from("products").update({ updated_at: new Date().toISOString() }).eq("id", productId);
+    setSavingAll(false);
+    setNotice(`Alle ${variations.length} varianten opgeslagen!`);
+    load();
+  }
+
+  async function applyBulkMargin() {
+    const newMargin = parseFloat(bulkMargin);
+    if (!newMargin || newMargin < 0 || newMargin > 100) {
+      alert("Voer een geldige marge in tussen 0 en 100%");
+      return;
+    }
+
+    if (!confirm(`Marge van alle ${variations.length} varianten wijzigen naar ${newMargin}%?`)) return;
+
+    setApplyingBulkMargin(true);
+    const machinesById = new Map(machines.map((m) => [m.id, m]));
+    const materialsById = new Map(materials.map((m) => [m.id, m]));
+    const marginDecimal = newMargin / 100;
+
+    for (const v of variations) {
+      const inputs = { ...EMPTY_COST_INPUTS, ...(v.cost_inputs ?? {}), margin: marginDecimal };
+      const { costPrice, salePrice, suggestedPrice } = calculatePrice(inputs, machinesById, materialsById);
+
+      await supabase
+        .from("product_variations")
+        .update({
+          cost_inputs: inputs,
+          cost_price: costPrice,
+          sale_price: salePrice,
+          suggested_price: suggestedPrice,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", v.id);
+
+      await recordPriceHistory(
+        supabase,
+        v.id,
+        { cost_price: costPrice, sale_price: salePrice, suggested_price: suggestedPrice, margin: marginDecimal },
+        `Bulk marge update naar ${newMargin}%`
+      );
+    }
+
+    await supabase.from("products").update({ updated_at: new Date().toISOString() }).eq("id", productId);
+    setApplyingBulkMargin(false);
+    setBulkMargin("");
+    setNotice(`Marge van alle varianten bijgewerkt naar ${newMargin}%!`);
+    load();
+  }
+
   if (!ready || !product) return null;
 
   const machinesById = new Map(machines.map((m) => [m.id, m]));
@@ -425,6 +508,44 @@ export default function ProductEditPage() {
         hier bewaard en aanpasbaar -- bij de WooCommerce-export wordt enkel de berekende verkoopprijs meegenomen, niet
         deze rekendetails.
       </p>
+
+      {variations.length > 0 && (
+        <div className="card" style={{ background: "var(--moss-soft)", marginBottom: 16 }}>
+          <h3 style={{ marginTop: 0, fontSize: 14 }}>Bulk acties</h3>
+          <div className="row">
+            <div>
+              <label>Marge voor alle varianten wijzigen (%)</label>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input
+                  type="number"
+                  step="1"
+                  value={bulkMargin}
+                  onChange={(e) => setBulkMargin(e.target.value)}
+                  placeholder="bv. 35"
+                  style={{ flexGrow: 1 }}
+                />
+                <button
+                  className="btn secondary"
+                  onClick={applyBulkMargin}
+                  disabled={applyingBulkMargin || !bulkMargin}
+                >
+                  {applyingBulkMargin ? "Toepassen..." : "Marge toepassen"}
+                </button>
+              </div>
+            </div>
+            <div style={{ display: "flex", alignItems: "flex-end" }}>
+              <button
+                className="btn"
+                onClick={saveAllVariations}
+                disabled={savingAll}
+                style={{ width: "100%" }}
+              >
+                {savingAll ? "Bezig met opslaan..." : `Alle ${variations.length} varianten opslaan`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {variations.map((v) => (
         <VariationEditor
@@ -707,6 +828,10 @@ function VariationEditor({
         <div className="mono readout-row">Kostprijs<span>€{costPrice.toFixed(2)}</span></div>
         <div className="mono readout-row">Verkoopprijs excl. btw<span>€{salePrice != null ? salePrice.toFixed(2) : "--"}</span></div>
         <div className="mono readout-row">Verkoopprijs incl. btw<span>€{salePriceInclVat != null ? salePriceInclVat.toFixed(2) : "--"}</span></div>
+        <div className="mono readout-row" style={{ color: "var(--moss-ink)", fontWeight: 600 }}>
+          Winst (excl. btw)
+          <span>{salePrice != null ? `€${(salePrice - costPrice).toFixed(2)}` : "--"}</span>
+        </div>
         <div className="readout-suggested">
           <span>Voorgestelde verkoopprijs</span>
           <span className="big">€{suggestedPrice != null ? suggestedPrice.toFixed(2) : "--"}</span>
