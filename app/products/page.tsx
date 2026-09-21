@@ -41,6 +41,8 @@ export default function ProductsPage() {
   const [bulkMargin, setBulkMargin] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [exportProgress, setExportProgress] = useState<string | null>(null);
+  const [syncProgress, setSyncProgress] = useState<{ current: number; total: number; product: string } | null>(null);
 
   async function load() {
     const { data } = await supabase
@@ -68,11 +70,14 @@ export default function ProductsPage() {
   async function runExport(params: Record<string, string>, label: string) {
     setBusy(true);
     setMessage(null);
+    setExportProgress(`${label}...`);
     try {
       const count = await downloadExport({ ...params, ...(activeTab !== "all" ? { type: activeTab } : {}), mark: "1" });
+      setExportProgress(null);
       setMessage(`${label}: ${count} product(en) geëxporteerd.`);
       load();
     } catch (e: any) {
+      setExportProgress(null);
       setMessage(e.message);
     }
     setBusy(false);
@@ -95,9 +100,14 @@ export default function ProductsPage() {
   async function runSync(createMissing: boolean) {
     setBusy(true);
     setMessage(null);
+    setSyncProgress(null);
     try {
+      // Toon initiële loading indicator
+      setSyncProgress({ current: 0, total: 0, product: "Voorbereiden..." });
+
       if (createMissing) {
         const plan = await callSync({ createMissing: true, dryRun: true });
+        setSyncProgress(null);
         const names = plan.created.length ? plan.created.join(", ") : "geen";
         const proceed = confirm(
           `Nieuw aan te maken in WooCommerce (${plan.created.length}): ${names}\n\n` +
@@ -108,21 +118,68 @@ export default function ProductsPage() {
           setBusy(false);
           return;
         }
-      } else if (!confirm("Verkoopprijzen van bestaande producten nu rechtstreeks in WooCommerce bijwerken?")) {
+      } else {
+        setSyncProgress(null);
+        if (!confirm("Verkoopprijzen van bestaande producten nu rechtstreeks in WooCommerce bijwerken?")) {
+          setBusy(false);
+          return;
+        }
+      }
+
+      // Haal de producten op die gesynchroniseerd gaan worden
+      setSyncProgress({ current: 0, total: 0, product: "Producten ophalen..." });
+      let query = supabase.from("products").select("id, sku, name").order("name");
+      if (activeTab !== "all") query = query.eq("process_type", activeTab);
+      const { data: productsToSync } = await query;
+      const total = productsToSync?.length ?? 0;
+
+      if (total === 0) {
+        setSyncProgress(null);
+        setMessage("Geen producten om te synchroniseren.");
         setBusy(false);
         return;
       }
-      const body = await callSync({ createMissing, dryRun: false });
-      const parts = [`${body.updated} prijs/prijzen bijgewerkt`, `${body.unchanged} ongewijzigd`];
-      if (body.created.length) parts.push(`aangemaakt: ${body.created.join(", ")}`);
-      if (body.missingProducts.length) parts.push(`nog niet in de shop: ${body.missingProducts.join(", ")}`);
-      if (body.missingVariations.length) parts.push(`varianten niet in de shop: ${body.missingVariations.join(", ")}`);
-      if (body.notes.length) parts.push(`opmerkingen: ${body.notes.join("; ")}`);
-      if (body.errors.length) parts.push(`fouten: ${body.errors.join("; ")}`);
-      setMessage(`Synchronisatie: ${parts.join(" -- ")}`);
-      load();
+
+      // Toon initiële voortgang
+      setSyncProgress({ current: 0, total, product: "Verbinding maken met WooCommerce..." });
+
+      // Simuleer voortgang tijdens het synchroniseren (elke 800ms een product verder)
+      let estimatedProgress = 0;
+      const progressInterval = setInterval(() => {
+        if (estimatedProgress < total - 1) {
+          estimatedProgress++;
+          const currentProduct = (productsToSync ?? [])[estimatedProgress] as any;
+          setSyncProgress({
+            current: estimatedProgress,
+            total,
+            product: `${currentProduct?.name ?? "..."}`
+          });
+        }
+      }, 800);
+
+      try {
+        const body = await callSync({ createMissing, dryRun: false });
+        clearInterval(progressInterval);
+
+        // Toon 100% voltooid
+        setSyncProgress({ current: total, total, product: "Synchronisatie voltooid!" });
+        setTimeout(() => setSyncProgress(null), 1500);
+
+        const parts = [`${body.updated} prijs/prijzen bijgewerkt`, `${body.unchanged} ongewijzigd`];
+        if (body.created.length) parts.push(`aangemaakt: ${body.created.join(", ")}`);
+        if (body.missingProducts.length) parts.push(`nog niet in de shop: ${body.missingProducts.join(", ")}`);
+        if (body.missingVariations.length) parts.push(`varianten niet in de shop: ${body.missingVariations.join(", ")}`);
+        if (body.notes.length) parts.push(`opmerkingen: ${body.notes.join("; ")}`);
+        if (body.errors.length) parts.push(`fouten: ${body.errors.join("; ")}`);
+        setMessage(`Synchronisatie: ${parts.join(" -- ")}`);
+        load();
+      } catch (error) {
+        clearInterval(progressInterval);
+        throw error;
+      }
     } catch (e: any) {
       setMessage(e.message);
+      setSyncProgress(null);
     }
     setBusy(false);
   }
@@ -242,6 +299,66 @@ export default function ProductsPage() {
         <p className="muted" style={{ marginBottom: 0 }}>
           Elke export markeert de producten als geëxporteerd. "Enkel nieuw/gewijzigd" neemt dan enkel wat sindsdien nieuw of aangepast is; met "Alles exporteren" heb je altijd de volledige set. Voor "Enkel prijzen" kies je bij het importeren in WooCommerce "Bestaande producten bijwerken".
         </p>
+        {exportProgress && (
+          <div style={{ marginTop: 12, padding: 12, background: "rgba(0, 255, 255, 0.1)", border: "1px solid rgba(0, 255, 255, 0.3)", borderRadius: 4 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{
+                width: 20,
+                height: 20,
+                border: "3px solid rgba(0, 255, 255, 0.3)",
+                borderTop: "3px solid #0ff",
+                borderRadius: "50%",
+                animation: "spin 1s linear infinite"
+              }} />
+              <strong style={{ color: "#0ff" }}>{exportProgress}</strong>
+            </div>
+            <style jsx>{`
+              @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+              }
+            `}</style>
+          </div>
+        )}
+        {syncProgress && (
+          <div style={{ marginTop: 12, padding: 12, background: "rgba(0, 255, 255, 0.1)", border: "1px solid rgba(0, 255, 255, 0.3)", borderRadius: 4 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <strong style={{ color: "#0ff" }}>Synchroniseren...</strong>
+              {syncProgress.total > 0 && (
+                <span className="mono" style={{ color: "#0ff" }}>
+                  {syncProgress.current} / {syncProgress.total}
+                </span>
+              )}
+            </div>
+            {syncProgress.total > 0 ? (
+              <div style={{ width: "100%", height: 8, background: "rgba(0, 0, 0, 0.3)", borderRadius: 4, overflow: "hidden", marginBottom: 8 }}>
+                <div
+                  style={{
+                    width: `${syncProgress.total > 0 ? (syncProgress.current / syncProgress.total) * 100 : 0}%`,
+                    height: "100%",
+                    background: "linear-gradient(90deg, #0ff, #f0f)",
+                    transition: "width 0.3s ease",
+                    boxShadow: "0 0 10px rgba(0, 255, 255, 0.5)"
+                  }}
+                />
+              </div>
+            ) : (
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+                <div style={{
+                  width: 20,
+                  height: 20,
+                  border: "3px solid rgba(0, 255, 255, 0.3)",
+                  borderTop: "3px solid #0ff",
+                  borderRadius: "50%",
+                  animation: "spin 1s linear infinite"
+                }} />
+              </div>
+            )}
+            <p className="mono" style={{ margin: 0, fontSize: 12, color: "#0ff" }}>
+              {syncProgress.product}
+            </p>
+          </div>
+        )}
         {message && <p className="mono" style={{ marginBottom: 0 }}>{message}</p>}
       </div>
 
