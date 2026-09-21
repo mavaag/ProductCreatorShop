@@ -43,6 +43,8 @@ export default function ProductEditPage() {
   const [genValues, setGenValues] = useState<Record<string, string>>({});
   const [generating, setGenerating] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [wcCategories, setWcCategories] = useState<string[]>([]);
+  const [loadingCategories, setLoadingCategories] = useState(false);
 
   const load = useCallback(async () => {
     const [{ data: p }, { data: v }, { data: m }, { data: mat }] = await Promise.all([
@@ -71,8 +73,26 @@ export default function ProductEditPage() {
     if (ready) {
       load();
       loadMinMargin(supabase).then(setMinMargin);
+      loadWooCategories();
     }
   }, [ready, load]);
+
+  async function loadWooCategories() {
+    setLoadingCategories(true);
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const res = await fetch("/api/woocommerce/categories", {
+        headers: { Authorization: `Bearer ${session.session?.access_token}` }
+      });
+      if (res.ok) {
+        const body = await res.json();
+        setWcCategories(body.categories ?? []);
+      }
+    } catch (e) {
+      // Stilletjes falen - gebruiker kan nog steeds handmatig typen
+    }
+    setLoadingCategories(false);
+  }
 
   // Startpunt voor een nieuwe variant: de laatste variant als die er is, anders een leeg model.
   // Voor UV-printen/sublimatie staan meteen 2 machinetijd-regels klaar (printer + heat press).
@@ -295,8 +315,23 @@ export default function ProductEditPage() {
         />
         <div className="row">
           <div>
-            <label>Categorieën</label>
-            <input value={wc.categories} onChange={(e) => setWc({ ...wc, categories: e.target.value })} placeholder="bv. Woondecoratie > Vazen, Cadeaus" />
+            <label>Categorieën {loadingCategories && <span className="muted">(laden...)</span>}</label>
+            <input
+              list="wc-categories"
+              value={wc.categories}
+              onChange={(e) => setWc({ ...wc, categories: e.target.value })}
+              placeholder="bv. Woondecoratie > Vazen, Cadeaus"
+            />
+            {wcCategories.length > 0 && (
+              <datalist id="wc-categories">
+                {wcCategories.map((cat) => <option key={cat} value={cat} />)}
+              </datalist>
+            )}
+            {!loadingCategories && wcCategories.length === 0 && (
+              <p className="muted" style={{ marginTop: 4, marginBottom: 0, fontSize: 12 }}>
+                Categorieën ophalen mislukt. Typ handmatig of controleer je WooCommerce instellingen.
+              </p>
+            )}
           </div>
           <div>
             <label>Verzendklasse</label>
