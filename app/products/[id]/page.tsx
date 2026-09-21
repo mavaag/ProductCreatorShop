@@ -313,6 +313,12 @@ export default function ProductEditPage() {
           rows={4}
           style={{ width: "100%", padding: "8px 10px", border: "1px solid var(--line)", borderRadius: 3, font: "inherit" }}
         />
+        {wc.description.trim() && (
+          <div style={{ marginTop: 8, padding: 12, background: "rgba(0, 255, 255, 0.05)", border: "1px solid rgba(0, 255, 255, 0.2)", borderRadius: 4 }}>
+            <p className="muted" style={{ marginTop: 0, marginBottom: 8, fontSize: 12 }}>Preview (HTML gerenderd):</p>
+            <div dangerouslySetInnerHTML={{ __html: wc.description }} />
+          </div>
+        )}
         <div className="row">
           <div>
             <label>Categorieën {loadingCategories && <span className="muted">(laden...)</span>}</label>
