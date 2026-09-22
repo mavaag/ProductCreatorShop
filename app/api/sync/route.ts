@@ -110,6 +110,29 @@ export async function POST(request: Request) {
         }
         continue;
       }
+
+      if (isSimple(p)) {
+        // Simpel product: de prijs staat op het product zelf, er zijn geen varianten.
+        const v = (p.product_variations as { id: string; suggested_price: number | null }[])[0];
+        const price = v?.suggested_price != null ? Number(v.suggested_price).toFixed(2) : null;
+        const priceChanged = price != null && Number(parent.regular_price) !== Number(price);
+        if (!dryRun) {
+          const ok = await updateProductMetadata(wc, parent.id, p, report, categoryCache, priceChanged ? price : null);
+          if (!ok && priceChanged) {
+            report.errors.push(`${p.sku}: prijs niet bijgewerkt (zie opmerkingen)`);
+            continue;
+          }
+        }
+        if (price == null) continue;
+        if (priceChanged) report.updated++;
+        else report.unchanged++;
+        if (!dryRun) {
+          await supabase.from("products").update({ last_exported_at: new Date().toISOString() }).eq("id", p.id);
+          await supabase.from("product_variations").update({ exported_price: v.suggested_price }).eq("id", v.id);
+        }
+        continue;
+      }
+
       const remote = new Map<string, { id: number; regular_price: string }>();
       for (let page = 1; ; page++) {
         const chunk = await wc(`/products/${parent.id}/variations?per_page=100&page=${page}`);
@@ -166,7 +189,12 @@ export async function POST(request: Request) {
   return NextResponse.json({ dryRun, ...report });
 }
 
-/** Maakt een variabel product met al zijn varianten aan in WooCommerce. Geeft true terug als dat gelukt is. */
+/** Een product zonder attributen is een simpel product (WooCommerce type "simple"). */
+function isSimple(p: any): boolean {
+  return (p.attribute_names?.length ?? 0) === 0;
+}
+
+/** Maakt een variabel product met al zijn varianten (of een simpel product) aan in WooCommerce. Geeft true terug als dat gelukt is. */
 async function createProduct(wc: WcFn, p: any, report: Report, categoryCache: Map<string, number>): Promise<boolean> {
   const attrNames: string[] = p.attribute_names ?? [];
   const variations = p.product_variations as { sku: string; attribute_values: Record<string, string>; suggested_price: number | null }[];
@@ -198,15 +226,21 @@ async function createProduct(wc: WcFn, p: any, report: Report, categoryCache: Ma
 
   const images = String(p.image_url ?? "").split(",").map((u: string) => u.trim()).filter(Boolean).map((src: string) => ({ src }));
 
+  const simple = isSimple(p);
   const payload: Record<string, unknown> = {
     name: p.name,
-    type: "variable",
+    type: simple ? "simple" : "variable",
     sku: p.sku,
     status: p.published ? "publish" : "draft",
     description: p.description ?? "",
-    attributes,
     categories: categoryIds,
   };
+  if (simple) {
+    const price = variations[0]?.suggested_price;
+    if (price != null) payload.regular_price = Number(price).toFixed(2);
+  } else {
+    payload.attributes = attributes;
+  }
   if (p.weight_kg != null) payload.weight = String(p.weight_kg);
   if (p.shipping_class) payload.shipping_class = p.shipping_class;
 
@@ -228,6 +262,8 @@ async function createProduct(wc: WcFn, p: any, report: Report, categoryCache: Ma
     }
   }
 
+  if (simple) return true;
+
   const toCreate = variations.map((v) => ({
     sku: v.sku,
     ...(v.suggested_price != null ? { regular_price: Number(v.suggested_price).toFixed(2) } : {}),
@@ -245,7 +281,14 @@ async function createProduct(wc: WcFn, p: any, report: Report, categoryCache: Ma
 }
 
 /** Update de metadata van een bestaand product in WooCommerce (naam, beschrijving, categorieën, afbeeldingen, etc.). */
-async function updateProductMetadata(wc: WcFn, productId: number, p: any, report: Report, categoryCache: Map<string, number>): Promise<void> {
+async function updateProductMetadata(
+  wc: WcFn,
+  productId: number,
+  p: any,
+  report: Report,
+  categoryCache: Map<string, number>,
+  regularPrice: string | null = null // enkel voor simpele producten: nieuwe prijs, of null om ze niet te wijzigen
+): Promise<boolean> {
   try {
     // Verzamel categorieën (inclusief parent categorieën)
     const categoryIds: { id: number }[] = [];
@@ -273,11 +316,14 @@ async function updateProductMetadata(wc: WcFn, productId: number, p: any, report
     if (p.weight_kg != null) payload.weight = String(p.weight_kg);
     if (p.shipping_class) payload.shipping_class = p.shipping_class;
     if (images.length > 0) payload.images = images;
+    if (regularPrice != null) payload.regular_price = regularPrice;
 
     await wc(`/products/${productId}`, { method: "PUT", body: JSON.stringify(payload) });
     console.log(`[WooCommerce Sync] Product ${p.sku} metadata bijgewerkt`);
+    return true;
   } catch (e: any) {
     report.notes.push(`${p.sku}: metadata update mislukt (${e.message})`);
+    return false;
   }
 }
 

@@ -612,7 +612,7 @@ export default function ProductsPage() {
                 <td><Link href={`/products/${p.id}`}>{p.name}</Link></td>
                 <td><span className="pill">{PROCESS_TYPE_LABELS[p.process_type]}</span></td>
                 <td className="mono">{p.sku}</td>
-                <td>{p.attribute_names.join(", ")}</td>
+                <td>{p.attribute_names.length > 0 ? p.attribute_names.join(", ") : <span className="muted">Simpel product</span>}</td>
                 <td className="mono">{p.product_variations.length}</td>
                 <td className="mono">{priceLabel}</td>
                 <td>{p.published ? "Ja" : "Nee"}</td>
