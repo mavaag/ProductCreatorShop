@@ -67,7 +67,7 @@ export async function POST(request: Request) {
 
   let query = supabase
     .from("products")
-    .select("id, sku, name, published, attribute_names, description, categories, image_url, weight_kg, shipping_class, product_variations(id, sku, attribute_values, suggested_price)")
+    .select("id, sku, name, published, attribute_names, default_attribute_values, description, categories, image_url, weight_kg, shipping_class, product_variations(id, sku, attribute_values, suggested_price)")
     .order("name");
   if (type) query = query.eq("process_type", type);
   const { data: products, error } = await query;
@@ -209,8 +209,10 @@ async function createProduct(wc: WcFn, p: any, report: Report, categoryCache: Ma
   const variations = p.product_variations as { sku: string; attribute_values: Record<string, string>; suggested_price: number | null }[];
 
   let attributes: ({ id: number; visible: boolean; variation: boolean; options: string[] } | { name: string; visible: boolean; variation: boolean; options: string[] })[] = [];
+  let defaultAttributes: ({ id: number; option: string } | { name: string; option: string })[] = [];
   try {
     attributes = await buildProductAttributes(wc, attrNames, variations, attributeCache);
+    defaultAttributes = await buildDefaultAttributes(wc, attrNames, p.default_attribute_values ?? {}, attributeCache);
   } catch (e: any) {
     report.notes.push(`${p.sku}: attributen niet gelukt (${e.message})`);
   }
@@ -247,6 +249,7 @@ async function createProduct(wc: WcFn, p: any, report: Report, categoryCache: Ma
     if (price != null) payload.regular_price = Number(price).toFixed(2);
   } else {
     payload.attributes = attributes;
+    if (defaultAttributes.length > 0) payload.default_attributes = defaultAttributes;
   }
   if (p.weight_kg != null) payload.weight = String(p.weight_kg);
   if (p.shipping_class) payload.shipping_class = p.shipping_class;
@@ -340,6 +343,8 @@ async function updateProductMetadata(
         const attrNames: string[] = p.attribute_names ?? [];
         const variations = p.product_variations as { attribute_values: Record<string, string> }[];
         payload.attributes = await buildProductAttributes(wc, attrNames, variations, attributeCache);
+        const defaultAttributes = await buildDefaultAttributes(wc, attrNames, p.default_attribute_values ?? {}, attributeCache);
+        payload.default_attributes = defaultAttributes; // ook een lege lijst versturen wist een oude standaardwaarde die niet meer gekozen is
       } catch (e: any) {
         report.notes.push(`${p.sku}: attributen niet bijgewerkt (${e.message})`);
       }
@@ -390,6 +395,27 @@ async function buildProductAttributes(
     attributes.push(id ? { id, visible: true, variation: true, options } : { name, visible: true, variation: true, options });
   }
   return attributes;
+}
+
+/**
+ * Bouwt de "Default Form Values" van een product op: de waarde per attribuut die al geselecteerd
+ * staat wanneer een klant de productpagina opent, voor die klant zelf een variant kiest. Attributen
+ * zonder gekozen standaardwaarde worden overgeslagen.
+ */
+async function buildDefaultAttributes(
+  wc: WcFn,
+  attrNames: string[],
+  defaultValues: Record<string, string>,
+  cache: Map<string, number>
+): Promise<({ id: number; option: string } | { name: string; option: string })[]> {
+  const result: ({ id: number; option: string } | { name: string; option: string })[] = [];
+  for (const name of attrNames) {
+    const value = (defaultValues?.[name] ?? "").trim();
+    if (!value) continue;
+    const id = await resolveGlobalAttribute(wc, name, cache);
+    result.push(id ? { id, option: value } : { name, option: value });
+  }
+  return result;
 }
 
 /** Zoekt een categoriepad zoals "Woondecoratie > Vazen" op (of maakt het aan) en geeft het id van de laatste categorie. */

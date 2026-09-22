@@ -61,6 +61,7 @@ export type Product = {
   process_type: "3d_print" | "uv_print" | "laser_engraving" | "laser_cutting" | "sublimation";
   published: boolean;
   attribute_names: string[];
+  default_attribute_values: Record<string, string>; // bv. {"Grootte":"M"} -- WooCommerce "Default Form Values"
   description: string;
   categories: string; // WooCommerce-notatie, bv. "Woondecoratie > Vazen, Cadeaus"
   image_url: string; // één of meerdere URL's, gescheiden door komma

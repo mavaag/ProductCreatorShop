@@ -37,6 +37,8 @@ export default function ProductEditPage() {
   const [materials, setMaterials] = useState<Material[]>([]);
   const [attrDraft, setAttrDraft] = useState<string[]>([]);
   const [savingAttrs, setSavingAttrs] = useState(false);
+  const [defaultAttrDraft, setDefaultAttrDraft] = useState<Record<string, string>>({});
+  const [savingDefaultAttrs, setSavingDefaultAttrs] = useState(false);
   const [minMargin, setMinMargin] = useState(DEFAULT_MIN_MARGIN);
   const [wc, setWc] = useState({ description: "", categories: "", image_url: "", weight_kg: "", shipping_class: "" });
   const [savingWc, setSavingWc] = useState(false);
@@ -73,6 +75,7 @@ export default function ProductEditPage() {
       });
     }
     setAttrDraft(p?.attribute_names ?? []);
+    setDefaultAttrDraft(p?.default_attribute_values ?? {});
     setVariations(v ?? []);
     setMachines(m ?? []);
     setMaterials(mat ?? []);
@@ -370,6 +373,25 @@ export default function ProductEditPage() {
     load();
   }
 
+  /** Alle waarden die effectief gebruikt worden voor een attribuut, over alle varianten heen (voor de standaardwaarde-keuzelijst). */
+  function usedValuesFor(attrName: string): string[] {
+    return Array.from(new Set(variations.map((v) => v.attribute_values?.[attrName]).filter((v): v is string => !!v && !!v.trim()))).sort();
+  }
+
+  async function saveDefaultAttrs() {
+    if (!product) return;
+    setSavingDefaultAttrs(true);
+    // Enkel waarden voor attributen die nog bestaan, en enkel als er effectief een waarde gekozen is.
+    const cleaned = Object.fromEntries(
+      product.attribute_names
+        .map((n) => [n, (defaultAttrDraft[n] ?? "").trim()] as const)
+        .filter(([, v]) => v)
+    );
+    await supabase.from("products").update({ default_attribute_values: cleaned, updated_at: new Date().toISOString() }).eq("id", productId);
+    setSavingDefaultAttrs(false);
+    load();
+  }
+
   async function saveAllVariations() {
     if (variations.length === 0) return;
     if (!confirm(`Alle ${variations.length} varianten opslaan?`)) return;
@@ -455,6 +477,8 @@ export default function ProductEditPage() {
   const machinesById = new Map(machines.map((m) => [m.id, m]));
   const materialsById = new Map(materials.map((m) => [m.id, m]));
   const attrsChanged = JSON.stringify(attrDraft.map((n) => n.trim()).filter(Boolean)) !== JSON.stringify(product.attribute_names);
+  const savedDefaultAttrs = Object.fromEntries(Object.entries(product.default_attribute_values ?? {}).filter(([, v]) => v));
+  const defaultAttrsChanged = JSON.stringify(defaultAttrDraft) !== JSON.stringify(savedDefaultAttrs);
 
   return (
     <div>
@@ -527,6 +551,41 @@ export default function ProductEditPage() {
           </div>
         )}
       </div>
+
+      {!isSimple && (
+        <div className="card">
+          <h2 style={{ marginTop: 0, fontSize: 14 }}>Standaardwaarden</h2>
+          <p className="muted">
+            De waarde die al geselecteerd staat wanneer een klant de productpagina opent (WooCommerce "Default Form Values").
+            Optioneel -- laat op "Geen standaardwaarde" als je de klant zelf wil laten kiezen.
+          </p>
+          <div className="row">
+            {product.attribute_names.map((name) => {
+              const options = usedValuesFor(name);
+              return (
+                <div key={name}>
+                  <label>{name}</label>
+                  <select
+                    value={defaultAttrDraft[name] ?? ""}
+                    onChange={(e) => setDefaultAttrDraft({ ...defaultAttrDraft, [name]: e.target.value })}
+                  >
+                    <option value="">Geen standaardwaarde</option>
+                    {options.map((value) => <option key={value} value={value}>{value}</option>)}
+                  </select>
+                  {options.length === 0 && (
+                    <p className="muted" style={{ marginTop: 4, marginBottom: 0, fontSize: 12 }}>Nog geen varianten met een waarde voor dit attribuut.</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {defaultAttrsChanged && (
+            <div style={{ marginTop: 12 }}>
+              <button className="btn" onClick={saveDefaultAttrs} disabled={savingDefaultAttrs}>{savingDefaultAttrs ? "Opslaan..." : "Standaardwaarden opslaan"}</button>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="card">
         <h2 style={{ marginTop: 0, fontSize: 14 }}>WooCommerce-gegevens</h2>
