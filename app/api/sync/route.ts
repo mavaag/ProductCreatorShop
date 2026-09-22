@@ -3,10 +3,18 @@ import { createClient } from "@supabase/supabase-js";
 
 // Synchroniseert rechtstreeks met WooCommerce via de REST API, zonder CSV-import:
 //   * producten die al in de shop staan (zelfde SKU): update product metadata (naam, beschrijving, categorieën,
-//     afbeeldingen, gewicht, verzendklasse, status) + update de verkoopprijzen (suggested_price) van de varianten
+//     afbeeldingen, gewicht, verzendklasse, status, attributen) + update de verkoopprijzen (suggested_price)
+//     van de varianten
 //   * producten die nog niet bestaan: worden enkel aangemaakt als createMissing true is (variabel product met
 //     attributen, varianten + prijzen, beschrijving, categorieën, afbeelding(en), gewicht en verzendklasse).
 //     Anders worden ze gerapporteerd.
+//
+// Attributen: als een attribuut (bv. "Kleur") al bestaat als GLOBAAL WooCommerce-attribuut (Producten >
+// Attributen), wordt het als zodanig gekoppeld -- een nieuwe waarde ervoor wordt dan automatisch als term
+// aangemaakt, zodat ze ook zichtbaar is in de waardenlijst van dat attribuut. Bestaat het attribuut nog
+// niet globaal, dan wordt het NIET automatisch aangemaakt: de app maakt zelf geen nieuwe globale attributen
+// aan, enkel nieuwe waarden voor een attribuut dat al bestaat. In dat geval blijft het attribuut lokaal
+// (per product), zoals voorheen.
 //
 // Vereist server-side omgevingsvariabelen (nooit NEXT_PUBLIC_, de sleutels mogen niet naar de browser):
 //   WOOCOMMERCE_URL              bv. https://jouwshop.be
@@ -77,6 +85,7 @@ export async function POST(request: Request) {
 
   const report: Report = { updated: 0, unchanged: 0, created: [], notes: [], missingProducts: [], missingVariations: [], errors: [] };
   const categoryCache = new Map<string, number>();
+  const attributeCache = new Map<string, number>(); // 0 = bevestigd geen globaal attribuut met die naam
   const allProducts = (products ?? []) as any[];
   const total = allProducts.length;
 
@@ -97,7 +106,7 @@ export async function POST(request: Request) {
           report.created.push(p.sku);
           continue;
         }
-        const ok = await createProduct(wc, p, report, categoryCache);
+        const ok = await createProduct(wc, p, report, categoryCache, attributeCache);
         if (ok) {
           report.created.push(p.sku);
           const now = new Date().toISOString();
@@ -117,7 +126,7 @@ export async function POST(request: Request) {
         const price = v?.suggested_price != null ? Number(v.suggested_price).toFixed(2) : null;
         const priceChanged = price != null && Number(parent.regular_price) !== Number(price);
         if (!dryRun) {
-          const ok = await updateProductMetadata(wc, parent.id, p, report, categoryCache, priceChanged ? price : null);
+          const ok = await updateProductMetadata(wc, parent.id, p, report, categoryCache, attributeCache, priceChanged ? price : null);
           if (!ok && priceChanged) {
             report.errors.push(`${p.sku}: prijs niet bijgewerkt (zie opmerkingen)`);
             continue;
@@ -159,9 +168,9 @@ export async function POST(request: Request) {
         synced.push(v.id);
       }
 
-      // Update product metadata (naam, beschrijving, categorieën, afbeeldingen, etc.)
+      // Update product metadata (naam, beschrijving, categorieën, afbeeldingen, attributen, etc.)
       if (!dryRun) {
-        await updateProductMetadata(wc, parent.id, p, report, categoryCache);
+        await updateProductMetadata(wc, parent.id, p, report, categoryCache, attributeCache);
       }
 
       // Update prijzen van varianten
@@ -195,18 +204,16 @@ function isSimple(p: any): boolean {
 }
 
 /** Maakt een variabel product met al zijn varianten (of een simpel product) aan in WooCommerce. Geeft true terug als dat gelukt is. */
-async function createProduct(wc: WcFn, p: any, report: Report, categoryCache: Map<string, number>): Promise<boolean> {
+async function createProduct(wc: WcFn, p: any, report: Report, categoryCache: Map<string, number>, attributeCache: Map<string, number>): Promise<boolean> {
   const attrNames: string[] = p.attribute_names ?? [];
   const variations = p.product_variations as { sku: string; attribute_values: Record<string, string>; suggested_price: number | null }[];
 
-  const attributes = attrNames
-    .map((name) => ({
-      name,
-      visible: true,
-      variation: true,
-      options: Array.from(new Set(variations.map((v) => v.attribute_values?.[name]).filter((x): x is string => !!x && !!x.trim()))),
-    }))
-    .filter((a) => a.options.length > 0);
+  let attributes: ({ id: number; visible: boolean; variation: boolean; options: string[] } | { name: string; visible: boolean; variation: boolean; options: string[] })[] = [];
+  try {
+    attributes = await buildProductAttributes(wc, attrNames, variations, attributeCache);
+  } catch (e: any) {
+    report.notes.push(`${p.sku}: attributen niet gelukt (${e.message})`);
+  }
 
   const categoryIds: { id: number }[] = [];
   for (const path of String(p.categories ?? "").split(",").map((c: string) => c.trim()).filter(Boolean)) {
@@ -267,7 +274,13 @@ async function createProduct(wc: WcFn, p: any, report: Report, categoryCache: Ma
   const toCreate = variations.map((v) => ({
     sku: v.sku,
     ...(v.suggested_price != null ? { regular_price: Number(v.suggested_price).toFixed(2) } : {}),
-    attributes: attrNames.filter((n) => v.attribute_values?.[n]).map((n) => ({ name: n, option: v.attribute_values[n] })),
+    attributes: attrNames
+      .filter((n) => v.attribute_values?.[n])
+      .map((n) => {
+        const id = attributeCache.get(n.toLowerCase());
+        // Globaal attribuut (id gekend en > 0) -> referentie via id; anders lokaal via naam.
+        return id ? { id, option: v.attribute_values[n] } : { name: n, option: v.attribute_values[n] };
+      }),
   }));
   try {
     for (let i = 0; i < toCreate.length; i += 100) {
@@ -280,13 +293,14 @@ async function createProduct(wc: WcFn, p: any, report: Report, categoryCache: Ma
   return true;
 }
 
-/** Update de metadata van een bestaand product in WooCommerce (naam, beschrijving, categorieën, afbeeldingen, etc.). */
+/** Update de metadata van een bestaand product in WooCommerce (naam, beschrijving, categorieën, afbeeldingen, attributen, etc.). */
 async function updateProductMetadata(
   wc: WcFn,
   productId: number,
   p: any,
   report: Report,
   categoryCache: Map<string, number>,
+  attributeCache: Map<string, number>,
   regularPrice: string | null = null // enkel voor simpele producten: nieuwe prijs, of null om ze niet te wijzigen
 ): Promise<boolean> {
   try {
@@ -318,6 +332,19 @@ async function updateProductMetadata(
     if (images.length > 0) payload.images = images;
     if (regularPrice != null) payload.regular_price = regularPrice;
 
+    if (!isSimple(p)) {
+      // Attributen mee bijwerken: een nieuwe waarde voor een attribuut dat al globaal bestaat, wordt zo
+      // alsnog als term aangemaakt en zichtbaar in de waardenlijst van dat attribuut. Bestaat het attribuut
+      // zelf nog niet globaal, dan blijft het lokaal (er wordt geen nieuw globaal attribuut aangemaakt).
+      try {
+        const attrNames: string[] = p.attribute_names ?? [];
+        const variations = p.product_variations as { attribute_values: Record<string, string> }[];
+        payload.attributes = await buildProductAttributes(wc, attrNames, variations, attributeCache);
+      } catch (e: any) {
+        report.notes.push(`${p.sku}: attributen niet bijgewerkt (${e.message})`);
+      }
+    }
+
     await wc(`/products/${productId}`, { method: "PUT", body: JSON.stringify(payload) });
     console.log(`[WooCommerce Sync] Product ${p.sku} metadata bijgewerkt`);
     return true;
@@ -325,6 +352,44 @@ async function updateProductMetadata(
     report.notes.push(`${p.sku}: metadata update mislukt (${e.message})`);
     return false;
   }
+}
+
+/**
+ * Zoekt een BESTAAND globaal WooCommerce-attribuut (Producten > Attributen) op naam op (hoofdletterongevoelig).
+ * Maakt zelf GEEN nieuw globaal attribuut aan -- geeft 0 terug als er nog geen attribuut met die naam bestaat,
+ * dan blijft het attribuut lokaal (per product), zoals voorheen.
+ */
+async function resolveGlobalAttribute(wc: WcFn, name: string, cache: Map<string, number>): Promise<number> {
+  const key = name.toLowerCase();
+  const cached = cache.get(key);
+  if (cached !== undefined) return cached;
+  const found: any[] = await wc(`/products/attributes?per_page=100&search=${encodeURIComponent(name)}`);
+  const match = found.find((a) => String(a.name).toLowerCase() === key);
+  const id = match?.id ?? 0;
+  cache.set(key, id);
+  return id;
+}
+
+/**
+ * Bouwt de attributenlijst van een product op. Een attribuut dat al globaal bestaat in WooCommerce wordt
+ * gekoppeld via zijn id -- een nieuwe waarde ervoor wordt door WooCommerce automatisch als term aangemaakt
+ * en is dan zichtbaar in de waardenlijst van dat attribuut. Een attribuut dat nog niet globaal bestaat,
+ * blijft lokaal (per product), net als voorheen. Attributen zonder ingevulde waarden worden overgeslagen.
+ */
+async function buildProductAttributes(
+  wc: WcFn,
+  attrNames: string[],
+  variations: { attribute_values: Record<string, string> }[],
+  cache: Map<string, number>
+): Promise<({ id: number; visible: boolean; variation: boolean; options: string[] } | { name: string; visible: boolean; variation: boolean; options: string[] })[]> {
+  const attributes: ({ id: number; visible: boolean; variation: boolean; options: string[] } | { name: string; visible: boolean; variation: boolean; options: string[] })[] = [];
+  for (const name of attrNames) {
+    const options = Array.from(new Set(variations.map((v) => v.attribute_values?.[name]).filter((x): x is string => !!x && !!x.trim())));
+    if (options.length === 0) continue;
+    const id = await resolveGlobalAttribute(wc, name, cache);
+    attributes.push(id ? { id, visible: true, variation: true, options } : { name, visible: true, variation: true, options });
+  }
+  return attributes;
 }
 
 /** Zoekt een categoriepad zoals "Woondecoratie > Vazen" op (of maakt het aan) en geeft het id van de laatste categorie. */
