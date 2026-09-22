@@ -52,6 +52,8 @@ export default function ProductEditPage() {
   const [applyingBulkMargin, setApplyingBulkMargin] = useState(false);
   const [wooAttributeTerms, setWooAttributeTerms] = useState<Record<string, string[]>>({});
 
+  const isSimple = (product?.attribute_names.length ?? 0) === 0;
+
   const load = useCallback(async () => {
     const [{ data: p }, { data: v }, { data: m }, { data: mat }] = await Promise.all([
       supabase.from("products").select("*").eq("id", productId).single(),
@@ -136,7 +138,7 @@ export default function ProductEditPage() {
     // Tijdelijke, gegarandeerd unieke SKU -- wordt automatisch vervangen zodra de
     // gebruiker attributen invult (zie VariationEditor). De "-NIEUW-" markering
     // laat de editor weten dat dit nog een auto-gegenereerde SKU is.
-    const placeholderSku = `${product?.sku}-NIEUW-${Date.now().toString(36).toUpperCase()}`;
+    const placeholderSku = isSimple ? product!.sku : `${product?.sku}-NIEUW-${Date.now().toString(36).toUpperCase()}`;
 
     // Bestaat er al een variant van dit product? Neem dan zijn materialen, machines,
     // arbeid, marge en btw over als startpunt -- meestal verschilt enkel het attribuut
@@ -328,12 +330,23 @@ export default function ProductEditPage() {
   }
 
   async function saveAttrs() {
+    if (!product) return;
     const cleanNames = attrDraft.map((n) => n.trim()).filter(Boolean);
-    if (cleanNames.length === 0) {
-      alert("Geef minstens 1 attribuut op.");
+    if (cleanNames.length === 0 && variations.length > 1) {
+      alert("Een simpel product (zonder attributen) heeft maar 1 prijsberekening. Verwijder eerst de overige varianten.");
       return;
     }
     setSavingAttrs(true);
+    if (cleanNames.length === 0 && variations.length === 1) {
+      // Wordt een simpel product: de enige variant neemt de SKU van het product over.
+      await supabase.from("product_variations").update({ sku: product.sku, attribute_values: {} }).eq("id", variations[0].id);
+    } else if (product.attribute_names.length === 0 && cleanNames.length > 0) {
+      // Simpel product wordt variabel: de variant mag niet langer de SKU van het product dragen.
+      // De "-NIEUW-" markering zorgt dat de SKU automatisch uit de attributen gegenereerd wordt.
+      for (const v of variations.filter((v) => v.sku === product.sku)) {
+        await supabase.from("product_variations").update({ sku: `${product.sku}-NIEUW-${Date.now().toString(36).toUpperCase()}` }).eq("id", v.id);
+      }
+    }
     await supabase.from("products").update({ attribute_names: cleanNames, updated_at: new Date().toISOString() }).eq("id", productId);
     setSavingAttrs(false);
     load();
@@ -472,13 +485,16 @@ export default function ProductEditPage() {
 
       <div className="card">
         <h2 style={{ marginTop: 0, fontSize: 14 }}>Attributen (waarop varianten verschillen)</h2>
-        <p className="muted">Bv. Grootte + Kleur samen -- de volgorde bepaalt Attribute 1/2/3 in de WooCommerce-export.</p>
+        <p className="muted">
+          Bv. Grootte + Kleur samen -- de volgorde bepaalt Attribute 1/2/3 in de WooCommerce-export.
+          {isSimple && " Geen attributen = simpel product zonder varianten."}
+        </p>
         {attrDraft.map((name, idx) => (
           <div className="line-item" key={idx}>
             <div className="grow">
               <input value={name} onChange={(e) => updateAttrDraft(idx, e.target.value)} placeholder="bv. Grootte" />
             </div>
-            {attrDraft.length > 1 && (
+            {(attrDraft.length > 1 || variations.length <= 1) && (
               <button className="btn danger" type="button" onClick={() => removeAttrDraft(idx)}>x</button>
             )}
           </div>
@@ -554,6 +570,7 @@ export default function ProductEditPage() {
         </div>
       </div>
 
+      {!isSimple && (
       <div className="card">
         <h2 style={{ marginTop: 0, fontSize: 14 }}>Varianten genereren</h2>
         <p className="muted">
@@ -573,15 +590,16 @@ export default function ProductEditPage() {
           </button>
         </div>
       </div>
+      )}
 
-      <h2>Varianten &amp; prijsberekening</h2>
+      <h2>{isSimple ? "Prijsberekening" : <>Varianten &amp; prijsberekening</>}</h2>
       <p className="muted">
-        Elke variant heeft zijn eigen prijsberekening (materialen, machinetijd, arbeid, marge). Deze gegevens blijven
+        {isSimple ? "Dit is een simpel product met één prijsberekening." : "Elke variant heeft"} zijn eigen prijsberekening (materialen, machinetijd, arbeid, marge). Deze gegevens blijven
         hier bewaard en aanpasbaar -- bij de WooCommerce-export wordt enkel de berekende verkoopprijs meegenomen, niet
         deze rekendetails.
       </p>
 
-      {variations.length > 0 && (
+      {!isSimple && variations.length > 0 && (
         <div className="card" style={{ background: "var(--moss-soft)", marginBottom: 16 }}>
           <h3 style={{ marginTop: 0, fontSize: 14 }}>Bulk acties</h3>
           <div className="row">
@@ -625,6 +643,7 @@ export default function ProductEditPage() {
           variation={v}
           productSku={product.sku}
           attributeNames={product.attribute_names}
+          isSimple={isSimple}
           wooAttributeTerms={wooAttributeTerms}
           machines={machines}
           materials={materials}
@@ -639,7 +658,9 @@ export default function ProductEditPage() {
         />
       ))}
 
-      <button className="btn" onClick={addVariation}>+ Variant toevoegen</button>
+      {(!isSimple || variations.length === 0) && (
+        <button className="btn" onClick={addVariation}>{isSimple ? "+ Prijsberekening toevoegen" : "+ Variant toevoegen"}</button>
+      )}
     </div>
   );
 }
@@ -648,6 +669,7 @@ function VariationEditor({
   variation,
   productSku,
   attributeNames,
+  isSimple,
   wooAttributeTerms,
   machines,
   materials,
@@ -661,6 +683,7 @@ function VariationEditor({
   variation: ProductVariation;
   productSku: string;
   attributeNames: string[];
+  isSimple: boolean;
   wooAttributeTerms: Record<string, string[]>;
   machines: Machine[];
   materials: Material[];
@@ -777,9 +800,10 @@ function VariationEditor({
     <div className="card">
       <div className="row">
         <div>
-          <label>SKU (variatie)</label>
+          <label>{isSimple ? "SKU (gelijk aan het product)" : "SKU (variatie)"}</label>
           <input
             className="mono"
+            readOnly={isSimple}
             value={sku}
             onChange={(e) => {
               setSkuAuto(false);
@@ -960,8 +984,12 @@ function VariationEditor({
 
       <div style={{ marginTop: 16 }}>
         <button className="btn" onClick={save} disabled={saving}>{saving ? "Opslaan..." : "Opslaan"}</button>
-        <button className="btn secondary" style={{ marginLeft: 8 }} onClick={onDuplicate}>Dupliceer als nieuwe variant</button>
-        <button className="btn danger" style={{ marginLeft: 8 }} onClick={onDelete}>Variant verwijderen</button>
+        {!isSimple && (
+          <>
+            <button className="btn secondary" style={{ marginLeft: 8 }} onClick={onDuplicate}>Dupliceer als nieuwe variant</button>
+            <button className="btn danger" style={{ marginLeft: 8 }} onClick={onDelete}>Variant verwijderen</button>
+          </>
+        )}
       </div>
     </div>
   );

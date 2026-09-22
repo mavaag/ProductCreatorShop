@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
-import { PROCESS_TYPE_LABELS } from "@/lib/types";
+import { PROCESS_TYPE_LABELS, EMPTY_COST_INPUTS } from "@/lib/types";
 import { productSkuBase, nextAvailableSku } from "@/lib/sku";
 
 export default function NewProductPage() {
@@ -16,7 +16,7 @@ export default function NewProductPage() {
     process_type: "3d_print",
     published: true,
   });
-  const [attributeNames, setAttributeNames] = useState<string[]>(["Grootte"]);
+  const [attributeNames, setAttributeNames] = useState<string[]>([""]);
   const [error, setError] = useState<string | null>(null);
   const [skuAuto, setSkuAuto] = useState(true); // false zodra de gebruiker zelf in het SKU-veld typt
   const [generatingSku, setGeneratingSku] = useState(false);
@@ -84,11 +84,8 @@ export default function NewProductPage() {
   async function create(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    // Geen attributen = simpel product (WooCommerce type "simple").
     const cleanNames = attributeNames.map((n) => n.trim()).filter(Boolean);
-    if (cleanNames.length === 0) {
-      setError("Geef minstens 1 attribuut op (bv. Grootte).");
-      return;
-    }
     const { data, error } = await supabase
       .from("products")
       .insert({ ...form, attribute_names: cleanNames })
@@ -98,15 +95,34 @@ export default function NewProductPage() {
       setError(error.message);
       return;
     }
+    if (cleanNames.length === 0) {
+      // Een simpel product krijgt meteen zijn ene prijsberekening, met dezelfde SKU als het product.
+      const machineLines = form.process_type === "sublimation" || form.process_type === "uv_print" ? 2 : 1;
+      const { error: varError } = await supabase.from("product_variations").insert({
+        product_id: data.id,
+        sku: data.sku,
+        attribute_values: {},
+        cost_inputs: {
+          ...EMPTY_COST_INPUTS,
+          machine_time: Array.from({ length: machineLines }, () => ({ machine_id: "", hours: 0 })),
+        },
+      });
+      if (varError) {
+        setError(varError.message);
+        return;
+      }
+    }
     router.push(`/products/${data.id}`);
   }
 
   if (!ready) return null;
 
+  const hasAttributes = attributeNames.some((n) => n.trim());
+
   return (
     <div>
       <h1>Nieuw product</h1>
-      <p className="sub">Maak eerst het hoofdproduct aan -- op de volgende pagina voeg je de varianten toe met hun eigen prijsberekening. Je kan op meerdere attributen tegelijk laten varieren (bv. Grootte + Kleur).</p>
+      <p className="sub">Maak eerst het hoofdproduct aan -- op de volgende pagina vul je de prijsberekening in. Kies attributen (bv. Grootte + Kleur) voor een product met varianten, of laat ze leeg voor een simpel product.</p>
 
       <div className="card">
         <form onSubmit={create}>
@@ -147,6 +163,7 @@ export default function NewProductPage() {
           </select>
 
           <label>Attributen waarop varianten verschillen {loadingAttributes && <span className="muted">(laden...)</span>}</label>
+          <p className="muted" style={{ marginTop: 0, marginBottom: 8 }}>Laat leeg voor een simpel product zonder varianten.</p>
           {attributeNames.map((name, idx) => (
             <div className="line-item" key={idx}>
               <div className="grow">
@@ -179,7 +196,9 @@ export default function NewProductPage() {
             Gepubliceerd (zichtbaar in de shop)
           </label>
 
-          <button className="btn" type="submit" style={{ marginTop: 16 }}>Product aanmaken &amp; varianten toevoegen</button>
+          <button className="btn" type="submit" style={{ marginTop: 16 }}>
+            {hasAttributes ? "Product aanmaken & varianten toevoegen" : "Simpel product aanmaken"}
+          </button>
           {error && <p className="warning">{error}</p>}
         </form>
       </div>

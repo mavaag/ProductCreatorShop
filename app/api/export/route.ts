@@ -70,6 +70,11 @@ export async function GET(request: Request) {
   });
 }
 
+/** Een product zonder attributen is een simpel product (WooCommerce type "simple"). */
+function isSimple(p: any): boolean {
+  return (p.attribute_names?.length ?? 0) === 0;
+}
+
 function isChanged(p: any): boolean {
   if (!p.last_exported_at || p.updated_at > p.last_exported_at) return true;
   return (p.product_variations as Variation[]).some(
@@ -80,9 +85,12 @@ function isChanged(p: any): boolean {
 function buildPricesCsv(products: any[]): string {
   const rows: string[][] = [["Type", "SKU", "Regular price"]];
   for (const p of products) {
+    const simple = isSimple(p);
     for (const v of p.product_variations as Variation[]) {
       if (v.suggested_price == null) continue;
-      rows.push(["variation", v.sku, Number(v.suggested_price).toFixed(2)]);
+      // Bij een simpel product staat de prijs op het product zelf (SKU van het product).
+      rows.push(simple ? ["simple", p.sku, Number(v.suggested_price).toFixed(2)] : ["variation", v.sku, Number(v.suggested_price).toFixed(2)]);
+      if (simple) break;
     }
   }
   return toCsv(rows);
@@ -104,6 +112,26 @@ function buildFullCsv(products: any[]): string {
   for (const p of products) {
     const attrNames: string[] = p.attribute_names ?? [];
     const variations = p.product_variations as Variation[];
+
+    if (isSimple(p)) {
+      // Simpel product: één rij, met de prijs van zijn (enige) prijsberekening.
+      const price = variations[0]?.suggested_price;
+      rows.push([
+        "simple",
+        p.sku,
+        p.name,
+        p.published ? "1" : "0",
+        price != null ? Number(price).toFixed(2) : "",
+        p.description ?? "",
+        p.categories ?? "",
+        p.image_url ?? "",
+        p.weight_kg != null ? String(p.weight_kg) : "",
+        p.shipping_class ?? "",
+        ...Array.from({ length: maxAttrs * 4 }, () => ""),
+        "",
+      ]);
+      continue;
+    }
 
     const parentAttrCols: string[] = [];
     for (let i = 0; i < maxAttrs; i++) {
