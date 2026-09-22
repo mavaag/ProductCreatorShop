@@ -35,6 +35,7 @@ create table if not exists products (
   process_type text not null default '3d_print', -- '3d_print' | 'uv_print' | 'laser_engraving' | 'laser_cutting' | 'sublimation'
   published boolean not null default true,
   attribute_names text[] not null default '{}', -- bv. ARRAY['Grootte','Kleur'] -- volgorde bepaalt Attribute 1/2/3 in de export
+  default_attribute_values jsonb not null default '{}'::jsonb, -- bv. {"Grootte":"M"} -- vooraf geselecteerde waarde per attribuut op de productpagina (WooCommerce "Default Form Values")
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

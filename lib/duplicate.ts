@@ -17,6 +17,7 @@ export async function duplicateProduct(supabase: SupabaseClient, source: Product
       process_type: source.process_type,
       published: false,
       attribute_names: source.attribute_names,
+      default_attribute_values: source.default_attribute_values ?? {},
       description: source.description ?? "",
       categories: source.categories ?? "",
       image_url: source.image_url ?? "",
