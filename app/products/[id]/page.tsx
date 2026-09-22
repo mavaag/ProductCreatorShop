@@ -8,7 +8,7 @@ import { calculatePrice, machineHourlyCosts, effectiveMargin } from "@/lib/prici
 import { duplicateProduct } from "@/lib/duplicate";
 import { recordPriceHistory } from "@/lib/recalc";
 import { loadMinMargin } from "@/lib/settings";
-import { cartesian, comboKey, parseValueList } from "@/lib/variants";
+import { cartesian, comboKey } from "@/lib/variants";
 import { toHours } from "@/lib/types";
 import { slugifyForSku, nextAvailableSku } from "@/lib/sku";
 import {
@@ -42,7 +42,8 @@ export default function ProductEditPage() {
   const [savingWc, setSavingWc] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
-  const [genValues, setGenValues] = useState<Record<string, string>>({});
+  const [genValues, setGenValues] = useState<Record<string, string[]>>({});
+  const [genCustomInput, setGenCustomInput] = useState<Record<string, string>>({});
   const [generating, setGenerating] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [wcCategories, setWcCategories] = useState<string[]>([]);
@@ -218,12 +219,26 @@ export default function ProductEditPage() {
 
   const genCombos = product
     ? (() => {
-        const parsed: Record<string, string[]> = {};
-        for (const n of product.attribute_names) parsed[n] = parseValueList(genValues[n] ?? "");
         const existing = new Set(variations.map((v) => comboKey(product.attribute_names, v.attribute_values ?? {})));
-        return cartesian(product.attribute_names, parsed).filter((c) => !existing.has(comboKey(product.attribute_names, c)));
+        return cartesian(product.attribute_names, genValues).filter((c) => !existing.has(comboKey(product.attribute_names, c)));
       })()
     : [];
+
+  /** Zet een waarde aan/uit in de selectie voor een attribuut (bv. "M" toevoegen/verwijderen bij "Grootte"). */
+  function toggleGenValue(name: string, value: string) {
+    const current = genValues[name] ?? [];
+    const next = current.includes(value) ? current.filter((v) => v !== value) : [...current, value];
+    setGenValues({ ...genValues, [name]: next });
+  }
+
+  /** Voegt een zelf getypte waarde toe aan de selectie (voor waarden die niet in de WooCommerce-lijst staan). */
+  function addGenCustomValue(name: string) {
+    const value = (genCustomInput[name] ?? "").trim();
+    if (!value) return;
+    const current = genValues[name] ?? [];
+    if (!current.includes(value)) setGenValues({ ...genValues, [name]: [...current, value] });
+    setGenCustomInput({ ...genCustomInput, [name]: "" });
+  }
 
   async function generateVariations() {
     if (!product || genCombos.length === 0) return;
@@ -574,15 +589,51 @@ export default function ProductEditPage() {
       <div className="card">
         <h2 style={{ marginTop: 0, fontSize: 14 }}>Varianten genereren</h2>
         <p className="muted">
-          Vul per attribuut de waarden in, gescheiden door een komma. Alle nieuwe combinaties worden aangemaakt met de prijsberekening van je laatste variant als startpunt; bestaande combinaties worden overgeslagen.
+          Selecteer per attribuut de waarden die je wil combineren (meerdere mogelijk). Alle nieuwe combinaties worden aangemaakt met de prijsberekening van je laatste variant als startpunt; bestaande combinaties worden overgeslagen.
         </p>
         <div className="row">
-          {product.attribute_names.map((name) => (
-            <div key={name}>
-              <label>{name}</label>
-              <input value={genValues[name] ?? ""} onChange={(e) => setGenValues({ ...genValues, [name]: e.target.value })} placeholder="bv. S, M, L" />
-            </div>
-          ))}
+          {product.attribute_names.map((name) => {
+            const terms = wooAttributeTerms[name] || [];
+            const selected = genValues[name] ?? [];
+            // Zelf getypte waarden die niet in de WooCommerce-lijst staan, tonen we als extra chips.
+            const customSelected = selected.filter((v) => !terms.includes(v));
+            return (
+              <div key={name}>
+                <label>{name}</label>
+                <div className="chip-group">
+                  {[...terms, ...customSelected].map((term) => (
+                    <button
+                      key={term}
+                      type="button"
+                      className={`chip-toggle${selected.includes(term) ? " active" : ""}`}
+                      onClick={() => toggleGenValue(name, term)}
+                    >
+                      {term}
+                    </button>
+                  ))}
+                  {terms.length === 0 && customSelected.length === 0 && (
+                    <span className="muted" style={{ fontSize: 12 }}>Nog geen waarden -- typ er hieronder een.</span>
+                  )}
+                </div>
+                <div className="line-item" style={{ marginTop: 6, marginBottom: 0 }}>
+                  <div className="grow">
+                    <input
+                      value={genCustomInput[name] ?? ""}
+                      onChange={(e) => setGenCustomInput({ ...genCustomInput, [name]: e.target.value })}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addGenCustomValue(name);
+                        }
+                      }}
+                      placeholder="andere waarde toevoegen..."
+                    />
+                  </div>
+                  <button className="btn secondary" type="button" onClick={() => addGenCustomValue(name)}>+</button>
+                </div>
+              </div>
+            );
+          })}
         </div>
         <div style={{ marginTop: 12 }}>
           <button className="btn" onClick={generateVariations} disabled={generating || genCombos.length === 0}>
