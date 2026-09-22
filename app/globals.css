@@ -245,6 +245,25 @@ input[type="checkbox"] { accent-color: var(--magenta); }
   text-shadow: 0 0 6px rgba(255, 43, 214, 0.5);
 }
 
+/* ---------- Attribute value multi-select (chips) ---------- */
+.chip-group { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+.chip-toggle {
+  padding: 4px 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  cursor: pointer;
+}
+.chip-toggle:hover { border-color: var(--cyan); }
+.chip-toggle.active {
+  background: rgba(0, 240, 255, 0.12);
+  color: var(--cyan);
+  border-color: var(--cyan);
+  box-shadow: 0 0 8px rgba(0, 240, 255, 0.25);
+}
+
 /* ---------- Cost-line rows ---------- */
 .line-item { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 8px; }
 .line-item .grow { flex: 2; }
