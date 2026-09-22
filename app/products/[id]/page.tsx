@@ -126,12 +126,15 @@ export default function ProductEditPage() {
 
   // Startpunt voor een nieuwe variant: de laatste variant als die er is, anders een leeg model.
   // Voor UV-printen/sublimatie staan meteen 2 machinetijd-regels klaar (printer + heat press).
+  // Elke regel krijgt meteen de eerste beschikbare machine (zoals ook bij "+ Machine" op een
+  // bestaande variant) -- anders toont de dropdown wel een machine, maar bevat de opgeslagen
+  // waarde geen geldig machine_id, wat de "machine bestaat niet meer"-melding triggert.
   function templateCostInputs(): CostInputs {
     if (variations.length > 0) return variations[variations.length - 1].cost_inputs;
     const machineLines = product?.process_type === "sublimation" || product?.process_type === "uv_print" ? 2 : 1;
     return {
       ...EMPTY_COST_INPUTS,
-      machine_time: Array.from({ length: machineLines }, () => ({ machine_id: "", hours: 0 })),
+      machine_time: Array.from({ length: machineLines }, () => ({ machine_id: machines[0]?.id ?? "", hours: 0 })),
     };
   }
 
