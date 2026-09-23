@@ -61,8 +61,8 @@ export default function ProductEditPage() {
     const [{ data: p }, { data: v }, { data: m }, { data: mat }] = await Promise.all([
       supabase.from("products").select("*").eq("id", productId).single(),
       supabase.from("product_variations").select("*").eq("product_id", productId).order("sku"),
-      supabase.from("machines").select("*"),
-      supabase.from("materials").select("*"),
+      supabase.from("machines").select("*").order("name"),
+      supabase.from("materials").select("*").order("name"),
     ]);
     setProduct(p);
     if (p) {
