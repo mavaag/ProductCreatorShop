@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef, forwardRef, useImperativeHandle } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
@@ -53,6 +53,7 @@ export default function ProductEditPage() {
   const [savingAll, setSavingAll] = useState(false);
   const [bulkMargin, setBulkMargin] = useState<string>("");
   const [applyingBulkMargin, setApplyingBulkMargin] = useState(false);
+  const editorRefs = useRef<Map<string, VariationEditorHandle>>(new Map());
   const [wooAttributeTerms, setWooAttributeTerms] = useState<Record<string, string[]>>({});
 
   const isSimple = (product?.attribute_names.length ?? 0) === 0;
@@ -397,29 +398,8 @@ export default function ProductEditPage() {
     if (!confirm(`Alle ${variations.length} varianten opslaan?`)) return;
 
     setSavingAll(true);
-    const machinesById = new Map(machines.map((m) => [m.id, m]));
-    const materialsById = new Map(materials.map((m) => [m.id, m]));
-
     for (const v of variations) {
-      const inputs = { ...EMPTY_COST_INPUTS, ...(v.cost_inputs ?? {}) };
-      const { costPrice, salePrice, suggestedPrice } = calculatePrice(inputs, machinesById, materialsById);
-
-      await supabase
-        .from("product_variations")
-        .update({
-          cost_price: costPrice,
-          sale_price: salePrice,
-          suggested_price: suggestedPrice,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", v.id);
-
-      await recordPriceHistory(
-        supabase,
-        v.id,
-        { cost_price: costPrice, sale_price: salePrice, suggested_price: suggestedPrice, margin: inputs.margin },
-        "Bulk opgeslagen"
-      );
+      await editorRefs.current.get(v.id)?.save("Bulk opgeslagen");
     }
 
     await supabase.from("products").update({ updated_at: new Date().toISOString() }).eq("id", productId);
@@ -753,6 +733,10 @@ export default function ProductEditPage() {
       {variations.map((v) => (
         <VariationEditor
           key={v.id}
+          ref={(el) => {
+            if (el) editorRefs.current.set(v.id, el);
+            else editorRefs.current.delete(v.id);
+          }}
           variation={v}
           productSku={product.sku}
           attributeNames={product.attribute_names}
@@ -778,21 +762,9 @@ export default function ProductEditPage() {
   );
 }
 
-function VariationEditor({
-  variation,
-  productSku,
-  attributeNames,
-  isSimple,
-  wooAttributeTerms,
-  machines,
-  materials,
-  machinesById,
-  materialsById,
-  minMargin,
-  onSaved,
-  onDelete,
-  onDuplicate,
-}: {
+type VariationEditorHandle = { save: (reason?: string) => Promise<void> };
+
+const VariationEditor = forwardRef<VariationEditorHandle, {
   variation: ProductVariation;
   productSku: string;
   attributeNames: string[];
@@ -806,7 +778,21 @@ function VariationEditor({
   onSaved: () => void;
   onDelete: () => void;
   onDuplicate: () => void;
-}) {
+}>(function VariationEditor({
+  variation,
+  productSku,
+  attributeNames,
+  isSimple,
+  wooAttributeTerms,
+  machines,
+  materials,
+  machinesById,
+  materialsById,
+  minMargin,
+  onSaved,
+  onDelete,
+  onDuplicate,
+}, ref) {
   const [sku, setSku] = useState(variation.sku);
   const [attributeValues, setAttributeValues] = useState<Record<string, string>>(variation.attribute_values ?? {});
   const [inputs, setInputs] = useState<CostInputs>({ ...EMPTY_COST_INPUTS, ...(variation.cost_inputs ?? {}) });
@@ -885,7 +871,7 @@ function VariationEditor({
     setInputs({ ...inputs, machine_time: inputs.machine_time.filter((_, i) => i !== idx) });
   }
 
-  async function save() {
+  async function save(reason = "Handmatig opgeslagen") {
     setSaving(true);
     await supabase
       .from("product_variations")
@@ -903,11 +889,12 @@ function VariationEditor({
       supabase,
       variation.id,
       { cost_price: costPrice, sale_price: salePrice, suggested_price: suggestedPrice, margin: inputs.margin },
-      "Handmatig opgeslagen"
+      reason
     );
     setSaving(false);
-    onSaved();
   }
+
+  useImperativeHandle(ref, () => ({ save }));
 
   return (
     <div className="card">
@@ -1096,7 +1083,7 @@ function VariationEditor({
       </div>
 
       <div style={{ marginTop: 16 }}>
-        <button className="btn" onClick={save} disabled={saving}>{saving ? "Opslaan..." : "Opslaan"}</button>
+        <button className="btn" onClick={async () => { await save(); onSaved(); }} disabled={saving}>{saving ? "Opslaan..." : "Opslaan"}</button>
         {!isSimple && (
           <>
             <button className="btn secondary" style={{ marginLeft: 8 }} onClick={onDuplicate}>Dupliceer als nieuwe variant</button>
@@ -1106,7 +1093,7 @@ function VariationEditor({
       </div>
     </div>
   );
-}
+});
 
 const BREAKDOWN_PARTS: { key: "materials" | "machines" | "labor" | "other"; label: string; color: string }[] = [
   { key: "materials", label: "Materiaal", color: "#c98500" },
