@@ -52,7 +52,6 @@ export default function ProductEditPage() {
   const [loadingCategories, setLoadingCategories] = useState(false);
   const [savingAll, setSavingAll] = useState(false);
   const [bulkMargin, setBulkMargin] = useState<string>("");
-  const [applyingBulkMargin, setApplyingBulkMargin] = useState(false);
   const editorRefs = useRef<Map<string, VariationEditorHandle>>(new Map());
   const [wooAttributeTerms, setWooAttributeTerms] = useState<Record<string, string[]>>({});
 
@@ -408,48 +407,20 @@ export default function ProductEditPage() {
     load();
   }
 
-  async function applyBulkMargin() {
+  function applyBulkMargin() {
     const newMargin = parseFloat(bulkMargin);
     if (!newMargin || newMargin < 0 || newMargin > 100) {
       alert("Voer een geldige marge in tussen 0 en 100%");
       return;
     }
 
-    if (!confirm(`Marge van alle ${variations.length} varianten wijzigen naar ${newMargin}%?`)) return;
-
-    setApplyingBulkMargin(true);
-    const machinesById = new Map(machines.map((m) => [m.id, m]));
-    const materialsById = new Map(materials.map((m) => [m.id, m]));
     const marginDecimal = newMargin / 100;
-
     for (const v of variations) {
-      const inputs = { ...EMPTY_COST_INPUTS, ...(v.cost_inputs ?? {}), margin: marginDecimal };
-      const { costPrice, salePrice, suggestedPrice } = calculatePrice(inputs, machinesById, materialsById);
-
-      await supabase
-        .from("product_variations")
-        .update({
-          cost_inputs: inputs,
-          cost_price: costPrice,
-          sale_price: salePrice,
-          suggested_price: suggestedPrice,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", v.id);
-
-      await recordPriceHistory(
-        supabase,
-        v.id,
-        { cost_price: costPrice, sale_price: salePrice, suggested_price: suggestedPrice, margin: marginDecimal },
-        `Bulk marge update naar ${newMargin}%`
-      );
+      editorRefs.current.get(v.id)?.setMargin(marginDecimal);
     }
 
-    await supabase.from("products").update({ updated_at: new Date().toISOString() }).eq("id", productId);
-    setApplyingBulkMargin(false);
     setBulkMargin("");
-    setNotice(`Marge van alle varianten bijgewerkt naar ${newMargin}%!`);
-    load();
+    setNotice(`Marge van alle varianten lokaal ingesteld op ${newMargin}% -- klik op "Alle varianten opslaan" om te bewaren.`);
   }
 
   if (!ready || !product) return null;
@@ -710,11 +681,14 @@ export default function ProductEditPage() {
                 <button
                   className="btn secondary"
                   onClick={applyBulkMargin}
-                  disabled={applyingBulkMargin || !bulkMargin}
+                  disabled={!bulkMargin}
                 >
-                  {applyingBulkMargin ? "Toepassen..." : "Marge toepassen"}
+                  Marge instellen
                 </button>
               </div>
+              <p className="muted" style={{ marginTop: 4, marginBottom: 0 }}>
+                Wordt pas bewaard nadat je op &quot;Alle varianten opslaan&quot; klikt.
+              </p>
             </div>
             <div style={{ display: "flex", alignItems: "flex-end" }}>
               <button
@@ -762,7 +736,7 @@ export default function ProductEditPage() {
   );
 }
 
-type VariationEditorHandle = { save: (reason?: string) => Promise<void> };
+type VariationEditorHandle = { save: (reason?: string) => Promise<void>; setMargin: (margin: number) => void };
 
 const VariationEditor = forwardRef<VariationEditorHandle, {
   variation: ProductVariation;
@@ -894,13 +868,29 @@ const VariationEditor = forwardRef<VariationEditorHandle, {
     setSaving(false);
   }
 
-  useImperativeHandle(ref, () => ({ save }));
+  useImperativeHandle(ref, () => ({
+    save,
+    setMargin: (margin: number) => setInputs((prev) => ({ ...prev, margin })),
+  }));
+
+  const baselineInputs = { ...EMPTY_COST_INPUTS, ...(variation.cost_inputs ?? {}) };
+  const dirty =
+    sku !== variation.sku ||
+    JSON.stringify(attributeValues) !== JSON.stringify(variation.attribute_values ?? {}) ||
+    JSON.stringify(inputs) !== JSON.stringify(baselineInputs);
 
   return (
-    <div className="card">
+    <div className="card" style={dirty ? { borderColor: "var(--yellow)" } : undefined}>
       <div className="row">
         <div>
-          <label>{isSimple ? "SKU (gelijk aan het product)" : "SKU (variatie)"}</label>
+          <label>
+            {isSimple ? "SKU (gelijk aan het product)" : "SKU (variatie)"}
+            {dirty && (
+              <span className="mono" style={{ marginLeft: 8, fontSize: 11, color: "var(--yellow)" }}>
+                * niet opgeslagen
+              </span>
+            )}
+          </label>
           <input
             className="mono"
             readOnly={isSimple}
@@ -1083,7 +1073,9 @@ const VariationEditor = forwardRef<VariationEditorHandle, {
       </div>
 
       <div style={{ marginTop: 16 }}>
-        <button className="btn" onClick={async () => { await save(); onSaved(); }} disabled={saving}>{saving ? "Opslaan..." : "Opslaan"}</button>
+        <button className="btn" onClick={async () => { await save(); onSaved(); }} disabled={saving || !dirty}>
+          {saving ? "Opslaan..." : dirty ? "Opslaan" : "Geen wijzigingen"}
+        </button>
         {!isSimple && (
           <>
             <button className="btn secondary" style={{ marginLeft: 8 }} onClick={onDuplicate}>Dupliceer als nieuwe variant</button>
