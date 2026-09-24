@@ -83,6 +83,14 @@ export type ProductVariation = {
   exported_price: number | null; // suggested_price zoals die de laatste keer geëxporteerd werd
 };
 
+export type MockupTemplate = {
+  id: string;
+  name: string;
+  room_image_url: string;
+  corners: { x: number; y: number }[]; // 4 punten (0-1), volgorde: LB, RB, RO, LO
+  created_at: string;
+};
+
 export type PriceHistoryEntry = {
   id: string;
   variation_id: string;
