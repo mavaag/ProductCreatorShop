@@ -420,16 +420,16 @@ export default function ProductsPage() {
         <h2 style={{ marginTop: 0, fontSize: 14 }}>
           WooCommerce-export {activeTab === "all" ? "(alle technieken)" : `(${PROCESS_TYPE_LABELS[activeTab]})`}
         </h2>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button className="btn secondary" disabled={busy} onClick={() => runExport({}, "Volledige export")}>Alles exporteren</button>
-          <button className="btn secondary" disabled={busy} onClick={() => runExport({ changed: "1" }, "Export van wijzigingen")}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "nowrap", overflowX: "auto", paddingBottom: 4 }}>
+          <button className="btn secondary" style={{ flexShrink: 0 }} disabled={busy} onClick={() => runExport({}, "Volledige export")}>Alles exporteren</button>
+          <button className="btn secondary" style={{ flexShrink: 0 }} disabled={busy} onClick={() => runExport({ changed: "1" }, "Export van wijzigingen")}>
             Enkel nieuw/gewijzigd
           </button>
-          <button className="btn secondary" disabled={busy} onClick={() => runExport({ prices: "1" }, "Prijsexport")}>
+          <button className="btn secondary" style={{ flexShrink: 0 }} disabled={busy} onClick={() => runExport({ prices: "1" }, "Prijsexport")}>
             Enkel prijzen (bestaande producten bijwerken)
           </button>
-          <button className="btn secondary" disabled={busy} onClick={() => runSync(false)}>Bestaande producten synchroniseren</button>
-          <button className="btn" disabled={busy} onClick={() => runSync(true)}>Alle producten synchroniseren (+ nieuwe aanmaken)</button>
+          <button className="btn secondary" style={{ flexShrink: 0 }} disabled={busy} onClick={() => runSync(false)}>Bestaande producten synchroniseren</button>
+          <button className="btn" style={{ flexShrink: 0 }} disabled={busy} onClick={() => runSync(true)}>Alle producten synchroniseren (+ nieuwe aanmaken)</button>
         </div>
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
           <p className="muted" style={{ marginTop: 0, marginBottom: 8, fontSize: 12 }}>
