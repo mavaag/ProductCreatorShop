@@ -179,6 +179,7 @@ export default function ProductEditPage() {
       // effectief verschilt (bv. Grootte), de rest hoeft niet opnieuw.
       attribute_values: source.attribute_values,
       cost_inputs: source.cost_inputs,
+      image_url: source.image_url,
     });
     if (error) alert(error.message);
     load();
@@ -869,6 +870,7 @@ const VariationEditor = forwardRef<VariationEditorHandle, {
   const [sku, setSku] = useState(variation.sku);
   const [attributeValues, setAttributeValues] = useState<Record<string, string>>(variation.attribute_values ?? {});
   const [inputs, setInputs] = useState<CostInputs>({ ...EMPTY_COST_INPUTS, ...(variation.cost_inputs ?? {}) });
+  const [imageUrl, setImageUrl] = useState(variation.image_url ?? "");
   const [saving, setSaving] = useState(false);
   // Enkel varianten die net met "+ Variant toevoegen" zijn aangemaakt (herkenbaar aan
   // de "-NIEUW-" markering) krijgen automatische SKU-generatie -- bestaande varianten
@@ -882,7 +884,8 @@ const VariationEditor = forwardRef<VariationEditorHandle, {
     setSku(variation.sku);
     setAttributeValues(variation.attribute_values ?? {});
     setInputs({ ...EMPTY_COST_INPUTS, ...(variation.cost_inputs ?? {}) });
-  }, [variation.sku, variation.attribute_values, variation.cost_inputs]);
+    setImageUrl(variation.image_url ?? "");
+  }, [variation.sku, variation.attribute_values, variation.cost_inputs, variation.image_url]);
 
   useEffect(() => {
     if (!skuAuto) return;
@@ -955,6 +958,7 @@ const VariationEditor = forwardRef<VariationEditorHandle, {
         cost_price: costPrice,
         sale_price: salePrice,
         suggested_price: suggestedPrice,
+        image_url: imageUrl.trim() || null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", variation.id);
@@ -976,7 +980,8 @@ const VariationEditor = forwardRef<VariationEditorHandle, {
   const dirty =
     sku !== variation.sku ||
     JSON.stringify(attributeValues) !== JSON.stringify(variation.attribute_values ?? {}) ||
-    JSON.stringify(inputs) !== JSON.stringify(baselineInputs);
+    JSON.stringify(inputs) !== JSON.stringify(baselineInputs) ||
+    imageUrl !== (variation.image_url ?? "");
 
   return (
     <div className="card" style={dirty ? { borderColor: "var(--yellow)" } : undefined}>
@@ -1026,6 +1031,27 @@ const VariationEditor = forwardRef<VariationEditorHandle, {
           );
         })}
       </div>
+
+      {!isSimple && (
+        <div className="row" style={{ marginTop: 12 }}>
+          <div>
+            <label>Afbeelding voor deze variant (URL, optioneel)</label>
+            <input
+              value={imageUrl}
+              onChange={(e) => setImageUrl(e.target.value)}
+              placeholder="https://... -- leeg = de gewone productafbeelding"
+            />
+            {imageUrl.trim() && (
+              <img
+                src={imageUrl.trim()}
+                alt="Voorbeeld"
+                style={{ maxHeight: 80, marginTop: 8, border: "1px solid var(--line)", borderRadius: 3 }}
+                onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}
+              />
+            )}
+          </div>
+        </div>
+      )}
 
       <h2 style={{ fontSize: 14, marginTop: 20 }}>Materialen</h2>
       {inputs.materials.map((line, idx) => {

@@ -62,6 +62,7 @@ create table if not exists product_variations (
   cost_price numeric,          -- laatst berekende kostprijs (cache, voor snelle lijstweergave)
   sale_price numeric,          -- laatst berekende verkoopprijs excl. btw
   suggested_price numeric,     -- afgeronde ,95-verkoopprijs incl. btw -- DIT wordt geëxporteerd naar WooCommerce
+  image_url text,              -- eigen afbeelding voor deze variant (URL), WooCommerce ondersteunt hier maar 1 afbeelding
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
