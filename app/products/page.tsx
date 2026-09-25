@@ -48,6 +48,27 @@ export default function ProductsPage() {
   const [exportProgress, setExportProgress] = useState<string | null>(null);
   const [syncProgress, setSyncProgress] = useState<{ current: number; total: number; product: string } | null>(null);
   const [importProgress, setImportProgress] = useState<{ current: number; total: number; product: string } | null>(null);
+  const [exportOpen, setExportOpen] = useState(true);
+
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("woo-export-collapsed") === "1") setExportOpen(false);
+    } catch {
+      // localStorage niet beschikbaar -- dan blijft de sectie gewoon standaard uitgeklapt.
+    }
+  }, []);
+
+  function toggleExportOpen() {
+    setExportOpen((open) => {
+      const next = !open;
+      try {
+        localStorage.setItem("woo-export-collapsed", next ? "0" : "1");
+      } catch {
+        // localStorage niet beschikbaar -- dan onthouden we de stand gewoon niet tussen bezoeken.
+      }
+      return next;
+    });
+  }
 
   async function load() {
     const { data } = await supabase
@@ -417,34 +438,59 @@ export default function ProductsPage() {
       </div>
 
       <div className="card" style={{ marginBottom: 16 }}>
-        <h2 style={{ marginTop: 0, fontSize: 14 }}>
-          WooCommerce-export {activeTab === "all" ? "(alle technieken)" : `(${PROCESS_TYPE_LABELS[activeTab]})`}
-        </h2>
-        <div style={{ display: "flex", gap: 8, flexWrap: "nowrap", overflowX: "auto", paddingBottom: 4 }}>
-          <button className="btn secondary" style={{ flexShrink: 0 }} disabled={busy} onClick={() => runExport({}, "Volledige export")}>Alles exporteren</button>
-          <button className="btn secondary" style={{ flexShrink: 0 }} disabled={busy} onClick={() => runExport({ changed: "1" }, "Export van wijzigingen")}>
-            Enkel nieuw/gewijzigd
-          </button>
-          <button className="btn secondary" style={{ flexShrink: 0 }} disabled={busy} onClick={() => runExport({ prices: "1" }, "Prijsexport")}>
-            Enkel prijzen (bestaande producten bijwerken)
-          </button>
-          <button className="btn secondary" style={{ flexShrink: 0 }} disabled={busy} onClick={() => runSync(false)}>Bestaande producten synchroniseren</button>
-          <button className="btn" style={{ flexShrink: 0 }} disabled={busy} onClick={() => runSync(true)}>Alle producten synchroniseren (+ nieuwe aanmaken)</button>
-        </div>
-        <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
-          <p className="muted" style={{ marginTop: 0, marginBottom: 8, fontSize: 12 }}>
-            WooCommerce → Lokale database
-          </p>
-          <button className="btn secondary" disabled={busy} onClick={runImportMeta}>
-            📥 Productgegevens importeren uit WooCommerce
-          </button>
-          <p className="muted" style={{ marginTop: 8, marginBottom: 0, fontSize: 12 }}>
-            Haalt naam, beschrijving, categorieën, afbeeldingen, gewicht en verzendklasse op uit WooCommerce en werkt de lokale database bij -- handig als je die rechtstreeks in WooCommerce hebt aangepast. Gebruik dit vóór je synchroniseert, anders overschrijft de sync die wijzigingen weer. De prijs komt altijd vanuit de app; die wordt hier nooit teruggehaald.
-          </p>
-        </div>
-        <p className="muted" style={{ marginBottom: 0 }}>
-          Elke export markeert de producten als geëxporteerd. "Enkel nieuw/gewijzigd" neemt dan enkel wat sindsdien nieuw of aangepast is; met "Alles exporteren" heb je altijd de volledige set. Voor "Enkel prijzen" kies je bij het importeren in WooCommerce "Bestaande producten bijwerken".
-        </p>
+        <button
+          type="button"
+          onClick={toggleExportOpen}
+          aria-expanded={exportOpen}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            width: "100%",
+            background: "none",
+            border: "none",
+            padding: 0,
+            margin: 0,
+            cursor: "pointer",
+            color: "inherit",
+            font: "inherit",
+          }}
+        >
+          <h2 style={{ margin: 0, fontSize: 14 }}>
+            WooCommerce-export {activeTab === "all" ? "(alle technieken)" : `(${PROCESS_TYPE_LABELS[activeTab]})`}
+          </h2>
+          <span className="mono" style={{ color: "var(--cyan)", fontSize: 12 }}>{exportOpen ? "▲ Inklappen" : "▼ Uitklappen"}</span>
+        </button>
+
+        {exportOpen && (
+          <>
+            <div style={{ display: "flex", gap: 8, flexWrap: "nowrap", overflowX: "auto", paddingBottom: 4, marginTop: 12 }}>
+              <button className="btn secondary" style={{ flexShrink: 0 }} disabled={busy} onClick={() => runExport({}, "Volledige export")}>Alles exporteren</button>
+              <button className="btn secondary" style={{ flexShrink: 0 }} disabled={busy} onClick={() => runExport({ changed: "1" }, "Export van wijzigingen")}>
+                Enkel nieuw/gewijzigd
+              </button>
+              <button className="btn secondary" style={{ flexShrink: 0 }} disabled={busy} onClick={() => runExport({ prices: "1" }, "Prijsexport")}>
+                Enkel prijzen (bestaande producten bijwerken)
+              </button>
+              <button className="btn secondary" style={{ flexShrink: 0 }} disabled={busy} onClick={() => runSync(false)}>Bestaande producten synchroniseren</button>
+              <button className="btn" style={{ flexShrink: 0 }} disabled={busy} onClick={() => runSync(true)}>Alle producten synchroniseren (+ nieuwe aanmaken)</button>
+            </div>
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
+              <p className="muted" style={{ marginTop: 0, marginBottom: 8, fontSize: 12 }}>
+                WooCommerce → Lokale database
+              </p>
+              <button className="btn secondary" disabled={busy} onClick={runImportMeta}>
+                📥 Productgegevens importeren uit WooCommerce
+              </button>
+              <p className="muted" style={{ marginTop: 8, marginBottom: 0, fontSize: 12 }}>
+                Haalt naam, beschrijving, categorieën, afbeeldingen, gewicht en verzendklasse op uit WooCommerce en werkt de lokale database bij -- handig als je die rechtstreeks in WooCommerce hebt aangepast. Gebruik dit vóór je synchroniseert, anders overschrijft de sync die wijzigingen weer. De prijs komt altijd vanuit de app; die wordt hier nooit teruggehaald.
+              </p>
+            </div>
+            <p className="muted" style={{ marginBottom: 0 }}>
+              Elke export markeert de producten als geëxporteerd. "Enkel nieuw/gewijzigd" neemt dan enkel wat sindsdien nieuw of aangepast is; met "Alles exporteren" heb je altijd de volledige set. Voor "Enkel prijzen" kies je bij het importeren in WooCommerce "Bestaande producten bijwerken".
+            </p>
+          </>
+        )}
         {exportProgress && (
           <div style={{ marginTop: 12, padding: 12, background: "rgba(0, 255, 255, 0.1)", border: "1px solid rgba(0, 255, 255, 0.3)", borderRadius: 4 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
