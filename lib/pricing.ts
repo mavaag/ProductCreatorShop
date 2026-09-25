@@ -100,6 +100,17 @@ export function calculatePrice(
 export type CostBreakdown = { materials: number; machines: number; labor: number; other: number };
 
 /**
+ * Schat het inktverbruik (ml) bij volledige dekking van een printzone, op basis van zijn afmetingen (mm)
+ * en het opgegeven verbruik bij volledige dekking van 1 m² (material.ink_coverage_ml_per_m2). Bewust de
+ * bovengrens (volledige dekking) i.p.v. een gemiddelde -- zo raak je nooit onderprijsd bij een dicht
+ * beeld, en dekt de marge de rest.
+ */
+export function estimateFullCoverageInkMl(widthMm: number, heightMm: number, coverageMlPerM2: number): number {
+  const areaM2 = (widthMm / 1000) * (heightMm / 1000);
+  return areaM2 * coverageMlPerM2;
+}
+
+/**
  * Netto-marge op de uiteindelijke (afgeronde) verkoopprijs -- dus inclusief
  * het effect van het naar boven afronden op ,95. Dit is de marge die je echt overhoudt.
  */

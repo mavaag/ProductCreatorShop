@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef, forwardRef, useImperativeHand
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
-import { calculatePrice, machineHourlyCosts, effectiveMargin } from "@/lib/pricing";
+import { calculatePrice, machineHourlyCosts, effectiveMargin, estimateFullCoverageInkMl } from "@/lib/pricing";
 import { duplicateProduct } from "@/lib/duplicate";
 import { recordPriceHistory } from "@/lib/recalc";
 import { loadMinMargin } from "@/lib/settings";
@@ -239,7 +239,7 @@ export default function ProductEditPage() {
     }
     const zones = PERSONALIZATION_ZONES[plugin].map((def) => {
       const existing = personalization.zones.find((z) => z.key === def.key);
-      return existing ?? { key: def.key, cost_inputs: EMPTY_COST_INPUTS, fee: null };
+      return existing ?? { key: def.key, print_width_mm: null, print_height_mm: null, cost_inputs: EMPTY_COST_INPUTS, fee: null };
     });
     setPersonalization({ plugin, zones });
   }
@@ -249,6 +249,13 @@ export default function ProductEditPage() {
     setPersonalization({
       ...personalization,
       zones: personalization.zones.map((z) => (z.key === key ? { ...z, cost_inputs: inputs, fee: price.suggestedPrice } : z)),
+    });
+  }
+
+  function updatePersonalizationZoneDimensions(key: string, patch: { print_width_mm?: number | null; print_height_mm?: number | null }) {
+    setPersonalization({
+      ...personalization,
+      zones: personalization.zones.map((z) => (z.key === key ? { ...z, ...patch } : z)),
     });
   }
 
@@ -671,9 +678,12 @@ export default function ProductEditPage() {
                 metaKey={def?.metaKey ?? ""}
                 costInputs={zone.cost_inputs}
                 fee={zone.fee}
+                printWidthMm={zone.print_width_mm ?? null}
+                printHeightMm={zone.print_height_mm ?? null}
                 machines={machines}
                 materials={materials}
                 onChange={(inputs) => updatePersonalizationZoneInputs(zone.key, inputs)}
+                onChangeDimensions={(patch) => updatePersonalizationZoneDimensions(zone.key, patch)}
               />
             );
           })}
@@ -1217,17 +1227,23 @@ function PersonalizationZoneEditor({
   metaKey,
   costInputs,
   fee,
+  printWidthMm,
+  printHeightMm,
   machines,
   materials,
   onChange,
+  onChangeDimensions,
 }: {
   label: string;
   metaKey: string;
   costInputs: CostInputs;
   fee: number | null;
+  printWidthMm: number | null;
+  printHeightMm: number | null;
   machines: Machine[];
   materials: Material[];
   onChange: (inputs: CostInputs) => void;
+  onChangeDimensions: (patch: { print_width_mm?: number | null; print_height_mm?: number | null }) => void;
 }) {
   const machinesById = new Map(machines.map((m) => [m.id, m]));
   const materialsById = new Map(materials.map((m) => [m.id, m]));
@@ -1262,26 +1278,71 @@ function PersonalizationZoneEditor({
         {label} <span className="mono muted" style={{ fontSize: 11, fontWeight: 400 }}>({metaKey})</span>
       </h3>
 
+      <div className="row" style={{ marginBottom: 4 }}>
+        <div>
+          <label>Printzone breedte (mm)</label>
+          <input
+            type="number"
+            step="1"
+            value={printWidthMm ?? ""}
+            onChange={(e) => onChangeDimensions({ print_width_mm: e.target.value === "" ? null : parseFloat(e.target.value) || 0 })}
+            placeholder="bv. 300"
+          />
+        </div>
+        <div>
+          <label>Printzone hoogte (mm)</label>
+          <input
+            type="number"
+            step="1"
+            value={printHeightMm ?? ""}
+            onChange={(e) => onChangeDimensions({ print_height_mm: e.target.value === "" ? null : parseFloat(e.target.value) || 0 })}
+            placeholder="bv. 200"
+          />
+        </div>
+      </div>
+      <p className="muted" style={{ marginTop: 0, marginBottom: 12, fontSize: 12 }}>
+        Zelfde afmetingen als de printzone die je in de plugin instelde -- enkel nodig om hieronder bij een inkt-materiaal de hoeveelheid bij volledige dekking te kunnen voorstellen.
+      </p>
+
       <h2 style={{ fontSize: 13, marginTop: 12 }}>Materialen</h2>
       {costInputs.materials.map((line, idx) => {
         const mat = materialsById.get(line.material_id);
+        const suggestedMl =
+          mat?.unit === "ml" && mat.ink_coverage_ml_per_m2 != null && printWidthMm && printHeightMm
+            ? estimateFullCoverageInkMl(printWidthMm, printHeightMm, mat.ink_coverage_ml_per_m2)
+            : null;
         return (
-          <div className="line-item" key={idx}>
-            <div className="grow">
-              <select value={line.material_id} onChange={(e) => updateMaterialLine(idx, { material_id: e.target.value })}>
-                {materials.map((m) => <option key={m.id} value={m.id}>{m.name} (€{m.price_per_unit}/{m.unit})</option>)}
-              </select>
+          <div key={idx} style={{ marginBottom: suggestedMl != null ? 2 : 8 }}>
+            <div className="line-item" style={{ marginBottom: suggestedMl != null ? 2 : 0 }}>
+              <div className="grow">
+                <select value={line.material_id} onChange={(e) => updateMaterialLine(idx, { material_id: e.target.value })}>
+                  {materials.map((m) => <option key={m.id} value={m.id}>{m.name} (€{m.price_per_unit}/{m.unit})</option>)}
+                </select>
+              </div>
+              <div className="small">
+                <input
+                  type="number"
+                  step="0.01"
+                  value={line.quantity}
+                  onChange={(e) => updateMaterialLine(idx, { quantity: parseFloat(e.target.value) || 0 })}
+                  placeholder={mat?.unit === "kg" ? "gram" : mat?.unit}
+                />
+              </div>
+              <button className="btn danger" type="button" onClick={() => removeMaterialLine(idx)}>x</button>
             </div>
-            <div className="small">
-              <input
-                type="number"
-                step="0.01"
-                value={line.quantity}
-                onChange={(e) => updateMaterialLine(idx, { quantity: parseFloat(e.target.value) || 0 })}
-                placeholder={mat?.unit === "kg" ? "gram" : mat?.unit}
-              />
-            </div>
-            <button className="btn danger" type="button" onClick={() => removeMaterialLine(idx)}>x</button>
+            {suggestedMl != null && (
+              <p className="mono muted" style={{ fontSize: 11.5, margin: 0 }}>
+                Volledige dekking van {printWidthMm}&times;{printHeightMm}mm &asymp; {suggestedMl.toFixed(2)} ml
+                <button
+                  type="button"
+                  className="btn secondary"
+                  style={{ padding: "1px 6px", fontSize: 11, marginLeft: 8 }}
+                  onClick={() => updateMaterialLine(idx, { quantity: Math.round(suggestedMl * 100) / 100 })}
+                >
+                  Gebruik dit
+                </button>
+              </p>
+            )}
           </div>
         );
       })}
