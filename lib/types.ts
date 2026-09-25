@@ -73,6 +73,10 @@ export type Product = {
   shipping_class: string;
   personalization: Personalization;
   last_exported_at: string | null;
+  // Publicatiestatus zoals de vorige sync die zelf naar WooCommerce pushte -- null = nog nooit gesynct.
+  // Gebruikt om te detecteren of "published" hierna nog rechtstreeks in WooCommerce gewijzigd is, zodat
+  // een volgende sync die wijziging overneemt i.p.v. overschrijft.
+  last_exported_published: boolean | null;
   updated_at: string;
 };
 
