@@ -38,6 +38,19 @@ export async function nextAvailableSku(
   return `${base}-${i}`;
 }
 
+/** Controleert of een SKU al bestaat (exacte match, hoofdlettergevoelig zoals de kolom zelf). */
+export async function skuExists(
+  supabase: SupabaseClient,
+  table: "products" | "product_variations",
+  sku: string,
+  excludeId?: string
+): Promise<boolean> {
+  let query = supabase.from(table).select("id").eq("sku", sku);
+  if (excludeId) query = query.neq("id", excludeId);
+  const { data } = await query;
+  return (data?.length ?? 0) > 0;
+}
+
 /** Korte code per techniek, die achter de productnaam in de SKU komt (bv. VAAS-SUBL). */
 export const PROCESS_SKU_CODES: Record<string, string> = {
   "3d_print": "3DPR",

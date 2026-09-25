@@ -10,7 +10,7 @@ import { recordPriceHistory } from "@/lib/recalc";
 import { loadMinMargin } from "@/lib/settings";
 import { cartesian, comboKey } from "@/lib/variants";
 import { toHours } from "@/lib/types";
-import { slugifyForSku, nextAvailableSku } from "@/lib/sku";
+import { slugifyForSku, nextAvailableSku, skuExists } from "@/lib/sku";
 import {
   Product,
   ProductVariation,
@@ -187,8 +187,27 @@ export default function ProductEditPage() {
 
   async function duplicateThisProduct() {
     if (!product) return;
+    const suggested = await nextAvailableSku(supabase, "products", `${product.sku}-KOPIE`);
+    let sku = window.prompt("SKU voor het gedupliceerde product:", suggested);
+    if (sku === null) return; // geannuleerd
+
+    while (true) {
+      sku = sku.trim();
+      if (!sku) {
+        sku = window.prompt("Geef een geldige (niet-lege) SKU op:", suggested);
+        if (sku === null) return;
+        continue;
+      }
+      if (await skuExists(supabase, "products", sku)) {
+        sku = window.prompt(`SKU "${sku}" bestaat al -- geef een andere SKU op:`, sku);
+        if (sku === null) return;
+        continue;
+      }
+      break;
+    }
+
     try {
-      const id = await duplicateProduct(supabase, product);
+      const id = await duplicateProduct(supabase, product, sku);
       router.push(`/products/${id}`);
     } catch (e: any) {
       alert(e.message);
