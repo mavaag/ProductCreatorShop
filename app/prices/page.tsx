@@ -5,6 +5,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
 import { RecalcChange, applyRecalculation, previewRecalculation } from "@/lib/recalc";
+import { confirmDialog } from "@/components/DialogHost";
 
 export default function PricesPage() {
   const ready = useAuthGuard();
@@ -27,7 +28,7 @@ export default function PricesPage() {
 
   async function apply() {
     if (!changes || changes.length === 0) return;
-    if (!confirm(`${changes.length} variant(en) bijwerken? De oude prijzen blijven terug te vinden in de prijsgeschiedenis.`)) return;
+    if (!(await confirmDialog(`${changes.length} variant(en) bijwerken? De oude prijzen blijven terug te vinden in de prijsgeschiedenis.`))) return;
     setBusy(true);
     await applyRecalculation(supabase, changes, "Herberekening (materiaal-/machineprijzen)");
     setMessage(`${changes.length} variant(en) bijgewerkt.`);

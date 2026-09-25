@@ -6,6 +6,8 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
 import { calculatePrice, machineHourlyCosts, effectiveMargin, estimateFullCoverageInkMl } from "@/lib/pricing";
 import { duplicateProduct } from "@/lib/duplicate";
+import { PromptModal } from "@/components/PromptModal";
+import { confirmDialog, alertDialog } from "@/components/DialogHost";
 import { recordPriceHistory } from "@/lib/recalc";
 import { loadMinMargin } from "@/lib/settings";
 import { cartesian, comboKey } from "@/lib/variants";
@@ -49,6 +51,7 @@ export default function ProductEditPage() {
   const [savingWc, setSavingWc] = useState(false);
   const [personalization, setPersonalization] = useState<Personalization>(EMPTY_PERSONALIZATION);
   const [savingPersonalization, setSavingPersonalization] = useState(false);
+  const [duplicateSkuPrompt, setDuplicateSkuPrompt] = useState<{ suggested: string } | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [genValues, setGenValues] = useState<Record<string, string[]>>({});
@@ -166,7 +169,7 @@ export default function ProductEditPage() {
       attribute_values: {},
       cost_inputs,
     });
-    if (error) alert(error.message);
+    if (error) await alertDialog(error.message);
     load();
   }
 
@@ -181,36 +184,24 @@ export default function ProductEditPage() {
       cost_inputs: source.cost_inputs,
       image_url: source.image_url,
     });
-    if (error) alert(error.message);
+    if (error) await alertDialog(error.message);
     load();
   }
 
-  async function duplicateThisProduct() {
+  async function startDuplicate() {
     if (!product) return;
     const suggested = await nextAvailableSku(supabase, "products", `${product.sku}-KOPIE`);
-    let sku = window.prompt("SKU voor het gedupliceerde product:", suggested);
-    if (sku === null) return; // geannuleerd
+    setDuplicateSkuPrompt({ suggested });
+  }
 
-    while (true) {
-      sku = sku.trim();
-      if (!sku) {
-        sku = window.prompt("Geef een geldige (niet-lege) SKU op:", suggested);
-        if (sku === null) return;
-        continue;
-      }
-      if (await skuExists(supabase, "products", sku)) {
-        sku = window.prompt(`SKU "${sku}" bestaat al -- geef een andere SKU op:`, sku);
-        if (sku === null) return;
-        continue;
-      }
-      break;
-    }
-
+  async function confirmDuplicate(sku: string) {
+    if (!product) return;
     try {
       const id = await duplicateProduct(supabase, product, sku);
+      setDuplicateSkuPrompt(null);
       router.push(`/products/${id}`);
     } catch (e: any) {
-      alert(e.message);
+      await alertDialog(e.message);
     }
   }
 
@@ -223,7 +214,7 @@ export default function ProductEditPage() {
         .update({ name, updated_at: new Date().toISOString() })
         .eq("id", productId);
       if (error) {
-        alert(error.message);
+        await alertDialog(error.message);
         return;
       }
       setNotice("Naam aangepast. Gebruik de WooCommerce-sync om de nieuwe naam ook in de webshop bij te werken (de SKU blijft ongewijzigd).");
@@ -247,7 +238,7 @@ export default function ProductEditPage() {
       })
       .eq("id", productId);
     setSavingWc(false);
-    if (error) alert(error.message);
+    if (error) await alertDialog(error.message);
     load();
   }
 
@@ -286,7 +277,7 @@ export default function ProductEditPage() {
       .update({ personalization, updated_at: new Date().toISOString() })
       .eq("id", productId);
     setSavingPersonalization(false);
-    if (error) alert(error.message);
+    if (error) await alertDialog(error.message);
     load();
   }
 
@@ -315,7 +306,7 @@ export default function ProductEditPage() {
 
   async function generateVariations() {
     if (!product || genCombos.length === 0) return;
-    if (genCombos.length > 1 && !confirm(`${genCombos.length} nieuwe varianten aanmaken met de prijsberekening van je laatste variant als startpunt?`)) return;
+    if (genCombos.length > 1 && !(await confirmDialog(`${genCombos.length} nieuwe varianten aanmaken met de prijsberekening van je laatste variant als startpunt?`))) return;
     setGenerating(true);
     const template = templateCostInputs();
     const machinesById = new Map(machines.map((m) => [m.id, m]));
@@ -339,7 +330,7 @@ export default function ProductEditPage() {
         .select("id")
         .single();
       if (error || !row) {
-        alert(error?.message ?? "Variant aanmaken mislukt");
+        await alertDialog(error?.message ?? "Variant aanmaken mislukt");
         break;
       }
       await recordPriceHistory(
@@ -358,7 +349,7 @@ export default function ProductEditPage() {
   }
 
   async function deleteVariation(id: string) {
-    if (!confirm("Deze variant verwijderen?")) return;
+    if (!(await confirmDialog("Deze variant verwijderen?", { confirmLabel: "Verwijderen", danger: true }))) return;
     await supabase.from("product_variations").delete().eq("id", id);
     load();
   }
@@ -366,13 +357,14 @@ export default function ProductEditPage() {
   async function deleteProduct() {
     if (!product) return;
 
-    if (!confirm(`"${product.name}" (en al zijn varianten) verwijderen uit de lokale database?`)) return;
+    if (!(await confirmDialog(`"${product.name}" (en al zijn varianten) verwijderen uit de lokale database?`, { confirmLabel: "Verwijderen", danger: true }))) return;
 
     // Vraag of het ook uit WooCommerce verwijderd moet worden
-    const deleteFromWoo = confirm(
+    const deleteFromWoo = await confirmDialog(
       `Ook uit WooCommerce verwijderen?\n\n` +
-      `Klik OK om het product zowel lokaal als in WooCommerce te verwijderen.\n` +
-      `Klik Annuleren om alleen lokaal te verwijderen (het product blijft in WooCommerce staan).`
+      `Klik "Ja, ook uit WooCommerce" om het product zowel lokaal als in WooCommerce te verwijderen.\n` +
+      `Klik Annuleren om alleen lokaal te verwijderen (het product blijft in WooCommerce staan).`,
+      { confirmLabel: "Ja, ook uit WooCommerce", danger: true }
     );
 
     try {
@@ -388,9 +380,10 @@ export default function ProductEditPage() {
         const body = await res.json();
 
         if (!res.ok || !body.deleted) {
-          const proceed = confirm(
+          const proceed = await confirmDialog(
             `Waarschuwing: ${body.message || body.error || "Product niet gevonden in WooCommerce"}\n\n` +
-            `Toch doorgaan met lokaal verwijderen?`
+            `Toch doorgaan met lokaal verwijderen?`,
+            { confirmLabel: "Toch verwijderen", danger: true }
           );
           if (!proceed) return;
         }
@@ -401,7 +394,7 @@ export default function ProductEditPage() {
       router.push("/products");
 
     } catch (e: any) {
-      alert(`Fout bij verwijderen: ${e.message}`);
+      await alertDialog(`Fout bij verwijderen: ${e.message}`);
     }
   }
 
@@ -421,7 +414,7 @@ export default function ProductEditPage() {
     if (!product) return;
     const cleanNames = attrDraft.map((n) => n.trim()).filter(Boolean);
     if (cleanNames.length === 0 && variations.length > 1) {
-      alert("Een simpel product (zonder attributen) heeft maar 1 prijsberekening. Verwijder eerst de overige varianten.");
+      await alertDialog("Een simpel product (zonder attributen) heeft maar 1 prijsberekening. Verwijder eerst de overige varianten.");
       return;
     }
     setSavingAttrs(true);
@@ -461,7 +454,7 @@ export default function ProductEditPage() {
 
   async function saveAllVariations() {
     if (variations.length === 0) return;
-    if (!confirm(`Alle ${variations.length} varianten opslaan?`)) return;
+    if (!(await confirmDialog(`Alle ${variations.length} varianten opslaan?`))) return;
 
     setSavingAll(true);
     for (const v of variations) {
@@ -474,10 +467,10 @@ export default function ProductEditPage() {
     load();
   }
 
-  function applyBulkMargin() {
+  async function applyBulkMargin() {
     const newMargin = parseFloat(bulkMargin);
     if (!newMargin || newMargin < 0 || newMargin > 100) {
-      alert("Voer een geldige marge in tussen 0 en 100%");
+      await alertDialog("Voer een geldige marge in tussen 0 en 100%");
       return;
     }
 
@@ -539,7 +532,7 @@ export default function ProductEditPage() {
 
       <div style={{ marginBottom: 16 }}>
         <button className="btn secondary" onClick={() => router.push("/products")}>&larr; Terug naar productenlijst</button>
-        <button className="btn secondary" style={{ marginLeft: 8 }} onClick={duplicateThisProduct}>Product dupliceren</button>
+        <button className="btn secondary" style={{ marginLeft: 8 }} onClick={startDuplicate}>Product dupliceren</button>
         <button className="btn danger" style={{ marginLeft: 8 }} onClick={deleteProduct}>Product verwijderen</button>
       </div>
       {notice && <div className="card" style={{ background: "var(--moss-soft)" }}>{notice}</div>}
@@ -851,6 +844,17 @@ export default function ProductEditPage() {
       {(!isSimple || variations.length === 0) && (
         <button className="btn" onClick={addVariation}>{isSimple ? "+ Prijsberekening toevoegen" : "+ Variant toevoegen"}</button>
       )}
+
+      <PromptModal
+        open={duplicateSkuPrompt != null}
+        title="Product dupliceren"
+        message="Geef de SKU op voor het gedupliceerde product."
+        initialValue={duplicateSkuPrompt?.suggested ?? ""}
+        confirmLabel="Dupliceren"
+        validate={async (sku) => ((await skuExists(supabase, "products", sku)) ? `SKU "${sku}" bestaat al -- kies een andere SKU.` : null)}
+        onConfirm={confirmDuplicate}
+        onCancel={() => setDuplicateSkuPrompt(null)}
+      />
     </div>
   );
 }

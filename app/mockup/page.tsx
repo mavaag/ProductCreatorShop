@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
 import { MockupTemplate } from "@/lib/types";
 import { DEFAULT_CORNERS, Quad, drawPrintInQuad, loadImage } from "@/lib/mockup";
+import { confirmDialog, alertDialog } from "@/components/DialogHost";
 
 type Screen = { kind: "list" } | { kind: "edit-template"; template: MockupTemplate | null } | { kind: "compose"; template: MockupTemplate };
 
@@ -25,7 +26,7 @@ export default function MockupPage() {
   }, [ready]);
 
   async function deleteTemplate(t: MockupTemplate) {
-    if (!confirm(`Template "${t.name}" verwijderen?`)) return;
+    if (!(await confirmDialog(`Template "${t.name}" verwijderen?`, { confirmLabel: "Verwijderen", danger: true }))) return;
     await supabase.from("mockup_templates").delete().eq("id", t.id);
     load();
   }
@@ -143,8 +144,8 @@ function TemplateEditor({
   }
 
   async function save() {
-    if (!name.trim()) return alert("Geef de template een naam.");
-    if (!previewUrl) return alert("Kies eerst een kamerfoto.");
+    if (!name.trim()) { await alertDialog("Geef de template een naam."); return; }
+    if (!previewUrl) { await alertDialog("Kies eerst een kamerfoto."); return; }
     setSaving(true);
     try {
       let roomImageUrl = template?.room_image_url ?? "";
@@ -163,7 +164,7 @@ function TemplateEditor({
       }
       onSaved();
     } catch (err: any) {
-      alert("Opslaan mislukt: " + (err?.message ?? String(err)));
+      await alertDialog("Opslaan mislukt: " + (err?.message ?? String(err)));
     } finally {
       setSaving(false);
     }

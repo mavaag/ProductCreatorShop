@@ -6,6 +6,7 @@ import { useAuthGuard } from "@/lib/useAuthGuard";
 import { machineHourlyCosts } from "@/lib/pricing";
 import { Machine } from "@/lib/types";
 import { offerRecalculation } from "@/lib/recalc";
+import { confirmDialog } from "@/components/DialogHost";
 
 const CATEGORIES = [
   { value: "3d_printer", label: "3D-printer" },
@@ -71,7 +72,7 @@ export default function MachinesPage() {
   }
 
   async function deleteMachine(id: string) {
-    if (!confirm("Deze machine verwijderen? Producten die ernaar verwijzen tonen dan geen prijs meer tot je een andere machine kiest.")) return;
+    if (!(await confirmDialog("Deze machine verwijderen? Producten die ernaar verwijzen tonen dan geen prijs meer tot je een andere machine kiest.", { confirmLabel: "Verwijderen", danger: true }))) return;
     await supabase.from("machines").delete().eq("id", id);
     load();
   }
