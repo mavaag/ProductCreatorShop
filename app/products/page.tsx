@@ -475,12 +475,9 @@ export default function ProductsPage() {
               <button className="btn secondary" disabled={busy} onClick={() => runExport({ changed: "1" }, "Export van wijzigingen")}>
                 Nieuw/gewijzigd
               </button>
-              <button className="btn secondary" disabled={busy} onClick={() => runExport({ prices: "1" }, "Prijsexport")}>
-                Enkel prijzen
-              </button>
             </div>
             <p className="muted" style={{ marginTop: 12, marginBottom: 0 }}>
-              Elke export markeert de producten als geëxporteerd. "Nieuw/gewijzigd" neemt dan enkel wat sindsdien nieuw of aangepast is; met "Alles exporteren" heb je altijd de volledige set. Voor "Enkel prijzen" kies je bij het importeren in WooCommerce "Bestaande producten bijwerken".
+              Elke export markeert de producten als geëxporteerd. "Nieuw/gewijzigd" neemt dan enkel wat sindsdien nieuw of aangepast is; met "Alles exporteren" heb je altijd de volledige set.
             </p>
           </>
         )}

@@ -10,7 +10,6 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 // Parameters (allemaal optioneel):
 //   type=3d_print|uv_print|laser_engraving|laser_cutting|sublimation  enkel die techniek
 //   changed=1  enkel producten die nieuw/gewijzigd zijn sinds de vorige (gemarkeerde) export
-//   prices=1   enkel SKU + Regular price van de varianten, om bestaande producten bij te werken
 //   mark=1     na het genereren de geëxporteerde producten/prijzen als "geëxporteerd" markeren
 const PROCESS_TYPES = ["3d_print", "uv_print", "laser_engraving", "laser_cutting", "sublimation"];
 
@@ -26,7 +25,6 @@ export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const type = params.get("type");
   const changedOnly = params.get("changed") === "1";
-  const pricesOnly = params.get("prices") === "1";
   const mark = params.get("mark") === "1";
 
   if (type && !PROCESS_TYPES.includes(type)) {
@@ -56,11 +54,11 @@ export async function GET(request: Request) {
   let products = (data ?? []) as any[];
   if (changedOnly) products = products.filter(isChanged);
 
-  const csv = pricesOnly ? buildPricesCsv(products) : buildFullCsv(products);
+  const csv = buildFullCsv(products);
 
   if (mark) await markExported(supabase, products);
 
-  const suffix = [type, changedOnly ? "gewijzigd" : null, pricesOnly ? "prijzen" : null].filter(Boolean).join("-");
+  const suffix = [type, changedOnly ? "gewijzigd" : null].filter(Boolean).join("-");
   return new NextResponse(csv, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
@@ -80,20 +78,6 @@ function isChanged(p: any): boolean {
   return (p.product_variations as Variation[]).some(
     (v) => v.suggested_price != null && Number(v.suggested_price) !== Number(v.exported_price)
   );
-}
-
-function buildPricesCsv(products: any[]): string {
-  const rows: string[][] = [["Type", "SKU", "Regular price"]];
-  for (const p of products) {
-    const simple = isSimple(p);
-    for (const v of p.product_variations as Variation[]) {
-      if (v.suggested_price == null) continue;
-      // Bij een simpel product staat de prijs op het product zelf (SKU van het product).
-      rows.push(simple ? ["simple", p.sku, Number(v.suggested_price).toFixed(2)] : ["variation", v.sku, Number(v.suggested_price).toFixed(2)]);
-      if (simple) break;
-    }
-  }
-  return toCsv(rows);
 }
 
 function buildFullCsv(products: any[]): string {
