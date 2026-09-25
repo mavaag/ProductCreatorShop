@@ -464,16 +464,16 @@ export default function ProductsPage() {
 
         {exportOpen && (
           <>
-            <div style={{ display: "flex", gap: 8, flexWrap: "nowrap", overflowX: "auto", paddingBottom: 4, marginTop: 12 }}>
-              <button className="btn secondary" style={{ flexShrink: 0 }} disabled={busy} onClick={() => runExport({}, "Volledige export")}>Alles exporteren</button>
-              <button className="btn secondary" style={{ flexShrink: 0 }} disabled={busy} onClick={() => runExport({ changed: "1" }, "Export van wijzigingen")}>
-                Enkel nieuw/gewijzigd
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+              <button className="btn secondary" disabled={busy} onClick={() => runExport({}, "Volledige export")}>Alles exporteren</button>
+              <button className="btn secondary" disabled={busy} onClick={() => runExport({ changed: "1" }, "Export van wijzigingen")}>
+                Nieuw/gewijzigd
               </button>
-              <button className="btn secondary" style={{ flexShrink: 0 }} disabled={busy} onClick={() => runExport({ prices: "1" }, "Prijsexport")}>
-                Enkel prijzen (bestaande producten bijwerken)
+              <button className="btn secondary" disabled={busy} onClick={() => runExport({ prices: "1" }, "Prijsexport")}>
+                Enkel prijzen
               </button>
-              <button className="btn secondary" style={{ flexShrink: 0 }} disabled={busy} onClick={() => runSync(false)}>Bestaande producten synchroniseren</button>
-              <button className="btn" style={{ flexShrink: 0 }} disabled={busy} onClick={() => runSync(true)}>Alle producten synchroniseren (+ nieuwe aanmaken)</button>
+              <button className="btn secondary" disabled={busy} onClick={() => runSync(false)}>Bestaande synchroniseren</button>
+              <button className="btn" disabled={busy} onClick={() => runSync(true)}>Alles sync (+ nieuw)</button>
             </div>
             <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
               <p className="muted" style={{ marginTop: 0, marginBottom: 8, fontSize: 12 }}>
@@ -487,7 +487,7 @@ export default function ProductsPage() {
               </p>
             </div>
             <p className="muted" style={{ marginBottom: 0 }}>
-              Elke export markeert de producten als geëxporteerd. "Enkel nieuw/gewijzigd" neemt dan enkel wat sindsdien nieuw of aangepast is; met "Alles exporteren" heb je altijd de volledige set. Voor "Enkel prijzen" kies je bij het importeren in WooCommerce "Bestaande producten bijwerken".
+              Elke export markeert de producten als geëxporteerd. "Nieuw/gewijzigd" neemt dan enkel wat sindsdien nieuw of aangepast is; met "Alles exporteren" heb je altijd de volledige set. Voor "Enkel prijzen" kies je bij het importeren in WooCommerce "Bestaande producten bijwerken".
             </p>
           </>
         )}
