@@ -135,12 +135,12 @@ export default function ProductsPage() {
     setBusy(false);
   }
 
-  async function callSync(options: { createMissing: boolean; dryRun: boolean }) {
+  async function callSync(options: { createMissing: boolean; dryRun: boolean }, productIds?: string[]) {
     const { data } = await supabase.auth.getSession();
     const res = await fetch("/api/sync", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token}` },
-      body: JSON.stringify({ ...options, ...(activeTab !== "all" ? { type: activeTab } : {}) }),
+      body: JSON.stringify({ ...options, ...(activeTab !== "all" ? { type: activeTab } : {}), ...(productIds ? { productIds } : {}) }),
     });
     const body = await res.json();
     if (!res.ok) throw new Error(body.error ?? `Synchronisatie mislukt (${res.status})`);
@@ -148,8 +148,9 @@ export default function ProductsPage() {
   }
 
   // createMissing false: enkel prijzen van bestaande producten. true: ook nieuwe producten aanmaken,
-  // na een droge run die eerst toont wat er precies zou gebeuren.
-  async function runSync(createMissing: boolean) {
+  // na een droge run die eerst toont wat er precies zou gebeuren. productIds: beperk tot deze producten
+  // (bv. een selectie op de lijst) i.p.v. alle producten (binnen het actieve techniek-tabblad).
+  async function runSync(createMissing: boolean, productIds?: string[]) {
     setBusy(true);
     setMessage(null);
     setSyncProgress(null);
@@ -158,7 +159,7 @@ export default function ProductsPage() {
       setSyncProgress({ current: 0, total: 0, product: "Voorbereiden..." });
 
       if (createMissing) {
-        const plan = await callSync({ createMissing: true, dryRun: true });
+        const plan = await callSync({ createMissing: true, dryRun: true }, productIds);
         setSyncProgress(null);
         const names = plan.created.length ? plan.created.join(", ") : "geen";
         const proceed = await confirmDialog(
@@ -172,7 +173,10 @@ export default function ProductsPage() {
         }
       } else {
         setSyncProgress(null);
-        if (!(await confirmDialog("Bestaande producten synchroniseren met WooCommerce?\n\nDit update: prijzen, beschrijving, categorieën, afbeeldingen, gewicht en verzendklasse."))) {
+        const message = productIds
+          ? `${productIds.length} geselecteerde product(en) synchroniseren met WooCommerce?\n\nDit update: prijzen, beschrijving, categorieën, afbeeldingen, gewicht en verzendklasse.`
+          : "Bestaande producten synchroniseren met WooCommerce?\n\nDit update: prijzen, beschrijving, categorieën, afbeeldingen, gewicht en verzendklasse.";
+        if (!(await confirmDialog(message))) {
           setBusy(false);
           return;
         }
@@ -181,7 +185,8 @@ export default function ProductsPage() {
       // Haal de producten op die gesynchroniseerd gaan worden
       setSyncProgress({ current: 0, total: 0, product: "Producten ophalen..." });
       let query = supabase.from("products").select("id, sku, name").order("name");
-      if (activeTab !== "all") query = query.eq("process_type", activeTab);
+      if (productIds) query = query.in("id", productIds);
+      else if (activeTab !== "all") query = query.eq("process_type", activeTab);
       const { data: productsToSync } = await query;
       const total = productsToSync?.length ?? 0;
 
@@ -210,7 +215,7 @@ export default function ProductsPage() {
       }, 800);
 
       try {
-        const body = await callSync({ createMissing, dryRun: false });
+        const body = await callSync({ createMissing, dryRun: false }, productIds);
         clearInterval(progressInterval);
 
         // Toon 100% voltooid
@@ -593,6 +598,7 @@ export default function ProductsPage() {
           />
           <button className="btn secondary" disabled={busy || !bulkMargin} onClick={bulkSetMargin}>Marge toepassen</button>
           <button className="btn danger" disabled={busy} onClick={bulkDelete}>Verwijderen</button>
+          <button className="btn secondary" disabled={busy} onClick={() => runSync(true, Array.from(selected))}>Synchroniseer geselecteerde</button>
           <button className="btn secondary" onClick={() => setSelected(new Set())}>Selectie wissen</button>
         </div>
       )}

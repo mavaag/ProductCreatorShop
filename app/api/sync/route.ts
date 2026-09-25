@@ -22,7 +22,8 @@ import { createClient } from "@supabase/supabase-js";
 //   WOOCOMMERCE_CONSUMER_SECRET
 // De aanvrager moet ingelogd zijn (Supabase-sessietoken in de Authorization-header).
 //
-// Body (JSON, optioneel): { type?: string, dryRun?: boolean, createMissing?: boolean }
+// Body (JSON, optioneel): { type?: string, productIds?: string[], dryRun?: boolean, createMissing?: boolean }
+// productIds beperkt de sync tot die specifieke producten (bv. een selectie op de productenlijst).
 // dryRun schrijft niets weg (noch in WooCommerce, noch in de database) en meldt wat er zou gebeuren.
 
 type Report = {
@@ -62,6 +63,7 @@ export async function POST(request: Request) {
 
   const body = await request.json().catch(() => ({}));
   const type: string | undefined = body.type;
+  const productIds: string[] | undefined = Array.isArray(body.productIds) && body.productIds.length > 0 ? body.productIds : undefined;
   const dryRun = body.dryRun === true;
   const createMissing = body.createMissing === true;
 
@@ -70,6 +72,7 @@ export async function POST(request: Request) {
     .select("id, sku, name, published, last_exported_published, attribute_names, default_attribute_values, description, categories, image_url, weight_kg, shipping_class, personalization, product_variations(id, sku, attribute_values, suggested_price, image_url)")
     .order("name");
   if (type) query = query.eq("process_type", type);
+  if (productIds) query = query.in("id", productIds);
   const { data: products, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
