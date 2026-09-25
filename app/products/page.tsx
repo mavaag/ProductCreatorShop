@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
@@ -33,6 +33,48 @@ function priceRange(p: ProductWithVariations) {
   return { min: Math.min(...prices), max: Math.max(...prices) };
 }
 
+/** Klikbare kop van een inklapbare kaart -- ziet eruit als een gewone <h2>-titelbalk, geen knopstijl. */
+const collapsibleHeaderStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  width: "100%",
+  background: "none",
+  border: "none",
+  padding: 0,
+  margin: 0,
+  cursor: "pointer",
+  color: "inherit",
+  font: "inherit",
+};
+
+/** Open/dicht-status van een inklapbare sectie, onthouden in localStorage onder de opgegeven sleutel. */
+function useCollapsible(storageKey: string): [boolean, () => void] {
+  const [open, setOpen] = useState(true);
+
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(storageKey) === "1") setOpen(false);
+    } catch {
+      // localStorage niet beschikbaar -- dan blijft de sectie gewoon standaard uitgeklapt.
+    }
+  }, [storageKey]);
+
+  function toggle() {
+    setOpen((current) => {
+      const next = !current;
+      try {
+        localStorage.setItem(storageKey, next ? "0" : "1");
+      } catch {
+        // localStorage niet beschikbaar -- dan onthouden we de stand gewoon niet tussen bezoeken.
+      }
+      return next;
+    });
+  }
+
+  return [open, toggle];
+}
+
 export default function ProductsPage() {
   const ready = useAuthGuard();
   const [products, setProducts] = useState<ProductWithVariations[]>([]);
@@ -48,27 +90,8 @@ export default function ProductsPage() {
   const [exportProgress, setExportProgress] = useState<string | null>(null);
   const [syncProgress, setSyncProgress] = useState<{ current: number; total: number; product: string } | null>(null);
   const [importProgress, setImportProgress] = useState<{ current: number; total: number; product: string } | null>(null);
-  const [exportOpen, setExportOpen] = useState(true);
-
-  useEffect(() => {
-    try {
-      if (localStorage.getItem("woo-export-collapsed") === "1") setExportOpen(false);
-    } catch {
-      // localStorage niet beschikbaar -- dan blijft de sectie gewoon standaard uitgeklapt.
-    }
-  }, []);
-
-  function toggleExportOpen() {
-    setExportOpen((open) => {
-      const next = !open;
-      try {
-        localStorage.setItem("woo-export-collapsed", next ? "0" : "1");
-      } catch {
-        // localStorage niet beschikbaar -- dan onthouden we de stand gewoon niet tussen bezoeken.
-      }
-      return next;
-    });
-  }
+  const [exportOpen, toggleExportOpen] = useCollapsible("woo-export-collapsed");
+  const [syncOpen, toggleSyncOpen] = useCollapsible("woo-sync-collapsed");
 
   async function load() {
     const { data } = await supabase
@@ -438,26 +461,9 @@ export default function ProductsPage() {
       </div>
 
       <div className="card" style={{ marginBottom: 16 }}>
-        <button
-          type="button"
-          onClick={toggleExportOpen}
-          aria-expanded={exportOpen}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            width: "100%",
-            background: "none",
-            border: "none",
-            padding: 0,
-            margin: 0,
-            cursor: "pointer",
-            color: "inherit",
-            font: "inherit",
-          }}
-        >
+        <button type="button" onClick={toggleExportOpen} aria-expanded={exportOpen} style={collapsibleHeaderStyle}>
           <h2 style={{ margin: 0, fontSize: 14 }}>
-            WooCommerce-export {activeTab === "all" ? "(alle technieken)" : `(${PROCESS_TYPE_LABELS[activeTab]})`}
+            CSV-export {activeTab === "all" ? "(alle technieken)" : `(${PROCESS_TYPE_LABELS[activeTab]})`}
           </h2>
           <span className="mono" style={{ color: "var(--cyan)", fontSize: 12 }}>{exportOpen ? "▲ Inklappen" : "▼ Uitklappen"}</span>
         </button>
@@ -472,21 +478,8 @@ export default function ProductsPage() {
               <button className="btn secondary" disabled={busy} onClick={() => runExport({ prices: "1" }, "Prijsexport")}>
                 Enkel prijzen
               </button>
-              <button className="btn secondary" disabled={busy} onClick={() => runSync(false)}>Bestaande synchroniseren</button>
-              <button className="btn" disabled={busy} onClick={() => runSync(true)}>Alles sync (+ nieuw)</button>
             </div>
-            <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
-              <p className="muted" style={{ marginTop: 0, marginBottom: 8, fontSize: 12 }}>
-                WooCommerce → Lokale database
-              </p>
-              <button className="btn secondary" disabled={busy} onClick={runImportMeta}>
-                📥 Productgegevens importeren uit WooCommerce
-              </button>
-              <p className="muted" style={{ marginTop: 8, marginBottom: 0, fontSize: 12 }}>
-                Haalt naam, beschrijving, categorieën, afbeeldingen, gewicht en verzendklasse op uit WooCommerce en werkt de lokale database bij -- handig als je die rechtstreeks in WooCommerce hebt aangepast. Gebruik dit vóór je synchroniseert, anders overschrijft de sync die wijzigingen weer. De prijs komt altijd vanuit de app; die wordt hier nooit teruggehaald.
-              </p>
-            </div>
-            <p className="muted" style={{ marginBottom: 0 }}>
+            <p className="muted" style={{ marginTop: 12, marginBottom: 0 }}>
               Elke export markeert de producten als geëxporteerd. "Nieuw/gewijzigd" neemt dan enkel wat sindsdien nieuw of aangepast is; met "Alles exporteren" heb je altijd de volledige set. Voor "Enkel prijzen" kies je bij het importeren in WooCommerce "Bestaande producten bijwerken".
             </p>
           </>
@@ -511,6 +504,35 @@ export default function ProductsPage() {
               }
             `}</style>
           </div>
+        )}
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <button type="button" onClick={toggleSyncOpen} aria-expanded={syncOpen} style={collapsibleHeaderStyle}>
+          <h2 style={{ margin: 0, fontSize: 14 }}>
+            WooCommerce-synchronisatie {activeTab === "all" ? "(alle technieken)" : `(${PROCESS_TYPE_LABELS[activeTab]})`}
+          </h2>
+          <span className="mono" style={{ color: "var(--cyan)", fontSize: 12 }}>{syncOpen ? "▲ Inklappen" : "▼ Uitklappen"}</span>
+        </button>
+
+        {syncOpen && (
+          <>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+              <button className="btn secondary" disabled={busy} onClick={() => runSync(false)}>Bestaande synchroniseren</button>
+              <button className="btn" disabled={busy} onClick={() => runSync(true)}>Alles sync (+ nieuw)</button>
+            </div>
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
+              <p className="muted" style={{ marginTop: 0, marginBottom: 8, fontSize: 12 }}>
+                WooCommerce → Lokale database
+              </p>
+              <button className="btn secondary" disabled={busy} onClick={runImportMeta}>
+                📥 Productgegevens importeren uit WooCommerce
+              </button>
+              <p className="muted" style={{ marginTop: 8, marginBottom: 0, fontSize: 12 }}>
+                Haalt naam, beschrijving, categorieën, afbeeldingen, gewicht en verzendklasse op uit WooCommerce en werkt de lokale database bij -- handig als je die rechtstreeks in WooCommerce hebt aangepast. Gebruik dit vóór je synchroniseert, anders overschrijft de sync die wijzigingen weer. De prijs komt altijd vanuit de app; die wordt hier nooit teruggehaald.
+              </p>
+            </div>
+          </>
         )}
         {syncProgress && (
           <div style={{ marginTop: 12, padding: 12, background: "rgba(0, 255, 255, 0.1)", border: "1px solid rgba(0, 255, 255, 0.3)", borderRadius: 4 }}>
@@ -590,8 +612,9 @@ export default function ProductsPage() {
             </p>
           </div>
         )}
-        {message && <p className="mono" style={{ marginBottom: 0 }}>{message}</p>}
       </div>
+
+      {message && <p className="mono" style={{ marginBottom: 16 }}>{message}</p>}
 
       <div className="tabs">
         {TABS.map((t) => (
