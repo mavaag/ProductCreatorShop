@@ -48,6 +48,27 @@ export default function ProductsPage() {
   const [exportProgress, setExportProgress] = useState<string | null>(null);
   const [syncProgress, setSyncProgress] = useState<{ current: number; total: number; product: string } | null>(null);
   const [importProgress, setImportProgress] = useState<{ current: number; total: number; product: string } | null>(null);
+  const [exportOpen, setExportOpen] = useState(true);
+
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("woo-export-collapsed") === "1") setExportOpen(false);
+    } catch {
+      // localStorage niet beschikbaar -- dan blijft de sectie gewoon standaard uitgeklapt.
+    }
+  }, []);
+
+  function toggleExportOpen() {
+    setExportOpen((open) => {
+      const next = !open;
+      try {
+        localStorage.setItem("woo-export-collapsed", next ? "0" : "1");
+      } catch {
+        // localStorage niet beschikbaar -- dan onthouden we de stand gewoon niet tussen bezoeken.
+      }
+      return next;
+    });
+  }
 
   async function load() {
     const { data } = await supabase
@@ -135,12 +156,12 @@ export default function ProductsPage() {
     setBusy(false);
   }
 
-  async function callSync(options: { createMissing: boolean; dryRun: boolean }) {
+  async function callSync(options: { createMissing: boolean; dryRun: boolean }, productIds?: string[]) {
     const { data } = await supabase.auth.getSession();
     const res = await fetch("/api/sync", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token}` },
-      body: JSON.stringify({ ...options, ...(activeTab !== "all" ? { type: activeTab } : {}) }),
+      body: JSON.stringify({ ...options, ...(activeTab !== "all" ? { type: activeTab } : {}), ...(productIds ? { productIds } : {}) }),
     });
     const body = await res.json();
     if (!res.ok) throw new Error(body.error ?? `Synchronisatie mislukt (${res.status})`);
@@ -148,8 +169,9 @@ export default function ProductsPage() {
   }
 
   // createMissing false: enkel prijzen van bestaande producten. true: ook nieuwe producten aanmaken,
-  // na een droge run die eerst toont wat er precies zou gebeuren.
-  async function runSync(createMissing: boolean) {
+  // na een droge run die eerst toont wat er precies zou gebeuren. productIds: beperk tot deze producten
+  // (bv. een selectie op de lijst) i.p.v. alle producten (binnen het actieve techniek-tabblad).
+  async function runSync(createMissing: boolean, productIds?: string[]) {
     setBusy(true);
     setMessage(null);
     setSyncProgress(null);
@@ -158,7 +180,7 @@ export default function ProductsPage() {
       setSyncProgress({ current: 0, total: 0, product: "Voorbereiden..." });
 
       if (createMissing) {
-        const plan = await callSync({ createMissing: true, dryRun: true });
+        const plan = await callSync({ createMissing: true, dryRun: true }, productIds);
         setSyncProgress(null);
         const names = plan.created.length ? plan.created.join(", ") : "geen";
         const proceed = await confirmDialog(
@@ -172,7 +194,10 @@ export default function ProductsPage() {
         }
       } else {
         setSyncProgress(null);
-        if (!(await confirmDialog("Bestaande producten synchroniseren met WooCommerce?\n\nDit update: prijzen, beschrijving, categorieën, afbeeldingen, gewicht en verzendklasse."))) {
+        const message = productIds
+          ? `${productIds.length} geselecteerde product(en) synchroniseren met WooCommerce?\n\nDit update: prijzen, beschrijving, categorieën, afbeeldingen, gewicht en verzendklasse.`
+          : "Bestaande producten synchroniseren met WooCommerce?\n\nDit update: prijzen, beschrijving, categorieën, afbeeldingen, gewicht en verzendklasse.";
+        if (!(await confirmDialog(message))) {
           setBusy(false);
           return;
         }
@@ -181,7 +206,8 @@ export default function ProductsPage() {
       // Haal de producten op die gesynchroniseerd gaan worden
       setSyncProgress({ current: 0, total: 0, product: "Producten ophalen..." });
       let query = supabase.from("products").select("id, sku, name").order("name");
-      if (activeTab !== "all") query = query.eq("process_type", activeTab);
+      if (productIds) query = query.in("id", productIds);
+      else if (activeTab !== "all") query = query.eq("process_type", activeTab);
       const { data: productsToSync } = await query;
       const total = productsToSync?.length ?? 0;
 
@@ -210,7 +236,7 @@ export default function ProductsPage() {
       }, 800);
 
       try {
-        const body = await callSync({ createMissing, dryRun: false });
+        const body = await callSync({ createMissing, dryRun: false }, productIds);
         clearInterval(progressInterval);
 
         // Toon 100% voltooid
@@ -412,34 +438,59 @@ export default function ProductsPage() {
       </div>
 
       <div className="card" style={{ marginBottom: 16 }}>
-        <h2 style={{ marginTop: 0, fontSize: 14 }}>
-          WooCommerce-export {activeTab === "all" ? "(alle technieken)" : `(${PROCESS_TYPE_LABELS[activeTab]})`}
-        </h2>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button className="btn secondary" disabled={busy} onClick={() => runExport({}, "Volledige export")}>Alles exporteren</button>
-          <button className="btn secondary" disabled={busy} onClick={() => runExport({ changed: "1" }, "Export van wijzigingen")}>
-            Enkel nieuw/gewijzigd
-          </button>
-          <button className="btn secondary" disabled={busy} onClick={() => runExport({ prices: "1" }, "Prijsexport")}>
-            Enkel prijzen (bestaande producten bijwerken)
-          </button>
-          <button className="btn secondary" disabled={busy} onClick={() => runSync(false)}>Bestaande producten synchroniseren</button>
-          <button className="btn" disabled={busy} onClick={() => runSync(true)}>Alle producten synchroniseren (+ nieuwe aanmaken)</button>
-        </div>
-        <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
-          <p className="muted" style={{ marginTop: 0, marginBottom: 8, fontSize: 12 }}>
-            WooCommerce → Lokale database
-          </p>
-          <button className="btn secondary" disabled={busy} onClick={runImportMeta}>
-            📥 Productgegevens importeren uit WooCommerce
-          </button>
-          <p className="muted" style={{ marginTop: 8, marginBottom: 0, fontSize: 12 }}>
-            Haalt naam, beschrijving, categorieën, afbeeldingen, gewicht en verzendklasse op uit WooCommerce en werkt de lokale database bij -- handig als je die rechtstreeks in WooCommerce hebt aangepast. Gebruik dit vóór je synchroniseert, anders overschrijft de sync die wijzigingen weer. De prijs komt altijd vanuit de app; die wordt hier nooit teruggehaald.
-          </p>
-        </div>
-        <p className="muted" style={{ marginBottom: 0 }}>
-          Elke export markeert de producten als geëxporteerd. "Enkel nieuw/gewijzigd" neemt dan enkel wat sindsdien nieuw of aangepast is; met "Alles exporteren" heb je altijd de volledige set. Voor "Enkel prijzen" kies je bij het importeren in WooCommerce "Bestaande producten bijwerken".
-        </p>
+        <button
+          type="button"
+          onClick={toggleExportOpen}
+          aria-expanded={exportOpen}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            width: "100%",
+            background: "none",
+            border: "none",
+            padding: 0,
+            margin: 0,
+            cursor: "pointer",
+            color: "inherit",
+            font: "inherit",
+          }}
+        >
+          <h2 style={{ margin: 0, fontSize: 14 }}>
+            WooCommerce-export {activeTab === "all" ? "(alle technieken)" : `(${PROCESS_TYPE_LABELS[activeTab]})`}
+          </h2>
+          <span className="mono" style={{ color: "var(--cyan)", fontSize: 12 }}>{exportOpen ? "▲ Inklappen" : "▼ Uitklappen"}</span>
+        </button>
+
+        {exportOpen && (
+          <>
+            <div style={{ display: "flex", gap: 8, flexWrap: "nowrap", overflowX: "auto", paddingBottom: 4, marginTop: 12 }}>
+              <button className="btn secondary" style={{ flexShrink: 0 }} disabled={busy} onClick={() => runExport({}, "Volledige export")}>Alles exporteren</button>
+              <button className="btn secondary" style={{ flexShrink: 0 }} disabled={busy} onClick={() => runExport({ changed: "1" }, "Export van wijzigingen")}>
+                Enkel nieuw/gewijzigd
+              </button>
+              <button className="btn secondary" style={{ flexShrink: 0 }} disabled={busy} onClick={() => runExport({ prices: "1" }, "Prijsexport")}>
+                Enkel prijzen (bestaande producten bijwerken)
+              </button>
+              <button className="btn secondary" style={{ flexShrink: 0 }} disabled={busy} onClick={() => runSync(false)}>Bestaande producten synchroniseren</button>
+              <button className="btn" style={{ flexShrink: 0 }} disabled={busy} onClick={() => runSync(true)}>Alle producten synchroniseren (+ nieuwe aanmaken)</button>
+            </div>
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
+              <p className="muted" style={{ marginTop: 0, marginBottom: 8, fontSize: 12 }}>
+                WooCommerce → Lokale database
+              </p>
+              <button className="btn secondary" disabled={busy} onClick={runImportMeta}>
+                📥 Productgegevens importeren uit WooCommerce
+              </button>
+              <p className="muted" style={{ marginTop: 8, marginBottom: 0, fontSize: 12 }}>
+                Haalt naam, beschrijving, categorieën, afbeeldingen, gewicht en verzendklasse op uit WooCommerce en werkt de lokale database bij -- handig als je die rechtstreeks in WooCommerce hebt aangepast. Gebruik dit vóór je synchroniseert, anders overschrijft de sync die wijzigingen weer. De prijs komt altijd vanuit de app; die wordt hier nooit teruggehaald.
+              </p>
+            </div>
+            <p className="muted" style={{ marginBottom: 0 }}>
+              Elke export markeert de producten als geëxporteerd. "Enkel nieuw/gewijzigd" neemt dan enkel wat sindsdien nieuw of aangepast is; met "Alles exporteren" heb je altijd de volledige set. Voor "Enkel prijzen" kies je bij het importeren in WooCommerce "Bestaande producten bijwerken".
+            </p>
+          </>
+        )}
         {exportProgress && (
           <div style={{ marginTop: 12, padding: 12, background: "rgba(0, 255, 255, 0.1)", border: "1px solid rgba(0, 255, 255, 0.3)", borderRadius: 4 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -593,6 +644,7 @@ export default function ProductsPage() {
           />
           <button className="btn secondary" disabled={busy || !bulkMargin} onClick={bulkSetMargin}>Marge toepassen</button>
           <button className="btn danger" disabled={busy} onClick={bulkDelete}>Verwijderen</button>
+          <button className="btn secondary" disabled={busy} onClick={() => runSync(true, Array.from(selected))}>Synchroniseer geselecteerde</button>
           <button className="btn secondary" onClick={() => setSelected(new Set())}>Selectie wissen</button>
         </div>
       )}
