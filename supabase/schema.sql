@@ -36,6 +36,7 @@ create table if not exists products (
   published boolean not null default true,
   attribute_names text[] not null default '{}', -- bv. ARRAY['Grootte','Kleur'] -- volgorde bepaalt Attribute 1/2/3 in de export
   default_attribute_values jsonb not null default '{}'::jsonb, -- bv. {"Grootte":"M"} -- vooraf geselecteerde waarde per attribuut op de productpagina (WooCommerce "Default Form Values")
+  personalization jsonb not null default '{"plugin":"none","zones":[]}'::jsonb, -- meerprijs voor de 3DP Gravure/UV- of T-shirt-personalisatieplugin (post-meta _tdp_fee / _tdpt_fee / _tdpt_back_fee), los van de variantprijs
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

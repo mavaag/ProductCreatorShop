@@ -67,7 +67,7 @@ export async function POST(request: Request) {
 
   let query = supabase
     .from("products")
-    .select("id, sku, name, published, attribute_names, default_attribute_values, description, categories, image_url, weight_kg, shipping_class, product_variations(id, sku, attribute_values, suggested_price)")
+    .select("id, sku, name, published, attribute_names, default_attribute_values, description, categories, image_url, weight_kg, shipping_class, personalization, product_variations(id, sku, attribute_values, suggested_price)")
     .order("name");
   if (type) query = query.eq("process_type", type);
   const { data: products, error } = await query;
@@ -126,7 +126,7 @@ export async function POST(request: Request) {
         const price = v?.suggested_price != null ? Number(v.suggested_price).toFixed(2) : null;
         const priceChanged = price != null && Number(parent.regular_price) !== Number(price);
         if (!dryRun) {
-          const ok = await updateProductMetadata(wc, parent.id, p, report, categoryCache, attributeCache, priceChanged ? price : null);
+          const ok = await updateProductMetadata(wc, parent, p, report, categoryCache, attributeCache, priceChanged ? price : null);
           if (!ok && priceChanged) {
             report.errors.push(`${p.sku}: prijs niet bijgewerkt (zie opmerkingen)`);
             continue;
@@ -170,7 +170,7 @@ export async function POST(request: Request) {
 
       // Update product metadata (naam, beschrijving, categorieën, afbeeldingen, attributen, etc.)
       if (!dryRun) {
-        await updateProductMetadata(wc, parent.id, p, report, categoryCache, attributeCache);
+        await updateProductMetadata(wc, parent, p, report, categoryCache, attributeCache);
       }
 
       // Update prijzen van varianten
@@ -201,6 +201,36 @@ export async function POST(request: Request) {
 /** Een product zonder attributen is een simpel product (WooCommerce type "simple"). */
 function isSimple(p: any): boolean {
   return (p.attribute_names?.length ?? 0) === 0;
+}
+
+/** Post-meta sleutel per zone van een personalisatieplugin -- moet overeenkomen met lib/types.ts PERSONALIZATION_ZONES. */
+const PERSONALIZATION_META_KEYS: Record<string, Record<string, string>> = {
+  gravure_uv: { single: "_tdp_fee" },
+  tshirt: { front: "_tdpt_fee", back: "_tdpt_back_fee" },
+};
+
+/**
+ * Bouwt de meta_data-array voor de meerprijs van een personalisatieplugin (3DP Gravure Preview /
+ * 3DP T-shirt Preview -- zie lib/types.ts Personalization). Hergebruikt het bestaande meta_data-id
+ * van WooCommerce voor een sleutel als die al bestaat, anders maakt WooCommerce elke sync een nieuwe
+ * meta-rij aan i.p.v. de bestaande bij te werken.
+ */
+function buildPersonalizationMetaData(
+  existing: { id: number; key: string; value: unknown }[],
+  personalization: { plugin: string; zones: { key: string; fee: number | null }[] } | null | undefined
+): { id?: number; key: string; value: string }[] {
+  const plugin = personalization?.plugin;
+  if (!plugin || plugin === "none") return [];
+  const metaKeys = PERSONALIZATION_META_KEYS[plugin];
+  if (!metaKeys) return [];
+  const result: { id?: number; key: string; value: string }[] = [];
+  for (const zone of personalization?.zones ?? []) {
+    const metaKey = metaKeys[zone.key];
+    if (!metaKey || zone.fee == null) continue;
+    const found = existing.find((m) => m.key === metaKey);
+    result.push({ ...(found ? { id: found.id } : {}), key: metaKey, value: Number(zone.fee).toFixed(2) });
+  }
+  return result;
 }
 
 /** Maakt een variabel product met al zijn varianten (of een simpel product) aan in WooCommerce. Geeft true terug als dat gelukt is. */
@@ -253,6 +283,8 @@ async function createProduct(wc: WcFn, p: any, report: Report, categoryCache: Ma
   }
   if (p.weight_kg != null) payload.weight = String(p.weight_kg);
   if (p.shipping_class) payload.shipping_class = p.shipping_class;
+  const personalizationMeta = buildPersonalizationMetaData([], p.personalization);
+  if (personalizationMeta.length > 0) payload.meta_data = personalizationMeta;
 
   let created: any;
   try {
@@ -299,13 +331,14 @@ async function createProduct(wc: WcFn, p: any, report: Report, categoryCache: Ma
 /** Update de metadata van een bestaand product in WooCommerce (naam, beschrijving, categorieën, afbeeldingen, attributen, etc.). */
 async function updateProductMetadata(
   wc: WcFn,
-  productId: number,
+  parent: { id: number; meta_data?: { id: number; key: string; value: unknown }[] },
   p: any,
   report: Report,
   categoryCache: Map<string, number>,
   attributeCache: Map<string, number>,
   regularPrice: string | null = null // enkel voor simpele producten: nieuwe prijs, of null om ze niet te wijzigen
 ): Promise<boolean> {
+  const productId = parent.id;
   try {
     // Verzamel categorieën (inclusief parent categorieën)
     const categoryIds: { id: number }[] = [];
@@ -334,6 +367,8 @@ async function updateProductMetadata(
     if (p.shipping_class) payload.shipping_class = p.shipping_class;
     if (images.length > 0) payload.images = images;
     if (regularPrice != null) payload.regular_price = regularPrice;
+    const personalizationMeta = buildPersonalizationMetaData(parent.meta_data ?? [], p.personalization);
+    if (personalizationMeta.length > 0) payload.meta_data = personalizationMeta;
 
     if (!isSimple(p)) {
       // Attributen mee bijwerken: een nieuwe waarde voor een attribuut dat al globaal bestaat, wordt zo
