@@ -67,8 +67,45 @@ export type Product = {
   image_url: string; // één of meerdere URL's, gescheiden door komma
   weight_kg: number | null;
   shipping_class: string;
+  personalization: Personalization;
   last_exported_at: string | null;
   updated_at: string;
+};
+
+/**
+ * Meerprijs-berekening voor een "personalisatie"-plugin (klant upload zelf een logo/tekening/tekst,
+ * bv. de 3DP Gravure Preview- of 3DP T-shirt Preview-plugin). Deze meerprijs staat los van de normale
+ * variantprijs: de plugins tellen hem als vaste post-meta op het PRODUCT (niet per variant/maat/kleur)
+ * bovenop de prijs op bij het afrekenen, dus zo modelleren we hem ook hier.
+ */
+export type PersonalizationPlugin = "none" | "gravure_uv" | "tshirt";
+
+export type PersonalizationZone = {
+  key: string; // "single" | "front" | "back" -- zie PERSONALIZATION_ZONES
+  cost_inputs: CostInputs;
+  fee: number | null; // laatst berekende voorgestelde meerprijs (excl. btw) -- dit wordt naar de post-meta hieronder geëxporteerd
+};
+
+export type Personalization = {
+  plugin: PersonalizationPlugin;
+  zones: PersonalizationZone[];
+};
+
+export const EMPTY_PERSONALIZATION: Personalization = { plugin: "none", zones: [] };
+
+export const PERSONALIZATION_PLUGIN_LABELS: Record<PersonalizationPlugin, string> = {
+  none: "Geen",
+  gravure_uv: "Gravure / UV-print (3DP Gravure Preview)",
+  tshirt: "T-shirt personalisatie (3DP T-shirt Preview)",
+};
+
+/** Welke zones (en WooCommerce post-meta sleutel) elke personalisatie-plugin verwacht. */
+export const PERSONALIZATION_ZONES: Record<Exclude<PersonalizationPlugin, "none">, { key: string; label: string; metaKey: string }[]> = {
+  gravure_uv: [{ key: "single", label: "Gravure / UV-print", metaKey: "_tdp_fee" }],
+  tshirt: [
+    { key: "front", label: "Voorkant", metaKey: "_tdpt_fee" },
+    { key: "back", label: "Achterkant", metaKey: "_tdpt_back_fee" },
+  ],
 };
 
 export type ProductVariation = {

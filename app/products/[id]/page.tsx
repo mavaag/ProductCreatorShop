@@ -23,6 +23,11 @@ import {
   TIME_UNIT_LABELS,
   PriceHistoryEntry,
   DEFAULT_MIN_MARGIN,
+  Personalization,
+  PersonalizationPlugin,
+  EMPTY_PERSONALIZATION,
+  PERSONALIZATION_PLUGIN_LABELS,
+  PERSONALIZATION_ZONES,
 } from "@/lib/types";
 
 export default function ProductEditPage() {
@@ -42,6 +47,8 @@ export default function ProductEditPage() {
   const [minMargin, setMinMargin] = useState(DEFAULT_MIN_MARGIN);
   const [wc, setWc] = useState({ description: "", categories: "", image_url: "", weight_kg: "", shipping_class: "" });
   const [savingWc, setSavingWc] = useState(false);
+  const [personalization, setPersonalization] = useState<Personalization>(EMPTY_PERSONALIZATION);
+  const [savingPersonalization, setSavingPersonalization] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [genValues, setGenValues] = useState<Record<string, string[]>>({});
@@ -76,6 +83,7 @@ export default function ProductEditPage() {
     }
     setAttrDraft(p?.attribute_names ?? []);
     setDefaultAttrDraft(p?.default_attribute_values ?? {});
+    setPersonalization({ ...EMPTY_PERSONALIZATION, ...(p?.personalization ?? {}) });
     setVariations(v ?? []);
     setMachines(m ?? []);
     setMaterials(mat ?? []);
@@ -219,6 +227,38 @@ export default function ProductEditPage() {
       })
       .eq("id", productId);
     setSavingWc(false);
+    if (error) alert(error.message);
+    load();
+  }
+
+  /** Wisselt de personalisatieplugin: bouwt de verwachte zones op, met behoud van reeds ingevulde kosten per zone. */
+  function setPersonalizationPlugin(plugin: PersonalizationPlugin) {
+    if (plugin === "none") {
+      setPersonalization({ plugin: "none", zones: [] });
+      return;
+    }
+    const zones = PERSONALIZATION_ZONES[plugin].map((def) => {
+      const existing = personalization.zones.find((z) => z.key === def.key);
+      return existing ?? { key: def.key, cost_inputs: EMPTY_COST_INPUTS, fee: null };
+    });
+    setPersonalization({ plugin, zones });
+  }
+
+  function updatePersonalizationZoneInputs(key: string, inputs: CostInputs) {
+    const price = calculatePrice(inputs, new Map(machines.map((m) => [m.id, m])), new Map(materials.map((m) => [m.id, m])));
+    setPersonalization({
+      ...personalization,
+      zones: personalization.zones.map((z) => (z.key === key ? { ...z, cost_inputs: inputs, fee: price.suggestedPrice } : z)),
+    });
+  }
+
+  async function savePersonalization() {
+    setSavingPersonalization(true);
+    const { error } = await supabase
+      .from("products")
+      .update({ personalization, updated_at: new Date().toISOString() })
+      .eq("id", productId);
+    setSavingPersonalization(false);
     if (error) alert(error.message);
     load();
   }
@@ -430,6 +470,7 @@ export default function ProductEditPage() {
   const attrsChanged = JSON.stringify(attrDraft.map((n) => n.trim()).filter(Boolean)) !== JSON.stringify(product.attribute_names);
   const savedDefaultAttrs = Object.fromEntries(Object.entries(product.default_attribute_values ?? {}).filter(([, v]) => v));
   const defaultAttrsChanged = JSON.stringify(defaultAttrDraft) !== JSON.stringify(savedDefaultAttrs);
+  const personalizationDirty = JSON.stringify(personalization) !== JSON.stringify({ ...EMPTY_PERSONALIZATION, ...(product.personalization ?? {}) });
 
   return (
     <div>
@@ -596,6 +637,54 @@ export default function ProductEditPage() {
         <div style={{ marginTop: 12 }}>
           <button className="btn" onClick={saveWc} disabled={savingWc}>{savingWc ? "Opslaan..." : "WooCommerce-gegevens opslaan"}</button>
         </div>
+      </div>
+
+      <div className="card" style={personalizationDirty ? { borderColor: "var(--yellow)" } : undefined}>
+        <h2 style={{ marginTop: 0, fontSize: 14 }}>
+          Personalisatie (plugin)
+          {personalizationDirty && (
+            <span className="mono" style={{ marginLeft: 8, fontSize: 11, color: "var(--yellow)" }}>* niet opgeslagen</span>
+          )}
+        </h2>
+        <p className="muted">
+          Voor producten waarbij de klant zelf een tekst, logo of tekening oplaadt via de 3DP Gravure Preview- of
+          3DP T-shirt Preview-plugin. De meerprijs hieronder staat los van de gewone verkoopprijs hierboven -- ze wordt
+          bij de WooCommerce-sync als aparte post-meta meegestuurd, precies zoals de plugin ze zelf verwacht.
+        </p>
+        <label>Plugin</label>
+        <select
+          value={personalization.plugin}
+          onChange={(e) => setPersonalizationPlugin(e.target.value as PersonalizationPlugin)}
+        >
+          {Object.entries(PERSONALIZATION_PLUGIN_LABELS).map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
+
+        {personalization.plugin !== "none" &&
+          personalization.zones.map((zone) => {
+            const def = PERSONALIZATION_ZONES[personalization.plugin as "gravure_uv" | "tshirt"].find((d) => d.key === zone.key);
+            return (
+              <PersonalizationZoneEditor
+                key={zone.key}
+                label={def?.label ?? zone.key}
+                metaKey={def?.metaKey ?? ""}
+                costInputs={zone.cost_inputs}
+                fee={zone.fee}
+                machines={machines}
+                materials={materials}
+                onChange={(inputs) => updatePersonalizationZoneInputs(zone.key, inputs)}
+              />
+            );
+          })}
+
+        {personalizationDirty && (
+          <div style={{ marginTop: 12 }}>
+            <button className="btn" onClick={savePersonalization} disabled={savingPersonalization}>
+              {savingPersonalization ? "Opslaan..." : "Personalisatie opslaan"}
+            </button>
+          </div>
+        )}
       </div>
 
       {!isSimple && (
@@ -1114,6 +1203,153 @@ function CostBreakdownBar({ breakdown, total }: { breakdown: { materials: number
           </span>
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Prijsberekening voor één zone van een personalisatieplugin (bv. "Gravure / UV-print", of
+ * "Voorkant"/"Achterkant" bij de T-shirt-plugin). Zelfde materialen/machinetijd/arbeid/marge-opzet
+ * als VariationEditor, maar resulteert in een meerprijs i.p.v. een volledige verkoopprijs.
+ */
+function PersonalizationZoneEditor({
+  label,
+  metaKey,
+  costInputs,
+  fee,
+  machines,
+  materials,
+  onChange,
+}: {
+  label: string;
+  metaKey: string;
+  costInputs: CostInputs;
+  fee: number | null;
+  machines: Machine[];
+  materials: Material[];
+  onChange: (inputs: CostInputs) => void;
+}) {
+  const machinesById = new Map(machines.map((m) => [m.id, m]));
+  const materialsById = new Map(materials.map((m) => [m.id, m]));
+  const { costPrice, breakdown, warnings } = calculatePrice(costInputs, machinesById, materialsById);
+
+  function updateMaterialLine(idx: number, patch: Partial<{ material_id: string; quantity: number }>) {
+    const next = [...costInputs.materials];
+    next[idx] = { ...next[idx], ...patch };
+    onChange({ ...costInputs, materials: next });
+  }
+  function addMaterialLine() {
+    onChange({ ...costInputs, materials: [...costInputs.materials, { material_id: materials[0]?.id ?? "", quantity: 0 }] });
+  }
+  function removeMaterialLine(idx: number) {
+    onChange({ ...costInputs, materials: costInputs.materials.filter((_, i) => i !== idx) });
+  }
+  function updateMachineLine(idx: number, patch: Partial<{ machine_id: string; hours: number; unit: TimeUnit }>) {
+    const next = [...costInputs.machine_time];
+    next[idx] = { ...next[idx], ...patch };
+    onChange({ ...costInputs, machine_time: next });
+  }
+  function addMachineLine() {
+    onChange({ ...costInputs, machine_time: [...costInputs.machine_time, { machine_id: machines[0]?.id ?? "", hours: 0, unit: "u" }] });
+  }
+  function removeMachineLine(idx: number) {
+    onChange({ ...costInputs, machine_time: costInputs.machine_time.filter((_, i) => i !== idx) });
+  }
+
+  return (
+    <div className="card" style={{ background: "var(--moss-soft)", marginTop: 12 }}>
+      <h3 style={{ marginTop: 0, fontSize: 13 }}>
+        {label} <span className="mono muted" style={{ fontSize: 11, fontWeight: 400 }}>({metaKey})</span>
+      </h3>
+
+      <h2 style={{ fontSize: 13, marginTop: 12 }}>Materialen</h2>
+      {costInputs.materials.map((line, idx) => {
+        const mat = materialsById.get(line.material_id);
+        return (
+          <div className="line-item" key={idx}>
+            <div className="grow">
+              <select value={line.material_id} onChange={(e) => updateMaterialLine(idx, { material_id: e.target.value })}>
+                {materials.map((m) => <option key={m.id} value={m.id}>{m.name} (€{m.price_per_unit}/{m.unit})</option>)}
+              </select>
+            </div>
+            <div className="small">
+              <input
+                type="number"
+                step="0.01"
+                value={line.quantity}
+                onChange={(e) => updateMaterialLine(idx, { quantity: parseFloat(e.target.value) || 0 })}
+                placeholder={mat?.unit === "kg" ? "gram" : mat?.unit}
+              />
+            </div>
+            <button className="btn danger" type="button" onClick={() => removeMaterialLine(idx)}>x</button>
+          </div>
+        );
+      })}
+      <button className="btn secondary" type="button" onClick={addMaterialLine}>+ Materiaal</button>
+
+      <h2 style={{ fontSize: 13, marginTop: 12 }}>Machinetijd</h2>
+      {costInputs.machine_time.map((line, idx) => (
+        <div className="line-item" key={idx}>
+          <div className="grow">
+            <select value={line.machine_id} onChange={(e) => updateMachineLine(idx, { machine_id: e.target.value })}>
+              {machines.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          </div>
+          <div className="small">
+            <input
+              type="number"
+              step="0.01"
+              value={line.hours}
+              onChange={(e) => updateMachineLine(idx, { hours: parseFloat(e.target.value) || 0 })}
+              placeholder="tijdsduur"
+            />
+          </div>
+          <div className="unit-select">
+            <select value={line.unit ?? "u"} onChange={(e) => updateMachineLine(idx, { unit: e.target.value as TimeUnit })}>
+              {(Object.entries(TIME_UNIT_LABELS) as [TimeUnit, string][]).map(([value, tlabel]) => (
+                <option key={value} value={value}>{tlabel}</option>
+              ))}
+            </select>
+          </div>
+          <button className="btn danger" type="button" onClick={() => removeMachineLine(idx)}>x</button>
+        </div>
+      ))}
+      <button className="btn secondary" type="button" onClick={addMachineLine}>+ Machine</button>
+
+      <div className="row" style={{ marginTop: 12 }}>
+        <div>
+          <label>Arbeidstijd (min)</label>
+          <input type="number" value={costInputs.labor_minutes} onChange={(e) => onChange({ ...costInputs, labor_minutes: parseFloat(e.target.value) || 0 })} />
+        </div>
+        <div>
+          <label>Uurloon (€/u)</label>
+          <input type="number" step="0.01" value={costInputs.labor_rate} onChange={(e) => onChange({ ...costInputs, labor_rate: parseFloat(e.target.value) || 0 })} />
+        </div>
+        <div>
+          <label>Overige kosten (€)</label>
+          <input type="number" step="0.01" value={costInputs.other_costs} onChange={(e) => onChange({ ...costInputs, other_costs: parseFloat(e.target.value) || 0 })} />
+        </div>
+        <div>
+          <label>Marge (%)</label>
+          <input
+            type="number"
+            step="1"
+            value={Math.round(costInputs.margin * 100)}
+            onChange={(e) => onChange({ ...costInputs, margin: (parseFloat(e.target.value) || 0) / 100 })}
+          />
+        </div>
+      </div>
+
+      <div className="price-box" style={{ marginTop: 12 }}>
+        <div className="mono readout-row">Kostprijs personalisatie<span>€{costPrice.toFixed(2)}</span></div>
+        <div className="readout-suggested">
+          <span>Voorgestelde meerprijs</span>
+          <span className="big">€{fee != null ? fee.toFixed(2) : "--"}</span>
+        </div>
+        {warnings.map((w, i) => <div className="warning" key={i}>{w}</div>)}
+      </div>
+
+      <CostBreakdownBar breakdown={breakdown} total={costPrice} />
     </div>
   );
 }

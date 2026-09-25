@@ -1,6 +1,6 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { nextAvailableSku } from "./sku";
-import { Product, ProductVariation } from "./types";
+import { EMPTY_PERSONALIZATION, Product, ProductVariation } from "./types";
 
 /**
  * Kopieert een product met al zijn varianten (attributen, prijsberekening, WooCommerce-gegevens) als
@@ -23,6 +23,7 @@ export async function duplicateProduct(supabase: SupabaseClient, source: Product
       image_url: source.image_url ?? "",
       weight_kg: source.weight_kg ?? null,
       shipping_class: source.shipping_class ?? "",
+      personalization: source.personalization ?? EMPTY_PERSONALIZATION,
     })
     .select()
     .single();
