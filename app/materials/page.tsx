@@ -17,8 +17,8 @@ const CATEGORIES = [
   { value: "overig", label: "Overig" },
 ];
 
-type MaterialForm = { name: string; category: string; unit: string; price_per_unit: number; stock_quantity: string; min_stock: string; supplier_name: string; supplier_url: string };
-const BLANK_FORM: MaterialForm = { name: "", category: "filament", unit: "kg", price_per_unit: 0, stock_quantity: "", min_stock: "", supplier_name: "", supplier_url: "" };
+type MaterialForm = { name: string; category: string; unit: string; price_per_unit: number; stock_quantity: string; min_stock: string; supplier_name: string; supplier_url: string; ink_coverage_ml_per_m2: string };
+const BLANK_FORM: MaterialForm = { name: "", category: "filament", unit: "kg", price_per_unit: 0, stock_quantity: "", min_stock: "", supplier_name: "", supplier_url: "", ink_coverage_ml_per_m2: "" };
 
 // Lege invoer betekent "voorraad niet bijgehouden" (null in de database).
 function toNumberOrNull(value: string): number | null {
@@ -35,7 +35,8 @@ function toPayload(f: MaterialForm) {
     stock_quantity: toNumberOrNull(f.stock_quantity),
     min_stock: toNumberOrNull(f.min_stock),
     supplier_name: f.supplier_name.trim() || null,
-    supplier_url: f.supplier_url.trim() || null
+    supplier_url: f.supplier_url.trim() || null,
+    ink_coverage_ml_per_m2: toNumberOrNull(f.ink_coverage_ml_per_m2),
   };
 }
 
@@ -109,6 +110,7 @@ export default function MaterialsPage() {
       min_stock: m.min_stock != null ? String(m.min_stock) : "",
       supplier_name: m.supplier_name ?? "",
       supplier_url: m.supplier_url ?? "",
+      ink_coverage_ml_per_m2: m.ink_coverage_ml_per_m2 != null ? String(m.ink_coverage_ml_per_m2) : "",
     });
   }
 
@@ -162,7 +164,20 @@ export default function MaterialsPage() {
                       {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
                     </select>
                   </td>
-                  <td><input className="mono" type="number" step="0.01" value={editForm.price_per_unit} onChange={(e) => setEditForm({ ...editForm, price_per_unit: parseFloat(e.target.value) || 0 })} /></td>
+                  <td>
+                    <input className="mono" type="number" step="0.01" value={editForm.price_per_unit} onChange={(e) => setEditForm({ ...editForm, price_per_unit: parseFloat(e.target.value) || 0 })} />
+                    {editForm.unit === "ml" && (
+                      <input
+                        className="mono"
+                        type="number"
+                        step="0.1"
+                        style={{ marginTop: 4 }}
+                        placeholder="ml/m² volle dekking"
+                        value={editForm.ink_coverage_ml_per_m2}
+                        onChange={(e) => setEditForm({ ...editForm, ink_coverage_ml_per_m2: e.target.value })}
+                      />
+                    )}
+                  </td>
                   <td>
                     <div style={{ display: "flex", gap: 6 }}>
                       <input className="mono" placeholder="voorraad" value={editForm.stock_quantity} onChange={(e) => setEditForm({ ...editForm, stock_quantity: e.target.value })} />
@@ -196,7 +211,12 @@ export default function MaterialsPage() {
                 <td>{m.name}</td>
                 <td>{CATEGORIES.find((c) => c.value === m.category)?.label ?? m.category}</td>
                 <td className="mono">{m.unit}</td>
-                <td className="mono">€{m.price_per_unit}</td>
+                <td className="mono">
+                  €{m.price_per_unit}
+                  {m.unit === "ml" && m.ink_coverage_ml_per_m2 != null && (
+                    <div className="muted" style={{ fontSize: 11 }}>{m.ink_coverage_ml_per_m2} ml/m² volle dekking</div>
+                  )}
+                </td>
                 <td className="mono">
                   {m.stock_quantity == null ? <span className="muted">niet bijgehouden</span> : (
                     <span style={isLowStock(m) ? { color: "var(--rust)", fontWeight: 600 } : undefined}>
@@ -270,6 +290,23 @@ export default function MaterialsPage() {
               <input type="number" step="0.01" value={form.price_per_unit} onChange={(e) => setForm({ ...form, price_per_unit: parseFloat(e.target.value) || 0 })} />
             </div>
           </div>
+          {form.unit === "ml" && (
+            <div className="row">
+              <div>
+                <label>Inktverbruik bij volledige dekking (ml/m²)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={form.ink_coverage_ml_per_m2}
+                  onChange={(e) => setForm({ ...form, ink_coverage_ml_per_m2: e.target.value })}
+                  placeholder="optioneel, bv. 12"
+                />
+                <p className="muted" style={{ marginTop: 4, marginBottom: 0, fontSize: 12 }}>
+                  Optioneel -- laat toe om bij een personalisatiezone (UV-print/sublimatie) de hoeveelheid te schatten uit de printzone-afmetingen.
+                </p>
+              </div>
+            </div>
+          )}
           <div className="row">
             <div>
               <label>Voorraad (optioneel, in de eenheid hierboven)</label>

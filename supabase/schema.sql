@@ -24,6 +24,7 @@ create table if not exists materials (
   category text not null default 'overig',
   unit text not null default 'stuk', -- 'g' | 'kg' | 'ml' | 'vel' | 'stuk' | 'm2'
   price_per_unit numeric not null default 0,
+  ink_coverage_ml_per_m2 numeric, -- enkel voor inkt (unit "ml"): geschat verbruik bij volledige dekking van 1 m²
   created_at timestamptz not null default now()
 );
 

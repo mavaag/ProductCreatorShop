@@ -18,6 +18,10 @@ export type Material = {
   min_stock: number | null;
   supplier_name: string | null;
   supplier_url: string | null;
+  // Enkel relevant voor inkt (unit "ml"): gemiddeld verbruik bij volledige dekking van 1 m²,
+  // zodat de hoeveelheid voor een personalisatiezone geschat kan worden uit de printzone-afmetingen
+  // i.p.v. gokken -- zie PersonalizationZone hieronder.
+  ink_coverage_ml_per_m2: number | null;
 };
 
 export type MaterialLine = {
@@ -82,6 +86,11 @@ export type PersonalizationPlugin = "none" | "gravure_uv" | "tshirt";
 
 export type PersonalizationZone = {
   key: string; // "single" | "front" | "back" -- zie PERSONALIZATION_ZONES
+  // Afmetingen van de printzone in mm, zoals ingesteld in de plugin (WooCommerce product-instellingen
+  // "Printbreedte zone (mm)" + de hoogte die daaruit volgt). Optioneel -- enkel nodig om bij een
+  // materiaallijn de hoeveelheid (bv. ml inkt bij volledige dekking) te kunnen voorstellen.
+  print_width_mm: number | null;
+  print_height_mm: number | null;
   cost_inputs: CostInputs;
   fee: number | null; // laatst berekende voorgestelde meerprijs (excl. btw) -- dit wordt naar de post-meta hieronder geëxporteerd
 };
