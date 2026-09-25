@@ -1,6 +1,7 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { calculatePrice } from "./pricing";
 import { CostInputs, DEFAULT_VAT_RATE, EMPTY_COST_INPUTS, Machine, Material, ProductVariation } from "./types";
+import { confirmDialog } from "@/components/DialogHost";
 
 export type RecalcChange = {
   variationId: string;
@@ -103,7 +104,7 @@ export async function recordPriceHistory(
 export async function offerRecalculation(supabase: SupabaseClient, reason: string): Promise<number> {
   const changes = await previewRecalculation(supabase);
   if (changes.length === 0) return 0;
-  const ok = confirm(
+  const ok = await confirmDialog(
     `${changes.length} variant(en) krijgen een andere prijs door deze wijziging.\n\nNu herberekenen en in de prijsgeschiedenis bewaren?\n(Je kan dit ook later doen via Prijzen > Herbereken.)`
   );
   if (!ok) return 0;

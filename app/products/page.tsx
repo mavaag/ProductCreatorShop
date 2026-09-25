@@ -10,6 +10,7 @@ import { duplicateProduct } from "@/lib/duplicate";
 import { setMarginForProducts } from "@/lib/recalc";
 import { nextAvailableSku, skuExists } from "@/lib/sku";
 import { PromptModal } from "@/components/PromptModal";
+import { confirmDialog } from "@/components/DialogHost";
 
 type ProcessType = Product["process_type"];
 type ProductWithVariations = Product & { product_variations: ProductVariation[] };
@@ -64,13 +65,14 @@ export default function ProductsPage() {
     const product = products.find(p => p.id === id);
     if (!product) return;
 
-    if (!confirm(`"${product.name}" (en al zijn varianten) verwijderen uit de lokale database?`)) return;
+    if (!(await confirmDialog(`"${product.name}" (en al zijn varianten) verwijderen uit de lokale database?`, { confirmLabel: "Verwijderen", danger: true }))) return;
 
     // Vraag of het ook uit WooCommerce verwijderd moet worden
-    const deleteFromWoo = confirm(
+    const deleteFromWoo = await confirmDialog(
       `Ook uit WooCommerce verwijderen?\n\n` +
-      `Klik OK om het product zowel lokaal als in WooCommerce te verwijderen.\n` +
-      `Klik Annuleren om alleen lokaal te verwijderen (het product blijft in WooCommerce staan).`
+      `Klik "Ja, ook uit WooCommerce" om het product zowel lokaal als in WooCommerce te verwijderen.\n` +
+      `Klik Annuleren om alleen lokaal te verwijderen (het product blijft in WooCommerce staan).`,
+      { confirmLabel: "Ja, ook uit WooCommerce", danger: true }
     );
 
     setBusy(true);
@@ -159,7 +161,7 @@ export default function ProductsPage() {
         const plan = await callSync({ createMissing: true, dryRun: true });
         setSyncProgress(null);
         const names = plan.created.length ? plan.created.join(", ") : "geen";
-        const proceed = confirm(
+        const proceed = await confirmDialog(
           `Nieuw aan te maken in WooCommerce (${plan.created.length}): ${names}\n\n` +
             `Prijzen bij te werken bij bestaande producten: ${plan.updated}\n\n` +
             `Gepubliceerde producten staan meteen live in je shop, niet-gepubliceerde komen als concept. Doorgaan?`
@@ -170,7 +172,7 @@ export default function ProductsPage() {
         }
       } else {
         setSyncProgress(null);
-        if (!confirm("Bestaande producten synchroniseren met WooCommerce?\n\nDit update: prijzen, beschrijving, categorieën, afbeeldingen, gewicht en verzendklasse.")) {
+        if (!(await confirmDialog("Bestaande producten synchroniseren met WooCommerce?\n\nDit update: prijzen, beschrijving, categorieën, afbeeldingen, gewicht en verzendklasse."))) {
           setBusy(false);
           return;
         }
@@ -267,7 +269,7 @@ export default function ProductsPage() {
   }
 
   async function bulkDelete() {
-    if (!confirm(`${selected.size} product(en) met al hun varianten verwijderen?`)) return;
+    if (!(await confirmDialog(`${selected.size} product(en) met al hun varianten verwijderen?`, { confirmLabel: "Verwijderen", danger: true }))) return;
     setBusy(true);
     await supabase.from("products").delete().in("id", Array.from(selected));
     setSelected(new Set());
@@ -282,7 +284,7 @@ export default function ProductsPage() {
       setMessage("Geef een marge tussen 0 en 99 (%).");
       return;
     }
-    if (!confirm(`Marge van alle varianten van ${selected.size} product(en) op ${pct}% zetten en de prijzen herberekenen?`)) return;
+    if (!(await confirmDialog(`Marge van alle varianten van ${selected.size} product(en) op ${pct}% zetten en de prijzen herberekenen?`))) return;
     setBusy(true);
     const n = await setMarginForProducts(supabase, Array.from(selected), pct / 100);
     setMessage(`${n} variant(en) herberekend met ${pct}% marge.`);
@@ -292,7 +294,7 @@ export default function ProductsPage() {
   }
 
   async function runImportMeta() {
-    if (!confirm("Naam, beschrijving, categorieën, afbeeldingen, gewicht en verzendklasse van alle producten uit WooCommerce importeren en lokaal bijwerken? (De prijs blijft altijd vanuit de app komen.)")) return;
+    if (!(await confirmDialog("Naam, beschrijving, categorieën, afbeeldingen, gewicht en verzendklasse van alle producten uit WooCommerce importeren en lokaal bijwerken? (De prijs blijft altijd vanuit de app komen.)"))) return;
     setBusy(true);
     setMessage(null);
     setImportProgress(null);

@@ -6,6 +6,7 @@ import { useAuthGuard } from "@/lib/useAuthGuard";
 import Link from "next/link";
 import { Material, ProductVariation } from "@/lib/types";
 import { offerRecalculation } from "@/lib/recalc";
+import { confirmDialog } from "@/components/DialogHost";
 
 const UNITS = ["g", "kg", "ml", "vel", "stuk", "m2"];
 const CATEGORIES = [
@@ -125,7 +126,7 @@ export default function MaterialsPage() {
   }
 
   async function deleteMaterial(id: string) {
-    if (!confirm("Dit materiaal verwijderen? Producten die ernaar verwijzen tonen dan geen prijs meer tot je een ander materiaal kiest.")) return;
+    if (!(await confirmDialog("Dit materiaal verwijderen? Producten die ernaar verwijzen tonen dan geen prijs meer tot je een ander materiaal kiest.", { confirmLabel: "Verwijderen", danger: true }))) return;
     await supabase.from("materials").delete().eq("id", id);
     load();
   }

@@ -1,6 +1,7 @@
 import "./globals.css";
 import Link from "next/link";
 import { Rajdhani, Share_Tech_Mono, Orbitron } from "next/font/google";
+import { DialogHost } from "@/components/DialogHost";
 
 const sans = Rajdhani({
   subsets: ["latin"],
@@ -50,6 +51,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </div>
         </nav>
         <main className="container">{children}</main>
+        <DialogHost />
       </body>
     </html>
   );
