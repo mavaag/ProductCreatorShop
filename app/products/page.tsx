@@ -340,6 +340,7 @@ export default function ProductsPage() {
 
         const parts = [`${body.updated} bijgewerkt`, `${body.unchanged} ongewijzigd`, `${body.notFound} niet gevonden in WooCommerce`];
         if (body.errors.length) parts.push(`fouten: ${body.errors.join("; ")}`);
+        if (body.changes?.length) parts.push(`details: ${body.changes.join(" | ")}`);
         setMessage(`Import: ${parts.join(" -- ")}`);
         load();
       } catch (error) {

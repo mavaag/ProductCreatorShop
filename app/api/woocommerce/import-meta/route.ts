@@ -18,6 +18,7 @@ type ImportReport = {
   unchanged: number;
   notFound: number;
   errors: string[];
+  changes: string[]; // bv. "SKU-123: description, image_url" -- welke velden per product effectief bijgewerkt zijn
 };
 
 type WooCategory = {
@@ -63,7 +64,7 @@ export async function POST(request: Request) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const report: ImportReport = { updated: 0, unchanged: 0, notFound: 0, errors: [] };
+  const report: ImportReport = { updated: 0, unchanged: 0, notFound: 0, errors: [], changes: [] };
   const allProducts = (products ?? []) as any[];
 
   console.log(`[WooCommerce Import Meta] Start: ${allProducts.length} producten te controleren`);
@@ -170,6 +171,7 @@ export async function POST(request: Request) {
 
       report.updated++;
       const changedFields = Object.keys(updates).join(", ");
+      report.changes.push(`${p.sku}: ${changedFields}`);
       console.log(`[WooCommerce Import Meta] ${p.sku} bijgewerkt: ${changedFields}`);
 
     } catch (e: any) {
