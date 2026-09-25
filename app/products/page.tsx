@@ -283,7 +283,7 @@ export default function ProductsPage() {
   }
 
   async function runImportMeta() {
-    if (!confirm("Description en categorieën van alle producten uit WooCommerce importeren en lokaal bijwerken?")) return;
+    if (!confirm("Naam, beschrijving, categorieën, afbeeldingen, gewicht en verzendklasse van alle producten uit WooCommerce importeren en lokaal bijwerken? (De prijs blijft altijd vanuit de app komen.)")) return;
     setBusy(true);
     setMessage(null);
     setImportProgress(null);
@@ -419,8 +419,11 @@ export default function ProductsPage() {
             WooCommerce → Lokale database
           </p>
           <button className="btn secondary" disabled={busy} onClick={runImportMeta}>
-            📥 Description & categorieën importeren uit WooCommerce
+            📥 Productgegevens importeren uit WooCommerce
           </button>
+          <p className="muted" style={{ marginTop: 8, marginBottom: 0, fontSize: 12 }}>
+            Haalt naam, beschrijving, categorieën, afbeeldingen, gewicht en verzendklasse op uit WooCommerce en werkt de lokale database bij -- handig als je die rechtstreeks in WooCommerce hebt aangepast. Gebruik dit vóór je synchroniseert, anders overschrijft de sync die wijzigingen weer. De prijs komt altijd vanuit de app; die wordt hier nooit teruggehaald.
+          </p>
         </div>
         <p className="muted" style={{ marginBottom: 0 }}>
           Elke export markeert de producten als geëxporteerd. "Enkel nieuw/gewijzigd" neemt dan enkel wat sindsdien nieuw of aangepast is; met "Alles exporteren" heb je altijd de volledige set. Voor "Enkel prijzen" kies je bij het importeren in WooCommerce "Bestaande producten bijwerken".
