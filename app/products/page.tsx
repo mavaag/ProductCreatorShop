@@ -8,6 +8,8 @@ import { Product, ProductVariation, PROCESS_TYPE_LABELS } from "@/lib/types";
 import { downloadExport } from "@/lib/download";
 import { duplicateProduct } from "@/lib/duplicate";
 import { setMarginForProducts } from "@/lib/recalc";
+import { nextAvailableSku, skuExists } from "@/lib/sku";
+import { PromptModal } from "@/components/PromptModal";
 
 type ProcessType = Product["process_type"];
 type ProductWithVariations = Product & { product_variations: ProductVariation[] };
@@ -40,6 +42,7 @@ export default function ProductsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkMargin, setBulkMargin] = useState("");
   const [busy, setBusy] = useState(false);
+  const [duplicateTarget, setDuplicateTarget] = useState<{ product: ProductWithVariations; suggested: string } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [exportProgress, setExportProgress] = useState<string | null>(null);
   const [syncProgress, setSyncProgress] = useState<{ current: number; total: number; product: string } | null>(null);
@@ -231,10 +234,16 @@ export default function ProductsPage() {
     setBusy(false);
   }
 
-  async function duplicate(p: ProductWithVariations) {
+  async function startDuplicate(p: ProductWithVariations) {
+    const suggested = await nextAvailableSku(supabase, "products", `${p.sku}-KOPIE`);
+    setDuplicateTarget({ product: p, suggested });
+  }
+
+  async function confirmDuplicate(sku: string) {
+    if (!duplicateTarget) return;
     setBusy(true);
     try {
-      const id = await duplicateProduct(supabase, p);
+      const id = await duplicateProduct(supabase, duplicateTarget.product, sku);
       window.location.href = `/products/${id}`;
     } catch (e: any) {
       setMessage(e.message);
@@ -623,7 +632,7 @@ export default function ProductsPage() {
                 <td>{isChanged(p) ? <span className="pill">{p.last_exported_at ? "Gewijzigd" : "Nieuw"}</span> : <span className="muted">Up-to-date</span>}</td>
                 <td style={{ whiteSpace: "nowrap" }}>
                   <Link className="btn secondary" href={`/products/${p.id}`} style={{ marginRight: 6 }}>Bewerken</Link>
-                  <button className="btn secondary" disabled={busy} onClick={() => duplicate(p)} style={{ marginRight: 6 }}>Dupliceer</button>
+                  <button className="btn secondary" disabled={busy} onClick={() => startDuplicate(p)} style={{ marginRight: 6 }}>Dupliceer</button>
                   <button className="btn danger" onClick={() => deleteProduct(p.id)}>Verwijder</button>
                 </td>
               </tr>
@@ -638,6 +647,17 @@ export default function ProductsPage() {
           )}
         </tbody>
       </table>
+
+      <PromptModal
+        open={duplicateTarget != null}
+        title="Product dupliceren"
+        message="Geef de SKU op voor het gedupliceerde product."
+        initialValue={duplicateTarget?.suggested ?? ""}
+        confirmLabel="Dupliceren"
+        validate={async (sku) => ((await skuExists(supabase, "products", sku)) ? `SKU "${sku}" bestaat al -- kies een andere SKU.` : null)}
+        onConfirm={confirmDuplicate}
+        onCancel={() => setDuplicateTarget(null)}
+      />
     </div>
   );
 }

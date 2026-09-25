@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
 import { calculatePrice, machineHourlyCosts, effectiveMargin, estimateFullCoverageInkMl } from "@/lib/pricing";
 import { duplicateProduct } from "@/lib/duplicate";
+import { PromptModal } from "@/components/PromptModal";
 import { recordPriceHistory } from "@/lib/recalc";
 import { loadMinMargin } from "@/lib/settings";
 import { cartesian, comboKey } from "@/lib/variants";
@@ -49,6 +50,7 @@ export default function ProductEditPage() {
   const [savingWc, setSavingWc] = useState(false);
   const [personalization, setPersonalization] = useState<Personalization>(EMPTY_PERSONALIZATION);
   const [savingPersonalization, setSavingPersonalization] = useState(false);
+  const [duplicateSkuPrompt, setDuplicateSkuPrompt] = useState<{ suggested: string } | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [genValues, setGenValues] = useState<Record<string, string[]>>({});
@@ -185,29 +187,17 @@ export default function ProductEditPage() {
     load();
   }
 
-  async function duplicateThisProduct() {
+  async function startDuplicate() {
     if (!product) return;
     const suggested = await nextAvailableSku(supabase, "products", `${product.sku}-KOPIE`);
-    let sku = window.prompt("SKU voor het gedupliceerde product:", suggested);
-    if (sku === null) return; // geannuleerd
+    setDuplicateSkuPrompt({ suggested });
+  }
 
-    while (true) {
-      sku = sku.trim();
-      if (!sku) {
-        sku = window.prompt("Geef een geldige (niet-lege) SKU op:", suggested);
-        if (sku === null) return;
-        continue;
-      }
-      if (await skuExists(supabase, "products", sku)) {
-        sku = window.prompt(`SKU "${sku}" bestaat al -- geef een andere SKU op:`, sku);
-        if (sku === null) return;
-        continue;
-      }
-      break;
-    }
-
+  async function confirmDuplicate(sku: string) {
+    if (!product) return;
     try {
       const id = await duplicateProduct(supabase, product, sku);
+      setDuplicateSkuPrompt(null);
       router.push(`/products/${id}`);
     } catch (e: any) {
       alert(e.message);
@@ -539,7 +529,7 @@ export default function ProductEditPage() {
 
       <div style={{ marginBottom: 16 }}>
         <button className="btn secondary" onClick={() => router.push("/products")}>&larr; Terug naar productenlijst</button>
-        <button className="btn secondary" style={{ marginLeft: 8 }} onClick={duplicateThisProduct}>Product dupliceren</button>
+        <button className="btn secondary" style={{ marginLeft: 8 }} onClick={startDuplicate}>Product dupliceren</button>
         <button className="btn danger" style={{ marginLeft: 8 }} onClick={deleteProduct}>Product verwijderen</button>
       </div>
       {notice && <div className="card" style={{ background: "var(--moss-soft)" }}>{notice}</div>}
@@ -851,6 +841,17 @@ export default function ProductEditPage() {
       {(!isSimple || variations.length === 0) && (
         <button className="btn" onClick={addVariation}>{isSimple ? "+ Prijsberekening toevoegen" : "+ Variant toevoegen"}</button>
       )}
+
+      <PromptModal
+        open={duplicateSkuPrompt != null}
+        title="Product dupliceren"
+        message="Geef de SKU op voor het gedupliceerde product."
+        initialValue={duplicateSkuPrompt?.suggested ?? ""}
+        confirmLabel="Dupliceren"
+        validate={async (sku) => ((await skuExists(supabase, "products", sku)) ? `SKU "${sku}" bestaat al -- kies een andere SKU.` : null)}
+        onConfirm={confirmDuplicate}
+        onCancel={() => setDuplicateSkuPrompt(null)}
+      />
     </div>
   );
 }
