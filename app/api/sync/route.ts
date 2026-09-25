@@ -67,7 +67,7 @@ export async function POST(request: Request) {
 
   let query = supabase
     .from("products")
-    .select("id, sku, name, published, attribute_names, default_attribute_values, description, categories, image_url, weight_kg, shipping_class, personalization, product_variations(id, sku, attribute_values, suggested_price)")
+    .select("id, sku, name, published, last_exported_published, attribute_names, default_attribute_values, description, categories, image_url, weight_kg, shipping_class, personalization, product_variations(id, sku, attribute_values, suggested_price)")
     .order("name");
   if (type) query = query.eq("process_type", type);
   const { data: products, error } = await query;
@@ -110,7 +110,7 @@ export async function POST(request: Request) {
         if (ok) {
           report.created.push(p.sku);
           const now = new Date().toISOString();
-          await supabase.from("products").update({ last_exported_at: now }).eq("id", p.id);
+          await supabase.from("products").update({ last_exported_at: now, last_exported_published: p.published }).eq("id", p.id);
           await Promise.all(
             (p.product_variations as { id: string; suggested_price: number | null }[])
               .filter((v) => v.suggested_price != null)
@@ -125,8 +125,10 @@ export async function POST(request: Request) {
         const v = (p.product_variations as { id: string; suggested_price: number | null }[])[0];
         const price = v?.suggested_price != null ? Number(v.suggested_price).toFixed(2) : null;
         const priceChanged = price != null && Number(parent.regular_price) !== Number(price);
+        const { published: effectivePublished, adoptedFromWoo } = reconcilePublishedStatus(p, parent);
+        if (adoptedFromWoo) report.notes.push(`${p.sku}: publicatiestatus was in WooCommerce zelf gewijzigd sinds de vorige sync -- lokaal overgenomen i.p.v. overschreven.`);
         if (!dryRun) {
-          const ok = await updateProductMetadata(wc, parent, p, report, categoryCache, attributeCache, priceChanged ? price : null);
+          const ok = await updateProductMetadata(wc, parent, p, report, categoryCache, attributeCache, effectivePublished, priceChanged ? price : null);
           if (!ok && priceChanged) {
             report.errors.push(`${p.sku}: prijs niet bijgewerkt (zie opmerkingen)`);
             continue;
@@ -136,7 +138,7 @@ export async function POST(request: Request) {
         if (priceChanged) report.updated++;
         else report.unchanged++;
         if (!dryRun) {
-          await supabase.from("products").update({ last_exported_at: new Date().toISOString() }).eq("id", p.id);
+          await supabase.from("products").update({ last_exported_at: new Date().toISOString(), published: effectivePublished, last_exported_published: effectivePublished }).eq("id", p.id);
           await supabase.from("product_variations").update({ exported_price: v.suggested_price }).eq("id", v.id);
         }
         continue;
@@ -168,9 +170,15 @@ export async function POST(request: Request) {
         synced.push(v.id);
       }
 
+      // Publicatiestatus: als WooCommerce afwijkt van wat we de vorige keer zelf pushten, is die buiten
+      // de app om gewijzigd (bv. handmatig gepubliceerd in de WooCommerce-admin) -- dan nemen we die
+      // wijziging over i.p.v. ze te overschrijven.
+      const { published: effectivePublished, adoptedFromWoo } = reconcilePublishedStatus(p, parent);
+      if (adoptedFromWoo) report.notes.push(`${p.sku}: publicatiestatus was in WooCommerce zelf gewijzigd sinds de vorige sync -- lokaal overgenomen i.p.v. overschreven.`);
+
       // Update product metadata (naam, beschrijving, categorieën, afbeeldingen, attributen, etc.)
       if (!dryRun) {
-        await updateProductMetadata(wc, parent, p, report, categoryCache, attributeCache);
+        await updateProductMetadata(wc, parent, p, report, categoryCache, attributeCache, effectivePublished);
       }
 
       // Update prijzen van varianten
@@ -181,11 +189,13 @@ export async function POST(request: Request) {
       }
       report.updated += updates.length;
 
-      if (!dryRun && synced.length > 0) {
+      if (!dryRun) {
         const now = new Date().toISOString();
-        await supabase.from("products").update({ last_exported_at: now }).eq("id", p.id);
-        const vs = (p.product_variations as { id: string; suggested_price: number | null }[]).filter((v) => synced.includes(v.id));
-        await Promise.all(vs.map((v) => supabase.from("product_variations").update({ exported_price: v.suggested_price }).eq("id", v.id)));
+        await supabase.from("products").update({ last_exported_at: now, published: effectivePublished, last_exported_published: effectivePublished }).eq("id", p.id);
+        if (synced.length > 0) {
+          const vs = (p.product_variations as { id: string; suggested_price: number | null }[]).filter((v) => synced.includes(v.id));
+          await Promise.all(vs.map((v) => supabase.from("product_variations").update({ exported_price: v.suggested_price }).eq("id", v.id)));
+        }
       }
     } catch (e: any) {
       console.error(`[WooCommerce Sync] Fout bij ${p.sku}:`, e.message);
@@ -201,6 +211,22 @@ export async function POST(request: Request) {
 /** Een product zonder attributen is een simpel product (WooCommerce type "simple"). */
 function isSimple(p: any): boolean {
   return (p.attribute_names?.length ?? 0) === 0;
+}
+
+/**
+ * Bepaalt welke publicatiestatus deze sync-run effectief moet gebruiken. Normaal pushen we gewoon de
+ * lokale "published"-waarde door. Maar wijkt de huidige status in WooCommerce af van wat we de VORIGE
+ * keer zelf gepusht hebben (last_exported_published), dan is die tussentijds handmatig gewijzigd in de
+ * WooCommerce-admin (bv. iemand heeft het product daar zelf gepubliceerd) -- in dat geval nemen we die
+ * wijziging over in plaats van ze bij deze sync ongedaan te maken.
+ */
+function reconcilePublishedStatus(p: any, parent: { status: string }): { published: boolean; adoptedFromWoo: boolean } {
+  const wcPublished = parent.status === "publish";
+  const lastExported = p.last_exported_published as boolean | null | undefined;
+  if (lastExported != null && wcPublished !== lastExported) {
+    return { published: wcPublished, adoptedFromWoo: true };
+  }
+  return { published: p.published, adoptedFromWoo: false };
 }
 
 /** Post-meta sleutel per zone van een personalisatieplugin -- moet overeenkomen met lib/types.ts PERSONALIZATION_ZONES. */
@@ -336,6 +362,7 @@ async function updateProductMetadata(
   report: Report,
   categoryCache: Map<string, number>,
   attributeCache: Map<string, number>,
+  published: boolean, // effectieve publicatiestatus voor deze sync-run, zie reconcilePublishedStatus()
   regularPrice: string | null = null // enkel voor simpele producten: nieuwe prijs, of null om ze niet te wijzigen
 ): Promise<boolean> {
   const productId = parent.id;
@@ -359,7 +386,7 @@ async function updateProductMetadata(
 
     const payload: Record<string, unknown> = {
       name: p.name,
-      status: p.published ? "publish" : "draft",
+      status: published ? "publish" : "draft",
       description: p.description ?? "",
       categories: categoryIds,
     };

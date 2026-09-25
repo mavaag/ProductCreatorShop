@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-// Haalt description en categories van bestaande WooCommerce producten op en schrijft deze naar de lokale database.
-// Dit is een "reverse sync" - van WooCommerce naar de database.
+// Haalt naam, beschrijving, categorieën, afbeeldingen, gewicht en verzendklasse van bestaande WooCommerce
+// producten op en schrijft deze naar de lokale database. Dit is een "reverse sync" - van WooCommerce naar
+// de database -- voor wanneer je die gegevens rechtstreeks in WooCommerce hebt aangepast i.p.v. in de app.
+// De prijs (suggested_price) wordt bewust NOOIT teruggehaald: de app is en blijft daarvoor de bron van
+// waarheid, dat is precies waar de kostprijsberekening voor dient.
 //
 // Vereist server-side omgevingsvariabelen:
 //   WOOCOMMERCE_URL
@@ -15,6 +18,7 @@ type ImportReport = {
   unchanged: number;
   notFound: number;
   errors: string[];
+  changes: string[]; // bv. "SKU-123: description, image_url" -- welke velden per product effectief bijgewerkt zijn
 };
 
 type WooCategory = {
@@ -55,12 +59,12 @@ export async function POST(request: Request) {
   // Haal alle lokale producten op
   const { data: products, error } = await supabase
     .from("products")
-    .select("id, sku, name, description, categories")
+    .select("id, sku, name, description, categories, image_url, weight_kg, shipping_class")
     .order("name");
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const report: ImportReport = { updated: 0, unchanged: 0, notFound: 0, errors: [] };
+  const report: ImportReport = { updated: 0, unchanged: 0, notFound: 0, errors: [], changes: [] };
   const allProducts = (products ?? []) as any[];
 
   console.log(`[WooCommerce Import Meta] Start: ${allProducts.length} producten te controleren`);
@@ -123,27 +127,42 @@ export async function POST(request: Request) {
         continue;
       }
 
-      // Haal description en categories op
+      // Haal naam, description, categories, afbeeldingen, gewicht en verzendklasse op
+      const wcName = wcProduct.name || "";
       const wcDescription = wcProduct.description || "";
       const wcCategoryIds: number[] = (wcProduct.categories || []).map((c: any) => c.id);
       const wcCategories = wcCategoryIds
         .map(id => categoryMap.get(id))
         .filter((c): c is string => !!c)
         .join(", ");
+      const wcImageUrl = (wcProduct.images || []).map((img: any) => img.src).filter(Boolean).join(", ");
+      const wcWeight = wcProduct.weight && wcProduct.weight !== "" ? parseFloat(wcProduct.weight) : null;
+      const wcShippingClass = wcProduct.shipping_class || "";
 
-      // Check of er iets gewijzigd is
+      // Check of er iets gewijzigd is. Net als bij description/categories hierboven geldt WooCommerce
+      // hier voor elk veld als bron van waarheid -- ook een leeg/verwijderd veld in WooCommerce wordt
+      // overgenomen. Heb je lokaal net iets aangepast dat je nog niet naar WooCommerce gepusht hebt,
+      // gebruik dan eerst "Alle producten synchroniseren" voor je importeert, anders verlies je die wijziging.
+      const nameChanged = !!wcName.trim() && p.name !== wcName;
       const descriptionChanged = p.description !== wcDescription;
       const categoriesChanged = p.categories !== wcCategories;
+      const imageChanged = p.image_url !== wcImageUrl;
+      const weightChanged = p.weight_kg !== wcWeight;
+      const shippingClassChanged = p.shipping_class !== wcShippingClass;
 
-      if (!descriptionChanged && !categoriesChanged) {
+      if (!nameChanged && !descriptionChanged && !categoriesChanged && !imageChanged && !weightChanged && !shippingClassChanged) {
         report.unchanged++;
         continue;
       }
 
       // Update lokale database
       const updates: any = {};
+      if (nameChanged) updates.name = wcName;
       if (descriptionChanged) updates.description = wcDescription;
       if (categoriesChanged) updates.categories = wcCategories;
+      if (imageChanged) updates.image_url = wcImageUrl;
+      if (weightChanged) updates.weight_kg = wcWeight;
+      if (shippingClassChanged) updates.shipping_class = wcShippingClass;
 
       await supabase
         .from("products")
@@ -151,7 +170,9 @@ export async function POST(request: Request) {
         .eq("id", p.id);
 
       report.updated++;
-      console.log(`[WooCommerce Import Meta] ${p.sku} bijgewerkt: ${descriptionChanged ? 'description' : ''} ${categoriesChanged ? 'categories' : ''}`);
+      const changedFields = Object.keys(updates).join(", ");
+      report.changes.push(`${p.sku}: ${changedFields}`);
+      console.log(`[WooCommerce Import Meta] ${p.sku} bijgewerkt: ${changedFields}`);
 
     } catch (e: any) {
       console.error(`[WooCommerce Import Meta] Fout bij ${p.sku}:`, e.message);
