@@ -131,6 +131,7 @@ export type ProductVariation = {
   sale_price: number | null; // excl. btw
   suggested_price: number | null; // afgeronde ,95-prijs incl. btw -- dit wordt geëxporteerd naar WooCommerce
   exported_price: number | null; // suggested_price zoals die de laatste keer geëxporteerd werd
+  image_url: string | null; // één URL -- WooCommerce-varianten ondersteunen (i.t.t. producten) maar 1 afbeelding
 };
 
 export type MockupTemplate = {

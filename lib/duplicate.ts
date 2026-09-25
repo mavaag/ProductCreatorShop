@@ -42,6 +42,7 @@ export async function duplicateProduct(supabase: SupabaseClient, source: Product
       cost_price: v.cost_price,
       sale_price: v.sale_price,
       suggested_price: v.suggested_price,
+      image_url: v.image_url,
     });
   }
   return created.id as string;

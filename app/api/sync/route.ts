@@ -67,7 +67,7 @@ export async function POST(request: Request) {
 
   let query = supabase
     .from("products")
-    .select("id, sku, name, published, last_exported_published, attribute_names, default_attribute_values, description, categories, image_url, weight_kg, shipping_class, personalization, product_variations(id, sku, attribute_values, suggested_price)")
+    .select("id, sku, name, published, last_exported_published, attribute_names, default_attribute_values, description, categories, image_url, weight_kg, shipping_class, personalization, product_variations(id, sku, attribute_values, suggested_price, image_url)")
     .order("name");
   if (type) query = query.eq("process_type", type);
   const { data: products, error } = await query;
@@ -144,16 +144,16 @@ export async function POST(request: Request) {
         continue;
       }
 
-      const remote = new Map<string, { id: number; regular_price: string }>();
+      const remote = new Map<string, { id: number; regular_price: string; image_src: string | null }>();
       for (let page = 1; ; page++) {
         const chunk = await wc(`/products/${parent.id}/variations?per_page=100&page=${page}`);
-        for (const rv of chunk) remote.set(rv.sku, { id: rv.id, regular_price: rv.regular_price });
+        for (const rv of chunk) remote.set(rv.sku, { id: rv.id, regular_price: rv.regular_price, image_src: rv.image?.src ?? null });
         if (chunk.length < 100) break;
       }
 
-      const updates: { id: number; regular_price: string }[] = [];
+      const updates: { id: number; regular_price?: string; image?: { src: string } }[] = [];
       const synced: string[] = [];
-      for (const v of p.product_variations as { id: string; sku: string; suggested_price: number | null }[]) {
+      for (const v of p.product_variations as { id: string; sku: string; suggested_price: number | null; image_url: string | null }[]) {
         if (v.suggested_price == null) continue;
         const rv = remote.get(v.sku);
         if (!rv) {
@@ -161,12 +161,20 @@ export async function POST(request: Request) {
           continue;
         }
         const price = Number(v.suggested_price).toFixed(2);
-        if (Number(rv.regular_price) === Number(price)) {
+        const priceChanged = Number(rv.regular_price) !== Number(price);
+        // Enkel pushen als er lokaal een afbeelding is ingevuld -- een leeg lokaal veld wist nooit
+        // een bestaande WooCommerce-afbeelding (zelfde voorzichtige aanpak als bij de productafbeeldingen).
+        const imageChanged = !!v.image_url && v.image_url !== rv.image_src;
+        if (!priceChanged && !imageChanged) {
           report.unchanged++;
           synced.push(v.id);
           continue;
         }
-        updates.push({ id: rv.id, regular_price: price });
+        updates.push({
+          id: rv.id,
+          ...(priceChanged ? { regular_price: price } : {}),
+          ...(imageChanged ? { image: { src: v.image_url as string } } : {}),
+        });
         synced.push(v.id);
       }
 
@@ -262,7 +270,7 @@ function buildPersonalizationMetaData(
 /** Maakt een variabel product met al zijn varianten (of een simpel product) aan in WooCommerce. Geeft true terug als dat gelukt is. */
 async function createProduct(wc: WcFn, p: any, report: Report, categoryCache: Map<string, number>, attributeCache: Map<string, number>): Promise<boolean> {
   const attrNames: string[] = p.attribute_names ?? [];
-  const variations = p.product_variations as { sku: string; attribute_values: Record<string, string>; suggested_price: number | null }[];
+  const variations = p.product_variations as { sku: string; attribute_values: Record<string, string>; suggested_price: number | null; image_url: string | null }[];
 
   let attributes: ({ id: number; visible: boolean; variation: boolean; options: string[] } | { name: string; visible: boolean; variation: boolean; options: string[] })[] = [];
   let defaultAttributes: ({ id: number; option: string } | { name: string; option: string })[] = [];
@@ -335,6 +343,7 @@ async function createProduct(wc: WcFn, p: any, report: Report, categoryCache: Ma
   const toCreate = variations.map((v) => ({
     sku: v.sku,
     ...(v.suggested_price != null ? { regular_price: Number(v.suggested_price).toFixed(2) } : {}),
+    ...(v.image_url ? { image: { src: v.image_url } } : {}),
     attributes: attrNames
       .filter((n) => v.attribute_values?.[n])
       .map((n) => {

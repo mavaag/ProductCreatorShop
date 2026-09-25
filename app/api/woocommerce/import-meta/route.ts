@@ -59,7 +59,7 @@ export async function POST(request: Request) {
   // Haal alle lokale producten op
   const { data: products, error } = await supabase
     .from("products")
-    .select("id, sku, name, description, categories, image_url, weight_kg, shipping_class")
+    .select("id, sku, name, description, categories, image_url, weight_kg, shipping_class, product_variations(id, sku, image_url)")
     .order("name");
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -150,11 +150,6 @@ export async function POST(request: Request) {
       const weightChanged = p.weight_kg !== wcWeight;
       const shippingClassChanged = p.shipping_class !== wcShippingClass;
 
-      if (!nameChanged && !descriptionChanged && !categoriesChanged && !imageChanged && !weightChanged && !shippingClassChanged) {
-        report.unchanged++;
-        continue;
-      }
-
       // Update lokale database
       const updates: any = {};
       if (nameChanged) updates.name = wcName;
@@ -164,15 +159,45 @@ export async function POST(request: Request) {
       if (weightChanged) updates.weight_kg = wcWeight;
       if (shippingClassChanged) updates.shipping_class = wcShippingClass;
 
-      await supabase
-        .from("products")
-        .update(updates)
-        .eq("id", p.id);
+      if (Object.keys(updates).length > 0) {
+        await supabase.from("products").update(updates).eq("id", p.id);
+        report.changes.push(`${p.sku}: ${Object.keys(updates).join(", ")}`);
+      }
+
+      // Afbeelding per variant (enkel voor variabele producten): WooCommerce-varianten koppelen op SKU.
+      const variationChanges: string[] = [];
+      if (wcProduct.type === "variable") {
+        const localVariations = (p.product_variations ?? []) as { id: string; sku: string; image_url: string | null }[];
+        const remoteVariations: any[] = [];
+        for (let page = 1; ; page++) {
+          const chunk = await fetch(`${base}/wp-json/wc/v3/products/${wcProduct.id}/variations?per_page=100&page=${page}`, {
+            headers: { Authorization: auth },
+          }).then((r) => r.json());
+          remoteVariations.push(...chunk);
+          if (chunk.length < 100) break;
+        }
+        const remoteBySku = new Map(remoteVariations.map((rv) => [rv.sku, rv]));
+        for (const lv of localVariations) {
+          const rv = remoteBySku.get(lv.sku);
+          if (!rv) continue;
+          const rvImageUrl = rv.image?.src || null;
+          if (lv.image_url !== rvImageUrl) {
+            await supabase.from("product_variations").update({ image_url: rvImageUrl }).eq("id", lv.id);
+            variationChanges.push(lv.sku);
+          }
+        }
+        if (variationChanges.length > 0) {
+          report.changes.push(`${p.sku}: image_url van variant(en) ${variationChanges.join(", ")}`);
+        }
+      }
+
+      if (Object.keys(updates).length === 0 && variationChanges.length === 0) {
+        report.unchanged++;
+        continue;
+      }
 
       report.updated++;
-      const changedFields = Object.keys(updates).join(", ");
-      report.changes.push(`${p.sku}: ${changedFields}`);
-      console.log(`[WooCommerce Import Meta] ${p.sku} bijgewerkt: ${changedFields}`);
+      console.log(`[WooCommerce Import Meta] ${p.sku} bijgewerkt: ${Object.keys(updates).join(", ")}${variationChanges.length ? ` + variant-afbeeldingen: ${variationChanges.join(", ")}` : ""}`);
 
     } catch (e: any) {
       console.error(`[WooCommerce Import Meta] Fout bij ${p.sku}:`, e.message);
