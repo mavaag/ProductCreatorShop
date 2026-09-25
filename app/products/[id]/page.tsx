@@ -457,13 +457,19 @@ export default function ProductEditPage() {
     if (!(await confirmDialog(`Alle ${variations.length} varianten opslaan?`))) return;
 
     setSavingAll(true);
+    let failed = 0;
     for (const v of variations) {
-      await editorRefs.current.get(v.id)?.save("Bulk opgeslagen");
+      const ok = await editorRefs.current.get(v.id)?.save("Bulk opgeslagen");
+      if (ok === false) failed++;
     }
 
     await supabase.from("products").update({ updated_at: new Date().toISOString() }).eq("id", productId);
     setSavingAll(false);
-    setNotice(`Alle ${variations.length} varianten opgeslagen!`);
+    setNotice(
+      failed === 0
+        ? `Alle ${variations.length} varianten opgeslagen!`
+        : `${variations.length - failed} van de ${variations.length} varianten opgeslagen -- ${failed} mislukt (zie foutmelding hierboven).`
+    );
     load();
   }
 
@@ -859,7 +865,7 @@ export default function ProductEditPage() {
   );
 }
 
-type VariationEditorHandle = { save: (reason?: string) => Promise<void>; setMargin: (margin: number) => void };
+type VariationEditorHandle = { save: (reason?: string) => Promise<boolean>; setMargin: (margin: number) => void };
 
 const VariationEditor = forwardRef<VariationEditorHandle, {
   variation: ProductVariation;
@@ -970,9 +976,9 @@ const VariationEditor = forwardRef<VariationEditorHandle, {
     setInputs({ ...inputs, machine_time: inputs.machine_time.filter((_, i) => i !== idx) });
   }
 
-  async function save(reason = "Handmatig opgeslagen") {
+  async function save(reason = "Handmatig opgeslagen"): Promise<boolean> {
     setSaving(true);
-    await supabase
+    const { error } = await supabase
       .from("product_variations")
       .update({
         sku,
@@ -985,6 +991,11 @@ const VariationEditor = forwardRef<VariationEditorHandle, {
         updated_at: new Date().toISOString(),
       })
       .eq("id", variation.id);
+    if (error) {
+      setSaving(false);
+      await alertDialog(`Opslaan mislukt: ${error.message}`);
+      return false;
+    }
     await recordPriceHistory(
       supabase,
       variation.id,
@@ -992,6 +1003,7 @@ const VariationEditor = forwardRef<VariationEditorHandle, {
       reason
     );
     setSaving(false);
+    return true;
   }
 
   useImperativeHandle(ref, () => ({
@@ -1221,7 +1233,7 @@ const VariationEditor = forwardRef<VariationEditorHandle, {
       </div>
 
       <div style={{ marginTop: 16 }}>
-        <button className="btn" onClick={async () => { await save(); onSaved(); }} disabled={saving || !dirty}>
+        <button className="btn" onClick={async () => { if (await save()) onSaved(); }} disabled={saving || !dirty}>
           {saving ? "Opslaan..." : dirty ? "Opslaan" : "Geen wijzigingen"}
         </button>
         {!isSimple && (
