@@ -39,6 +39,41 @@ type Report = {
 
 type WcFn = (path: string, init?: RequestInit) => Promise<any>;
 
+/**
+ * Zoekt uit of een afbeeldings-URL die al op de eigen WooCommerce-site staat (bv. omdat je de afbeelding
+ * zelf al had opgeladen naar de media-bibliotheek en enkel de URL hier invult) overeenkomt met een
+ * bestaand media-item. Zo ja, geef je het bestaande media-id mee in plaats van de URL ("src") -- geeft
+ * je enkel "src" mee, dan downloadt WooCommerce de afbeelding altijd opnieuw en zet ze als NIEUW
+ * media-item weg, met dubbele afbeeldingen in de bibliotheek tot gevolg. Externe URL's (niet van deze
+ * site) blijven gewoon via "src" gaan, want daar is er sowieso geen bestaand media-item voor.
+ */
+async function resolveImageRef(base: string, url: string, cache: Map<string, number | null>): Promise<{ src: string } | { id: number }> {
+  if (!url.toLowerCase().startsWith(base.toLowerCase())) return { src: url };
+  const cached = cache.get(url);
+  if (cached !== undefined) return cached ? { id: cached } : { src: url };
+  try {
+    const fileName = decodeURIComponent((url.split("/").pop() ?? "").split("?")[0]);
+    const search = fileName.replace(/\.[a-z0-9]+$/i, "");
+    const res = await fetch(`${base}/wp-json/wp/v2/media?search=${encodeURIComponent(search)}&per_page=20`);
+    if (res.ok) {
+      const results: { id: number; source_url: string }[] = await res.json();
+      const match = results.find((m) => m.source_url === url);
+      if (match) {
+        cache.set(url, match.id);
+        return { id: match.id };
+      }
+    }
+  } catch {
+    // val terug op src
+  }
+  cache.set(url, null);
+  return { src: url };
+}
+
+async function resolveImageRefs(base: string, urls: string[], cache: Map<string, number | null>): Promise<({ src: string } | { id: number })[]> {
+  return Promise.all(urls.map((url) => resolveImageRef(base, url, cache)));
+}
+
 export async function POST(request: Request) {
   const base = process.env.WOOCOMMERCE_URL?.replace(/\/+$/, "");
   const key = process.env.WOOCOMMERCE_CONSUMER_KEY;
@@ -89,6 +124,7 @@ export async function POST(request: Request) {
   const report: Report = { updated: 0, unchanged: 0, created: [], notes: [], missingProducts: [], missingVariations: [], errors: [] };
   const categoryCache = new Map<string, number>();
   const attributeCache = new Map<string, number>(); // 0 = bevestigd geen globaal attribuut met die naam
+  const mediaCache = new Map<string, number | null>(); // url -> bestaand media-id (of null = geen match gevonden)
   const allProducts = (products ?? []) as any[];
   const total = allProducts.length;
 
@@ -109,7 +145,7 @@ export async function POST(request: Request) {
           report.created.push(p.sku);
           continue;
         }
-        const ok = await createProduct(wc, p, report, categoryCache, attributeCache);
+        const ok = await createProduct(wc, base, p, report, categoryCache, attributeCache, mediaCache);
         if (ok) {
           report.created.push(p.sku);
           const now = new Date().toISOString();
@@ -131,7 +167,7 @@ export async function POST(request: Request) {
         const { published: effectivePublished, adoptedFromWoo } = reconcilePublishedStatus(p, parent);
         if (adoptedFromWoo) report.notes.push(`${p.sku}: publicatiestatus was in WooCommerce zelf gewijzigd sinds de vorige sync -- lokaal overgenomen i.p.v. overschreven.`);
         if (!dryRun) {
-          const ok = await updateProductMetadata(wc, parent, p, report, categoryCache, attributeCache, effectivePublished, priceChanged ? price : null);
+          const ok = await updateProductMetadata(wc, base, parent, p, report, categoryCache, attributeCache, mediaCache, effectivePublished, priceChanged ? price : null);
           if (!ok && priceChanged) {
             report.errors.push(`${p.sku}: prijs niet bijgewerkt (zie opmerkingen)`);
             continue;
@@ -154,7 +190,7 @@ export async function POST(request: Request) {
         if (chunk.length < 100) break;
       }
 
-      const updates: { id: number; regular_price?: string; image?: { src: string } }[] = [];
+      const updates: { id: number; regular_price?: string; image?: { src: string } | { id: number } }[] = [];
       const synced: string[] = [];
       for (const v of p.product_variations as { id: string; sku: string; suggested_price: number | null; image_url: string | null }[]) {
         if (v.suggested_price == null) continue;
@@ -176,7 +212,7 @@ export async function POST(request: Request) {
         updates.push({
           id: rv.id,
           ...(priceChanged ? { regular_price: price } : {}),
-          ...(imageChanged ? { image: { src: v.image_url as string } } : {}),
+          ...(imageChanged ? { image: await resolveImageRef(base, v.image_url as string, mediaCache) } : {}),
         });
         synced.push(v.id);
       }
@@ -189,7 +225,7 @@ export async function POST(request: Request) {
 
       // Update product metadata (naam, beschrijving, categorieën, afbeeldingen, attributen, etc.)
       if (!dryRun) {
-        await updateProductMetadata(wc, parent, p, report, categoryCache, attributeCache, effectivePublished);
+        await updateProductMetadata(wc, base, parent, p, report, categoryCache, attributeCache, mediaCache, effectivePublished);
       }
 
       // Update prijzen van varianten
@@ -271,7 +307,7 @@ function buildPersonalizationMetaData(
 }
 
 /** Maakt een variabel product met al zijn varianten (of een simpel product) aan in WooCommerce. Geeft true terug als dat gelukt is. */
-async function createProduct(wc: WcFn, p: any, report: Report, categoryCache: Map<string, number>, attributeCache: Map<string, number>): Promise<boolean> {
+async function createProduct(wc: WcFn, base: string, p: any, report: Report, categoryCache: Map<string, number>, attributeCache: Map<string, number>, mediaCache: Map<string, number | null>): Promise<boolean> {
   const attrNames: string[] = p.attribute_names ?? [];
   const variations = p.product_variations as { sku: string; attribute_values: Record<string, string>; suggested_price: number | null; image_url: string | null }[];
 
@@ -300,7 +336,7 @@ async function createProduct(wc: WcFn, p: any, report: Report, categoryCache: Ma
     }
   }
 
-  const images = String(p.image_url ?? "").split(",").map((u: string) => u.trim()).filter(Boolean).map((src: string) => ({ src }));
+  const images = await resolveImageRefs(base, String(p.image_url ?? "").split(",").map((u: string) => u.trim()).filter(Boolean), mediaCache);
 
   const simple = isSimple(p);
   const payload: Record<string, unknown> = {
@@ -343,10 +379,10 @@ async function createProduct(wc: WcFn, p: any, report: Report, categoryCache: Ma
 
   if (simple) return true;
 
-  const toCreate = variations.map((v) => ({
+  const toCreate = await Promise.all(variations.map(async (v) => ({
     sku: v.sku,
     ...(v.suggested_price != null ? { regular_price: Number(v.suggested_price).toFixed(2) } : {}),
-    ...(v.image_url ? { image: { src: v.image_url } } : {}),
+    ...(v.image_url ? { image: await resolveImageRef(base, v.image_url, mediaCache) } : {}),
     attributes: attrNames
       .filter((n) => v.attribute_values?.[n])
       .map((n) => {
@@ -354,7 +390,7 @@ async function createProduct(wc: WcFn, p: any, report: Report, categoryCache: Ma
         // Globaal attribuut (id gekend en > 0) -> referentie via id; anders lokaal via naam.
         return id ? { id, option: v.attribute_values[n] } : { name: n, option: v.attribute_values[n] };
       }),
-  }));
+  })));
   try {
     for (let i = 0; i < toCreate.length; i += 100) {
       await wc(`/products/${created.id}/variations/batch`, { method: "POST", body: JSON.stringify({ create: toCreate.slice(i, i + 100) }) });
@@ -369,11 +405,13 @@ async function createProduct(wc: WcFn, p: any, report: Report, categoryCache: Ma
 /** Update de metadata van een bestaand product in WooCommerce (naam, beschrijving, categorieën, afbeeldingen, attributen, etc.). */
 async function updateProductMetadata(
   wc: WcFn,
+  base: string,
   parent: { id: number; meta_data?: { id: number; key: string; value: unknown }[] },
   p: any,
   report: Report,
   categoryCache: Map<string, number>,
   attributeCache: Map<string, number>,
+  mediaCache: Map<string, number | null>,
   published: boolean, // effectieve publicatiestatus voor deze sync-run, zie reconcilePublishedStatus()
   regularPrice: string | null = null // enkel voor simpele producten: nieuwe prijs, of null om ze niet te wijzigen
 ): Promise<boolean> {
@@ -394,7 +432,7 @@ async function updateProductMetadata(
       }
     }
 
-    const images = String(p.image_url ?? "").split(",").map((u: string) => u.trim()).filter(Boolean).map((src: string) => ({ src }));
+    const images = await resolveImageRefs(base, String(p.image_url ?? "").split(",").map((u: string) => u.trim()).filter(Boolean), mediaCache);
 
     const payload: Record<string, unknown> = {
       name: p.name,
