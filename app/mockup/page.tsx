@@ -240,6 +240,38 @@ function TemplateEditor({
 // ============================================================
 
 function ComposeView({ template, onBack }: { template: MockupTemplate; onBack: () => void }) {
+  const [mode, setMode] = useState<"single" | "batch">("single");
+  const batchSupported = typeof window !== "undefined" && "showDirectoryPicker" in window;
+
+  return (
+    <div className="card">
+      <h2>Print plaatsen -- {template.name}</h2>
+
+      <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+        <button className={mode === "single" ? "btn" : "btn secondary"} onClick={() => setMode("single")}>Eén foto</button>
+        <button className={mode === "batch" ? "btn" : "btn secondary"} onClick={() => setMode("batch")} disabled={!batchSupported} title={batchSupported ? undefined : "Vereist Chrome, Edge of Brave"}>
+          Map (batch)
+        </button>
+      </div>
+
+      {!batchSupported && mode === "batch" && (
+        <div className="warning">Batchverwerking vereist een Chromium-browser (Chrome, Edge of Brave).</div>
+      )}
+
+      {mode === "single" ? (
+        <SingleCompose template={template} />
+      ) : (
+        batchSupported && <BatchCompose template={template} />
+      )}
+
+      <div style={{ marginTop: 20 }}>
+        <button className="btn secondary" onClick={onBack}>Terug naar templates</button>
+      </div>
+    </div>
+  );
+}
+
+function SingleCompose({ template }: { template: MockupTemplate }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [printFile, setPrintFile] = useState<File | null>(null);
   const [printUrl, setPrintUrl] = useState<string | null>(null);
@@ -294,8 +326,7 @@ function ComposeView({ template, onBack }: { template: MockupTemplate; onBack: (
   }
 
   return (
-    <div className="card">
-      <h2>Print plaatsen -- {template.name}</h2>
+    <div>
       <label>Print-afbeelding (bv. de UV-print)</label>
       <input type="file" accept="image/*" onChange={(e) => onPrintChosen(e.target.files?.[0] ?? null)} />
 
@@ -309,10 +340,223 @@ function ComposeView({ template, onBack }: { template: MockupTemplate; onBack: (
         )}
       </div>
 
-      <div style={{ marginTop: 20, display: "flex", gap: 8 }}>
+      <div style={{ marginTop: 20 }}>
         <button className="btn" onClick={download} disabled={!printFile || rendering}>Downloaden als afbeelding</button>
-        <button className="btn secondary" onClick={onBack}>Terug naar templates</button>
       </div>
+    </div>
+  );
+}
+
+// ============================================================
+// Batch: template + een lokale map met foto's -> automatisch voor elke foto
+// een mockup genereren en rechtstreeks wegschrijven naar een doelmap.
+// Vereist de File System Access API (Chrome/Edge/Brave).
+// ============================================================
+
+const IMAGE_EXT_RE = /\.(jpe?g|png|webp|bmp|gif|avif)$/i;
+
+type BatchItem = {
+  name: string;
+  status: "wachten" | "bezig" | "klaar" | "fout";
+  outName?: string;
+  message?: string;
+};
+
+async function ensureReadWritePermission(handle: FileSystemDirectoryHandle): Promise<boolean> {
+  const opts: FileSystemHandlePermissionDescriptor = { mode: "readwrite" };
+  if ((await handle.queryPermission(opts)) === "granted") return true;
+  return (await handle.requestPermission(opts)) === "granted";
+}
+
+async function fileExists(dirHandle: FileSystemDirectoryHandle, name: string): Promise<boolean> {
+  try {
+    await dirHandle.getFileHandle(name, { create: false });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Zoekt een bestandsnaam die nog niet bestaat in `dirHandle`, zodat een nieuwe batch
+ * (bv. met een andere template) geen eerder resultaat overschrijft: bij een botsing
+ * wordt "-1", "-2", ... aan de bestandsnaam toegevoegd. `claimed` houdt namen bij die
+ * binnen deze batch al vergeven zijn (nog niet op schijf zichtbaar tijdens het lopen).
+ */
+async function getUniqueFileName(dirHandle: FileSystemDirectoryHandle, stem: string, ext: string, claimed: Set<string>): Promise<string> {
+  let candidate = `${stem}${ext}`;
+  let n = 1;
+  while (claimed.has(candidate) || (await fileExists(dirHandle, candidate))) {
+    candidate = `${stem}-${n}${ext}`;
+    n++;
+  }
+  claimed.add(candidate);
+  return candidate;
+}
+
+function BatchCompose({ template }: { template: MockupTemplate }) {
+  const [sourceHandle, setSourceHandle] = useState<FileSystemDirectoryHandle | null>(null);
+  const [sourceFiles, setSourceFiles] = useState<{ name: string; handle: FileSystemFileHandle }[]>([]);
+  const [targetHandle, setTargetHandle] = useState<FileSystemDirectoryHandle | null>(null);
+  const [items, setItems] = useState<BatchItem[]>([]);
+  const [processing, setProcessing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function pickSourceFolder() {
+    setError(null);
+    try {
+      const dirHandle = await window.showDirectoryPicker();
+      const found: { name: string; handle: FileSystemFileHandle }[] = [];
+      for await (const [name, handle] of dirHandle.entries()) {
+        if (handle.kind === "file" && IMAGE_EXT_RE.test(name)) {
+          found.push({ name, handle: handle as FileSystemFileHandle });
+        }
+      }
+      found.sort((a, b) => a.name.localeCompare(b.name));
+      setSourceHandle(dirHandle);
+      setSourceFiles(found);
+      setItems(found.map((f) => ({ name: f.name, status: "wachten" as const })));
+    } catch (err: any) {
+      if (err?.name !== "AbortError") setError("Bronmap kiezen mislukt: " + (err?.message ?? String(err)));
+    }
+  }
+
+  async function pickTargetFolder() {
+    setError(null);
+    try {
+      const dirHandle = await window.showDirectoryPicker({ mode: "readwrite" });
+      if (!(await ensureReadWritePermission(dirHandle))) {
+        setError("Geen schrijfrechten gekregen voor de doelmap.");
+        return;
+      }
+      setTargetHandle(dirHandle);
+    } catch (err: any) {
+      if (err?.name !== "AbortError") setError("Doelmap kiezen mislukt: " + (err?.message ?? String(err)));
+    }
+  }
+
+  async function startBatch() {
+    if (!sourceHandle || !targetHandle || sourceFiles.length === 0 || processing) return;
+    setError(null);
+    setProcessing(true);
+    try {
+      const roomImg = await loadImage(template.room_image_url);
+      const canvas = document.createElement("canvas");
+      canvas.width = roomImg.naturalWidth;
+      canvas.height = roomImg.naturalHeight;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Kon geen canvas-context aanmaken.");
+      const quad = (template.corners as { x: number; y: number }[]).map((c) => ({
+        x: c.x * canvas.width,
+        y: c.y * canvas.height,
+      })) as [{ x: number; y: number }, { x: number; y: number }, { x: number; y: number }, { x: number; y: number }];
+      const claimedNames = new Set<string>();
+
+      for (let i = 0; i < sourceFiles.length; i++) {
+        const { name, handle } = sourceFiles[i];
+        setItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, status: "bezig" } : it)));
+        let objectUrl: string | null = null;
+        try {
+          const file = await handle.getFile();
+          objectUrl = URL.createObjectURL(file);
+          const printImg = await loadImage(objectUrl);
+
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(roomImg, 0, 0);
+          drawPrintInQuad(ctx, printImg, quad);
+
+          const blob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+          if (!blob) throw new Error("Afbeelding maken mislukt.");
+
+          const stem = name.replace(/\.[^.]+$/, "");
+          const outName = await getUniqueFileName(targetHandle, stem, ".png", claimedNames);
+          const outHandle = await targetHandle.getFileHandle(outName, { create: true });
+          const writable = await outHandle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+
+          setItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, status: "klaar", outName } : it)));
+        } catch (err: any) {
+          setItems((prev) =>
+            prev.map((it, idx) => (idx === i ? { ...it, status: "fout", message: err?.message ?? String(err) } : it))
+          );
+        } finally {
+          if (objectUrl) URL.revokeObjectURL(objectUrl);
+        }
+      }
+    } catch (err: any) {
+      setError("Batch mislukt: " + (err?.message ?? String(err)));
+    } finally {
+      setProcessing(false);
+    }
+  }
+
+  const done = items.filter((i) => i.status === "klaar").length;
+  const failed = items.filter((i) => i.status === "fout").length;
+
+  return (
+    <div>
+      <p className="muted">
+        Kies een map met printfoto's en een doelmap: voor elke foto in de bronmap wordt automatisch een mockup met deze
+        template gemaakt en als PNG opgeslagen in de doelmap (zelfde bestandsnaam). Bestaat er al een bestand met die
+        naam (bv. van een vorige template op dezelfde foto's), dan wordt er een nummer toegevoegd (foto-1.png,
+        foto-2.png, ...) zodat er nooit iets overschreven wordt.
+      </p>
+
+      <div className="row">
+        <div>
+          <label>Bronmap (foto's)</label>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button className="btn secondary" onClick={pickSourceFolder} disabled={processing}>Kies bronmap...</button>
+            <span className="muted">{sourceHandle ? `${sourceHandle.name} (${sourceFiles.length} foto's)` : "geen map gekozen"}</span>
+          </div>
+        </div>
+        <div>
+          <label>Doelmap (resultaat)</label>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button className="btn secondary" onClick={pickTargetFolder} disabled={processing}>Kies doelmap...</button>
+            <span className="muted">{targetHandle ? targetHandle.name : "geen map gekozen"}</span>
+          </div>
+        </div>
+      </div>
+
+      {error && <div className="warning" style={{ marginTop: 12 }}>{error}</div>}
+
+      <div style={{ marginTop: 20 }}>
+        <button
+          className="btn"
+          onClick={startBatch}
+          disabled={!sourceHandle || !targetHandle || sourceFiles.length === 0 || processing}
+        >
+          {processing ? `Bezig... (${done + failed}/${items.length})` : `Start batch (${sourceFiles.length} foto's)`}
+        </button>
+      </div>
+
+      {items.length > 0 && (
+        <div style={{ marginTop: 16, maxHeight: 300, overflowY: "auto" }}>
+          {items.map((it) => (
+            <div key={it.name} style={{ display: "flex", gap: 8, padding: "4px 0", fontSize: 14 }}>
+              <span style={{ width: 70, flexShrink: 0 }}>
+                {it.status === "wachten" && "wachten"}
+                {it.status === "bezig" && "bezig..."}
+                {it.status === "klaar" && "✓ klaar"}
+                {it.status === "fout" && "✗ fout"}
+              </span>
+              <span className="muted">
+                {it.name}
+                {it.outName && it.outName !== it.name && ` → ${it.outName}`}
+              </span>
+              {it.message && <span className="warning">{it.message}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!processing && items.length > 0 && (done > 0 || failed > 0) && (
+        <p className="muted" style={{ marginTop: 12 }}>
+          {done} van {items.length} gelukt{failed > 0 ? `, ${failed} mislukt` : ""}.
+        </p>
+      )}
     </div>
   );
 }
