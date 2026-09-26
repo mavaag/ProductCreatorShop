@@ -713,9 +713,10 @@ export default function ProductEditPage() {
           )}
         </h2>
         <p className="muted">
-          Voor producten waarbij de klant zelf een tekst, logo of tekening oplaadt via de 3DP Gravure Preview- of
-          3DP T-shirt Preview-plugin. De meerprijs hieronder staat los van de gewone verkoopprijs hierboven -- ze wordt
-          bij de WooCommerce-sync als aparte post-meta meegestuurd, precies zoals de plugin ze zelf verwacht.
+          Voor producten waarbij de klant zelf een tekst, logo, tekening of ontwerp opgeeft via de 3DP Gravure
+          Preview-, 3DP T-shirt Preview- of 3DPFY Mug Designer-plugin. De meerprijs hieronder staat los van de gewone
+          verkoopprijs hierboven -- ze wordt bij de WooCommerce-sync als aparte post-meta meegestuurd, precies zoals
+          de plugin ze zelf verwacht.
         </p>
         <label>Plugin</label>
         <select
@@ -729,7 +730,7 @@ export default function ProductEditPage() {
 
         {personalization.plugin !== "none" &&
           personalization.zones.map((zone) => {
-            const def = PERSONALIZATION_ZONES[personalization.plugin as "gravure_uv" | "tshirt"].find((d) => d.key === zone.key);
+            const def = PERSONALIZATION_ZONES[personalization.plugin as Exclude<PersonalizationPlugin, "none">].find((d) => d.key === zone.key);
             return (
               <PersonalizationZoneEditor
                 key={zone.key}

@@ -86,7 +86,7 @@ export type Product = {
  * variantprijs: de plugins tellen hem als vaste post-meta op het PRODUCT (niet per variant/maat/kleur)
  * bovenop de prijs op bij het afrekenen, dus zo modelleren we hem ook hier.
  */
-export type PersonalizationPlugin = "none" | "gravure_uv" | "tshirt";
+export type PersonalizationPlugin = "none" | "gravure_uv" | "tshirt" | "mug";
 
 export type PersonalizationZone = {
   key: string; // "single" | "front" | "back" -- zie PERSONALIZATION_ZONES
@@ -110,6 +110,7 @@ export const PERSONALIZATION_PLUGIN_LABELS: Record<PersonalizationPlugin, string
   none: "Geen",
   gravure_uv: "Gravure / UV-print (3DP Gravure Preview)",
   tshirt: "T-shirt personalisatie (3DP T-shirt Preview)",
+  mug: "Mok-ontwerper (3DPFY Mug Designer)",
 };
 
 /** Welke zones (en WooCommerce post-meta sleutel) elke personalisatie-plugin verwacht. */
@@ -119,6 +120,7 @@ export const PERSONALIZATION_ZONES: Record<Exclude<PersonalizationPlugin, "none"
     { key: "front", label: "Voorkant", metaKey: "_tdpt_fee" },
     { key: "back", label: "Achterkant", metaKey: "_tdpt_back_fee" },
   ],
+  mug: [{ key: "single", label: "Mok-ontwerp", metaKey: "_pfy_mug_fee" }],
 };
 
 export type ProductVariation = {

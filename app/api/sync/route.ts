@@ -280,6 +280,7 @@ function reconcilePublishedStatus(p: any, parent: { status: string }): { publish
 const PERSONALIZATION_META_KEYS: Record<string, Record<string, string>> = {
   gravure_uv: { single: "_tdp_fee" },
   tshirt: { front: "_tdpt_fee", back: "_tdpt_back_fee" },
+  mug: { single: "_pfy_mug_fee" },
 };
 
 /**
