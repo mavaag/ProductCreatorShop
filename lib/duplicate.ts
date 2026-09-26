@@ -4,8 +4,9 @@ import { EMPTY_PERSONALIZATION, Product, ProductVariation } from "./types";
 
 /**
  * Kopieert een product met al zijn varianten (attributen, prijsberekening, WooCommerce-gegevens) als
- * startpunt voor een nieuw product. Het nieuwe product start als niet-gepubliceerd. Geeft het id van het
- * nieuwe product terug.
+ * startpunt voor een nieuw product. Beschrijving en afbeelding(en) worden bewust NIET overgenomen --
+ * die zijn zo goed als altijd productspecifiek, dus de kopie start met die velden leeg. Het nieuwe
+ * product start als niet-gepubliceerd. Geeft het id van het nieuwe product terug.
  *
  * desiredSku: SKU die de gebruiker zelf opgaf. Moet al op uniciteit gecontroleerd zijn door de aanroeper
  * (zie checkSkuAvailable) -- deze functie doet enkel nog een laatste controle bij het effectief opslaan,
@@ -26,9 +27,9 @@ export async function duplicateProduct(supabase: SupabaseClient, source: Product
       published: false,
       attribute_names: source.attribute_names,
       default_attribute_values: source.default_attribute_values ?? {},
-      description: source.description ?? "",
+      description: "",
       categories: source.categories ?? "",
-      image_url: source.image_url ?? "",
+      image_url: "",
       weight_kg: source.weight_kg ?? null,
       shipping_class: source.shipping_class ?? "",
       personalization: source.personalization ?? EMPTY_PERSONALIZATION,
@@ -50,7 +51,7 @@ export async function duplicateProduct(supabase: SupabaseClient, source: Product
       cost_price: v.cost_price,
       sale_price: v.sale_price,
       suggested_price: v.suggested_price,
-      image_url: v.image_url,
+      image_url: null,
     });
   }
   return created.id as string;
