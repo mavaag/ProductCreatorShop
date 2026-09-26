@@ -13,6 +13,7 @@ import { loadMinMargin } from "@/lib/settings";
 import { cartesian, comboKey } from "@/lib/variants";
 import { toHours } from "@/lib/types";
 import { slugifyForSku, nextAvailableSku, skuExists } from "@/lib/sku";
+import { uploadProductImage } from "@/lib/uploadImage";
 import {
   Product,
   ProductVariation,
@@ -49,6 +50,7 @@ export default function ProductEditPage() {
   const [minMargin, setMinMargin] = useState(DEFAULT_MIN_MARGIN);
   const [wc, setWc] = useState({ description: "", categories: "", image_url: "", weight_kg: "", shipping_class: "" });
   const [savingWc, setSavingWc] = useState(false);
+  const [uploadingWcImage, setUploadingWcImage] = useState(false);
   const [personalization, setPersonalization] = useState<Personalization>(EMPTY_PERSONALIZATION);
   const [savingPersonalization, setSavingPersonalization] = useState(false);
   const [duplicateSkuPrompt, setDuplicateSkuPrompt] = useState<{ suggested: string } | null>(null);
@@ -240,6 +242,19 @@ export default function ProductEditPage() {
     setSavingWc(false);
     if (error) await alertDialog(error.message);
     load();
+  }
+
+  async function onWcImageFileChosen(file: File | null) {
+    if (!file) return;
+    setUploadingWcImage(true);
+    try {
+      const url = await uploadProductImage(file);
+      setWc((prev) => ({ ...prev, image_url: prev.image_url.trim() ? `${prev.image_url.trim()}, ${url}` : url }));
+    } catch (err: any) {
+      await alertDialog("Opladen mislukt: " + (err?.message ?? String(err)));
+    } finally {
+      setUploadingWcImage(false);
+    }
   }
 
   /** Wisselt de personalisatieplugin: bouwt de verwachte zones op, met behoud van reeds ingevulde kosten per zone. */
@@ -652,6 +667,18 @@ export default function ProductEditPage() {
         </div>
         <label>Afbeelding(en) -- URL, meerdere gescheiden door een komma</label>
         <input value={wc.image_url} onChange={(e) => setWc({ ...wc, image_url: e.target.value })} placeholder="https://..." />
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => {
+              onWcImageFileChosen(e.target.files?.[0] ?? null);
+              e.target.value = "";
+            }}
+            disabled={uploadingWcImage}
+          />
+          {uploadingWcImage && <span className="muted">Opladen...</span>}
+        </div>
         {wc.image_url.trim() && (
           <img
             src={wc.image_url.split(",")[0].trim()}
@@ -900,6 +927,7 @@ const VariationEditor = forwardRef<VariationEditorHandle, {
   const [attributeValues, setAttributeValues] = useState<Record<string, string>>(variation.attribute_values ?? {});
   const [inputs, setInputs] = useState<CostInputs>({ ...EMPTY_COST_INPUTS, ...(variation.cost_inputs ?? {}) });
   const [imageUrl, setImageUrl] = useState(variation.image_url ?? "");
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [saving, setSaving] = useState(false);
   // Enkel varianten die net met "+ Variant toevoegen" zijn aangemaakt (herkenbaar aan
   // de "-NIEUW-" markering) krijgen automatische SKU-generatie -- bestaande varianten
@@ -974,6 +1002,19 @@ const VariationEditor = forwardRef<VariationEditorHandle, {
   }
   function removeMachineLine(idx: number) {
     setInputs({ ...inputs, machine_time: inputs.machine_time.filter((_, i) => i !== idx) });
+  }
+
+  async function onImageFileChosen(file: File | null) {
+    if (!file) return;
+    setUploadingImage(true);
+    try {
+      const url = await uploadProductImage(file);
+      setImageUrl(url);
+    } catch (err: any) {
+      await alertDialog("Opladen mislukt: " + (err?.message ?? String(err)));
+    } finally {
+      setUploadingImage(false);
+    }
   }
 
   async function save(reason = "Handmatig opgeslagen"): Promise<boolean> {
@@ -1076,6 +1117,18 @@ const VariationEditor = forwardRef<VariationEditorHandle, {
               onChange={(e) => setImageUrl(e.target.value)}
               placeholder="https://... -- leeg = de gewone productafbeelding"
             />
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  onImageFileChosen(e.target.files?.[0] ?? null);
+                  e.target.value = "";
+                }}
+                disabled={uploadingImage}
+              />
+              {uploadingImage && <span className="muted">Opladen...</span>}
+            </div>
             {imageUrl.trim() && (
               <img
                 src={imageUrl.trim()}
