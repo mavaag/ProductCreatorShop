@@ -512,6 +512,12 @@ export default function ProductEditPage() {
   const savedDefaultAttrs = Object.fromEntries(Object.entries(product.default_attribute_values ?? {}).filter(([, v]) => v));
   const defaultAttrsChanged = JSON.stringify(defaultAttrDraft) !== JSON.stringify(savedDefaultAttrs);
   const personalizationDirty = JSON.stringify(personalization) !== JSON.stringify({ ...EMPTY_PERSONALIZATION, ...(product.personalization ?? {}) });
+  const wcDirty =
+    wc.description !== (product.description ?? "") ||
+    wc.categories !== (product.categories ?? "") ||
+    wc.image_url !== (product.image_url ?? "") ||
+    wc.weight_kg !== (product.weight_kg != null ? String(product.weight_kg) : "") ||
+    wc.shipping_class !== (product.shipping_class ?? "");
 
   return (
     <div>
@@ -620,8 +626,13 @@ export default function ProductEditPage() {
         </div>
       )}
 
-      <div className="card">
-        <h2 style={{ marginTop: 0, fontSize: 14 }}>WooCommerce-gegevens</h2>
+      <div className="card" style={wcDirty ? { borderColor: "var(--yellow)" } : undefined}>
+        <h2 style={{ marginTop: 0, fontSize: 14 }}>
+          WooCommerce-gegevens
+          {wcDirty && (
+            <span className="mono" style={{ marginLeft: 8, fontSize: 11, color: "var(--yellow)" }}>* niet opgeslagen</span>
+          )}
+        </h2>
         <p className="muted">Deze velden gaan mee in de export naar WooCommerce (bij het hoofdproduct).</p>
         <label>Beschrijving</label>
         <textarea
@@ -688,7 +699,9 @@ export default function ProductEditPage() {
           />
         )}
         <div style={{ marginTop: 12 }}>
-          <button className="btn" onClick={saveWc} disabled={savingWc}>{savingWc ? "Opslaan..." : "WooCommerce-gegevens opslaan"}</button>
+          <button className="btn" onClick={saveWc} disabled={savingWc || !wcDirty}>
+            {savingWc ? "Opslaan..." : wcDirty ? "WooCommerce-gegevens opslaan" : "Geen wijzigingen"}
+          </button>
         </div>
       </div>
 
