@@ -29,6 +29,25 @@ export type MaterialLine = {
   quantity: number; // in de eenheid van het materiaal (g, ml, vel, stuk, ...)
 };
 
+/**
+ * Een bestelling/aankoop van een materiaal (bv. een doos met inktcartridges, een pak sublimatiepapier).
+ * `quantity` (= packages * units_per_package) staat altijd in de eenheid van het materiaal zelf, zodat
+ * een bestelling ongeacht de verpakking gewoon bij de voorraad opgeteld kan worden zodra ze ontvangen is.
+ */
+export type MaterialOrder = {
+  id: string;
+  material_id: string;
+  packages: number; // aantal verpakkingen (dozen/pakken/zakken/...), bv. 1 doos
+  units_per_package: number; // inhoud per verpakking, in de eenheid van het materiaal (bv. 4 cartridges x 70 ml = 280)
+  quantity: number; // packages * units_per_package -- wat er bij "ontvangen" bij de voorraad komt
+  total_price: number; // totaal betaald voor deze bestelling (excl. btw, net als Material.price_per_unit)
+  supplier_name: string | null;
+  ordered_at: string; // datum (YYYY-MM-DD)
+  received_at: string | null; // null = nog onderweg; voorraad wordt pas bijgewerkt zodra dit gezet is
+  notes: string | null;
+  created_at: string;
+};
+
 export type TimeUnit = "u" | "min" | "sec";
 
 export type MachineTimeLine = {

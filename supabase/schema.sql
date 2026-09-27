@@ -28,6 +28,25 @@ create table if not exists materials (
   created_at timestamptz not null default now()
 );
 
+-- Bestellingen/aankopen van materiaal (bv. een doos inktcartridges, een pak sublimatiepapier).
+-- quantity (= packages * units_per_package) staat in de eenheid van het materiaal en wordt pas bij
+-- materials.stock_quantity opgeteld zodra received_at gezet is -- zie lib/materialOrders.ts.
+create table if not exists material_orders (
+  id uuid primary key default gen_random_uuid(),
+  material_id uuid not null references materials(id) on delete cascade,
+  packages numeric not null default 1,
+  units_per_package numeric not null,
+  quantity numeric not null,
+  total_price numeric not null default 0,
+  supplier_name text,
+  ordered_at date not null default current_date,
+  received_at date,
+  notes text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_material_orders_material on material_orders(material_id);
+
 -- Producten (komen overeen met WooCommerce 'variable' hoofdproducten)
 create table if not exists products (
   id uuid primary key default gen_random_uuid(),
@@ -74,12 +93,15 @@ create index if not exists idx_variations_product on product_variations(product_
 -- ============================================================
 alter table machines enable row level security;
 alter table materials enable row level security;
+alter table material_orders enable row level security;
 alter table products enable row level security;
 alter table product_variations enable row level security;
 
 create policy "authenticated full access" on machines
   for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 create policy "authenticated full access" on materials
+  for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+create policy "authenticated full access" on material_orders
   for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 create policy "authenticated full access" on products
   for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
