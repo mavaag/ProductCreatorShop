@@ -278,7 +278,7 @@ function reconcilePublishedStatus(p: any, parent: { status: string }): { publish
 
 /** Post-meta sleutel per zone van een personalisatieplugin -- moet overeenkomen met lib/types.ts PERSONALIZATION_ZONES. */
 const PERSONALIZATION_META_KEYS: Record<string, Record<string, string>> = {
-  gravure_uv: { single: "_tdp_fee" },
+  gravure_uv: { front: "_tdp_fee", back: "_tdp_back_fee" },
   tshirt: { front: "_tdpt_fee", back: "_tdpt_back_fee" },
   mug: { single: "_pfy_mug_fee" },
 };
