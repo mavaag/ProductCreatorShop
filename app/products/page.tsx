@@ -84,6 +84,8 @@ export default function ProductsPage() {
   const [publishFilter, setPublishFilter] = useState<PublishFilter>("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkMargin, setBulkMargin] = useState("");
+  const [bulkCategory, setBulkCategory] = useState("");
+  const [wcCategories, setWcCategories] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [duplicateTarget, setDuplicateTarget] = useState<{ product: ProductWithVariations; suggested: string } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -103,6 +105,24 @@ export default function ProductsPage() {
 
   useEffect(() => {
     if (ready) load();
+  }, [ready]);
+
+  useEffect(() => {
+    if (!ready) return;
+    (async () => {
+      try {
+        const { data: session } = await supabase.auth.getSession();
+        const res = await fetch("/api/woocommerce/categories", {
+          headers: { Authorization: `Bearer ${session.session?.access_token}` },
+        });
+        if (res.ok) {
+          const body = await res.json();
+          setWcCategories(body.categories ?? []);
+        }
+      } catch {
+        // Stilletjes falen -- de gebruiker kan de categorie nog steeds handmatig typen.
+      }
+    })();
   }, [ready]);
 
   async function deleteProduct(id: string) {
@@ -338,6 +358,20 @@ export default function ProductsPage() {
     const n = await setMarginForProducts(supabase, Array.from(selected), pct / 100);
     setMessage(`${n} variant(en) herberekend met ${pct}% marge.`);
     setBulkMargin("");
+    setBusy(false);
+    load();
+  }
+
+  /** Vervangt de categorie(ën) van alle geselecteerde producten. Varianten hebben in WooCommerce geen eigen
+   * categorie -- die zit enkel op het hoofdproduct en geldt daarmee automatisch voor al zijn varianten. */
+  async function bulkSetCategory() {
+    const category = bulkCategory.trim();
+    if (!category) return;
+    if (!(await confirmDialog(`Categorie van ${selected.size} product(en) vervangen door "${category}"?\n\nDit overschrijft de huidige categorie(ën) van deze producten.`))) return;
+    setBusy(true);
+    await supabase.from("products").update({ categories: category, updated_at: new Date().toISOString() }).in("id", Array.from(selected));
+    setMessage(`Categorie van ${selected.size} product(en) gezet op "${category}". Vergeet niet te synchroniseren met WooCommerce.`);
+    setBulkCategory("");
     setBusy(false);
     load();
   }
@@ -663,6 +697,19 @@ export default function ProductsPage() {
             onChange={(e) => setBulkMargin(e.target.value)}
           />
           <button className="btn secondary" disabled={busy || !bulkMargin} onClick={bulkSetMargin}>Marge toepassen</button>
+          <input
+            list="wc-categories-bulk"
+            style={{ width: 220 }}
+            placeholder="bv. Woondecoratie > Vazen"
+            value={bulkCategory}
+            onChange={(e) => setBulkCategory(e.target.value)}
+          />
+          {wcCategories.length > 0 && (
+            <datalist id="wc-categories-bulk">
+              {wcCategories.map((cat) => <option key={cat} value={cat} />)}
+            </datalist>
+          )}
+          <button className="btn secondary" disabled={busy || !bulkCategory.trim()} onClick={bulkSetCategory}>Categorie instellen</button>
           <button className="btn danger" disabled={busy} onClick={bulkDelete}>Verwijderen</button>
           <button className="btn secondary" disabled={busy} onClick={() => runSync(true, Array.from(selected))}>Synchroniseer geselecteerde</button>
           <button className="btn secondary" onClick={() => setSelected(new Set())}>Selectie wissen</button>
