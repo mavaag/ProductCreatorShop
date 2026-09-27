@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
@@ -26,6 +26,11 @@ const TABS: { value: ProcessType | "all"; label: string }[] = [
 
 type SortKey = "name" | "sku" | "price_low" | "price_high" | "variations";
 type PublishFilter = "all" | "published" | "unpublished";
+
+/** Categorieën van een product als losse, getrimde paden (bv. "Woondecoratie > Vazen"), zonder lege waarden. */
+function productCategories(p: ProductWithVariations): string[] {
+  return String(p.categories ?? "").split(",").map((c) => c.trim()).filter(Boolean);
+}
 
 function priceRange(p: ProductWithVariations) {
   const prices = p.product_variations.map((v) => v.suggested_price).filter((x): x is number => x != null);
@@ -82,6 +87,7 @@ export default function ProductsPage() {
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [publishFilter, setPublishFilter] = useState<PublishFilter>("all");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkMargin, setBulkMargin] = useState("");
   const [bulkCategory, setBulkCategory] = useState("");
@@ -454,10 +460,18 @@ export default function ProductsPage() {
     return c;
   }, [products]);
 
+  /** Alle categoriepaden die bij minstens één product voorkomen, alfabetisch, voor de filter-dropdown. */
+  const categoryOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of products) for (const c of productCategories(p)) set.add(c);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [products]);
+
   const filtered = useMemo(() => {
     let list = products;
     if (activeTab !== "all") list = list.filter((p) => p.process_type === activeTab);
     if (publishFilter !== "all") list = list.filter((p) => (publishFilter === "published" ? p.published : !p.published));
+    if (categoryFilter !== "all") list = list.filter((p) => productCategories(p).includes(categoryFilter));
     const q = search.trim().toLowerCase();
     if (q) list = list.filter((p) => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q));
 
@@ -478,7 +492,7 @@ export default function ProductsPage() {
       }
     });
     return withPrices.map((x) => x.p);
-  }, [products, activeTab, publishFilter, search, sortKey]);
+  }, [products, activeTab, publishFilter, categoryFilter, search, sortKey]);
 
   if (!ready) return null;
 
@@ -682,6 +696,13 @@ export default function ProductsPage() {
             <option value="unpublished">Enkel niet-gepubliceerd</option>
           </select>
         </div>
+        <div style={{ flex: 1, minWidth: 160 }}>
+          <label>Categorie</label>
+          <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+            <option value="all">Alle</option>
+            {categoryOptions.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+          </select>
+        </div>
       </div>
 
       {selected.size > 0 && (
@@ -728,7 +749,7 @@ export default function ProductsPage() {
                 onChange={(e) => setSelected(e.target.checked ? new Set(filtered.map((p) => p.id)) : new Set())}
               />
             </th>
-            <th>Naam</th><th>Techniek</th><th>SKU</th><th>Attributen</th><th>Varianten</th><th>Verkoopprijs</th><th>Gepubliceerd</th><th>Export</th><th></th></tr>
+            <th>Naam</th><th>Techniek</th><th>Categorie</th><th>SKU</th><th>Attributen</th><th>Varianten</th><th>Verkoopprijs</th><th>Gepubliceerd</th><th>Export</th><th></th></tr>
         </thead>
         <tbody>
           {filtered.map((p) => {
@@ -745,22 +766,34 @@ export default function ProductsPage() {
                 </td>
                 <td><Link href={`/products/${p.id}`}>{p.name}</Link></td>
                 <td><span className="pill">{PROCESS_TYPE_LABELS[p.process_type]}</span></td>
+                <td>
+                  {productCategories(p).length > 0
+                    ? (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                        {productCategories(p).map((cat) => <span key={cat} className="pill cyan">{cat}</span>)}
+                      </div>
+                    )
+                    : <span className="muted">Geen</span>}
+                </td>
                 <td className="mono">{p.sku}</td>
                 <td>{p.attribute_names.length > 0 ? p.attribute_names.join(", ") : <span className="muted">Simpel product</span>}</td>
                 <td className="mono">{p.product_variations.length}</td>
                 <td className="mono">{priceLabel}</td>
                 <td>{p.published ? "Ja" : "Nee"}</td>
                 <td>{isChanged(p) ? <span className="pill">{p.last_exported_at ? "Gewijzigd" : "Nieuw"}</span> : <span className="muted">Up-to-date</span>}</td>
-                <td style={{ whiteSpace: "nowrap" }}>
-                  <Link className="btn secondary" href={`/products/${p.id}`} style={{ marginRight: 6 }}>Bewerken</Link>
-                  <button className="btn secondary" disabled={busy} onClick={() => startDuplicate(p)} style={{ marginRight: 6 }}>Dupliceer</button>
-                  <button className="btn danger" onClick={() => deleteProduct(p.id)}>Verwijder</button>
+                <td>
+                  <RowActionsMenu
+                    product={p}
+                    busy={busy}
+                    onDuplicate={() => startDuplicate(p)}
+                    onDelete={() => deleteProduct(p.id)}
+                  />
                 </td>
               </tr>
             );
           })}
           {filtered.length === 0 && (
-            <tr><td colSpan={10} className="muted">
+            <tr><td colSpan={11} className="muted">
               {products.length === 0
                 ? 'Nog geen producten -- klik op "+ Nieuw product" om te starten.'
                 : "Geen producten gevonden voor deze filter/zoekopdracht."}
@@ -779,6 +812,83 @@ export default function ProductsPage() {
         onConfirm={confirmDuplicate}
         onCancel={() => setDuplicateTarget(null)}
       />
+    </div>
+  );
+}
+
+/** Hamburgermenu met de rij-acties (bewerken, dupliceren, verwijderen) -- houdt de tabel compact
+ * nu er ook een categoriekolom bij staat. Sluit bij een klik erbuiten of op Escape. */
+function RowActionsMenu({
+  product,
+  busy,
+  onDuplicate,
+  onDelete,
+}: {
+  product: ProductWithVariations;
+  busy: boolean;
+  onDuplicate: () => void;
+  onDelete: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDocClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="row-menu" ref={ref}>
+      <button
+        type="button"
+        className="icon-btn"
+        aria-haspopup="true"
+        aria-expanded={open}
+        aria-label={`Acties voor ${product.name}`}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <rect y="2.5" width="16" height="2" />
+          <rect y="7" width="16" height="2" />
+          <rect y="11.5" width="16" height="2" />
+        </svg>
+      </button>
+      {open && (
+        <div className="row-menu-panel" role="menu">
+          <Link className="row-menu-item" role="menuitem" href={`/products/${product.id}`} onClick={() => setOpen(false)}>
+            Bewerken
+          </Link>
+          <button
+            type="button"
+            className="row-menu-item"
+            role="menuitem"
+            disabled={busy}
+            onClick={() => { setOpen(false); onDuplicate(); }}
+          >
+            Dupliceer
+          </button>
+          <button
+            type="button"
+            className="row-menu-item danger"
+            role="menuitem"
+            disabled={busy}
+            onClick={() => { setOpen(false); onDelete(); }}
+          >
+            Verwijder
+          </button>
+        </div>
+      )}
     </div>
   );
 }
