@@ -47,6 +47,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Link href="/materials">Materialen</Link>
             <Link href="/margins">Marges</Link>
             <Link href="/prices">Prijzen</Link>
+            <Link href="/orders">Bestellingen</Link>
             <Link href="/mockup">Mockup</Link>
           </div>
         </nav>

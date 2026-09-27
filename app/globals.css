@@ -409,3 +409,21 @@ input[type="checkbox"] { accent-color: var(--magenta); }
 .icon-btn:hover { color: var(--magenta); border-color: var(--magenta); filter: drop-shadow(0 0 5px rgba(255, 43, 214, 0.7)); }
 .icon-btn:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }
 .icon-btn svg { width: 16px; height: 16px; }
+
+/* ---------- Stat-tegel (KPI) ---------- */
+.stat-tile { flex: 1; min-width: 160px; }
+.stat-tile .stat-label { color: var(--ink-soft); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; }
+.stat-tile .stat-value {
+  font-family: var(--font-display), sans-serif;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--yellow);
+  text-shadow: 0 0 10px rgba(252, 238, 10, 0.6);
+  margin-top: 4px;
+}
+
+/* ---------- Balkjes-grafiek (maandoverzicht) ---------- */
+.bar-chart__bar { transition: filter 0.1s ease; cursor: default; }
+.bar-chart__bar:hover, .bar-chart__bar:focus-visible { filter: brightness(1.35); outline: none; }
+.rank-bar__fill { transition: filter 0.1s ease; }
+.rank-bar__track:hover .rank-bar__fill { filter: brightness(1.35); }
