@@ -48,6 +48,30 @@ export type MaterialOrder = {
   created_at: string;
 };
 
+/** Lokale kopie van een WooCommerce-bestelling (zie migration_015_wc_orders.sql) -- voor de Bestellingen-rapportagepagina. */
+export type WcOrder = {
+  id: string;
+  wc_order_id: number;
+  order_number: string;
+  status: string; // 'pending' | 'processing' | 'on-hold' | 'completed' | 'cancelled' | 'refunded' | 'failed' | ...
+  currency: string;
+  total: number;
+  date_created: string;
+  date_modified: string;
+  created_at: string;
+};
+
+export type WcOrderItem = {
+  id: string;
+  order_id: string;
+  wc_product_id: number | null;
+  wc_variation_id: number | null;
+  sku: string | null;
+  name: string;
+  quantity: number;
+  total: number;
+};
+
 export type TimeUnit = "u" | "min" | "sec";
 
 export type MachineTimeLine = {

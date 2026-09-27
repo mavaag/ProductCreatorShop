@@ -449,3 +449,21 @@ input[type="checkbox"] { accent-color: var(--magenta); }
 .row-menu-item:disabled { opacity: 0.4; cursor: default; }
 .row-menu-item.danger { color: #ff9db0; }
 .row-menu-item.danger:hover { background: var(--rust-soft); color: var(--rust); }
+
+/* ---------- Stat-tegel (KPI) ---------- */
+.stat-tile { flex: 1; min-width: 160px; }
+.stat-tile .stat-label { color: var(--ink-soft); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; }
+.stat-tile .stat-value {
+  font-family: var(--font-display), sans-serif;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--yellow);
+  text-shadow: 0 0 10px rgba(252, 238, 10, 0.6);
+  margin-top: 4px;
+}
+
+/* ---------- Balkjes-grafiek (maandoverzicht) ---------- */
+.bar-chart__bar { transition: filter 0.1s ease; cursor: default; }
+.bar-chart__bar:hover, .bar-chart__bar:focus-visible { filter: brightness(1.35); outline: none; }
+.rank-bar__fill { transition: filter 0.1s ease; }
+.rank-bar__track:hover .rank-bar__fill { filter: brightness(1.35); }

@@ -47,6 +47,36 @@ create table if not exists material_orders (
 
 create index if not exists idx_material_orders_material on material_orders(material_id);
 
+-- Lokale kopie van WooCommerce-bestellingen, voor de Bestellingen-rapportagepagina (omzet/aantal orders
+-- per maand, meest bestelde producten). Bron van waarheid blijft WooCommerce -- zie
+-- app/api/woocommerce/orders-sync/route.ts.
+create table if not exists wc_orders (
+  id uuid primary key default gen_random_uuid(),
+  wc_order_id bigint not null unique,
+  order_number text not null,
+  status text not null,
+  currency text not null default 'EUR',
+  total numeric not null default 0,
+  date_created timestamptz not null,
+  date_modified timestamptz not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_wc_orders_date_created on wc_orders(date_created);
+create index if not exists idx_wc_orders_status on wc_orders(status);
+
+create table if not exists wc_order_items (
+  id uuid primary key default gen_random_uuid(),
+  order_id uuid not null references wc_orders(id) on delete cascade,
+  wc_product_id bigint,
+  wc_variation_id bigint,
+  sku text,
+  name text not null,
+  quantity numeric not null default 0,
+  total numeric not null default 0
+);
+create index if not exists idx_wc_order_items_order on wc_order_items(order_id);
+create index if not exists idx_wc_order_items_sku on wc_order_items(sku);
+
 -- Producten (komen overeen met WooCommerce 'variable' hoofdproducten)
 create table if not exists products (
   id uuid primary key default gen_random_uuid(),
@@ -94,6 +124,8 @@ create index if not exists idx_variations_product on product_variations(product_
 alter table machines enable row level security;
 alter table materials enable row level security;
 alter table material_orders enable row level security;
+alter table wc_orders enable row level security;
+alter table wc_order_items enable row level security;
 alter table products enable row level security;
 alter table product_variations enable row level security;
 
@@ -102,6 +134,10 @@ create policy "authenticated full access" on machines
 create policy "authenticated full access" on materials
   for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 create policy "authenticated full access" on material_orders
+  for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+create policy "authenticated full access" on wc_orders
+  for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+create policy "authenticated full access" on wc_order_items
   for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 create policy "authenticated full access" on products
   for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
