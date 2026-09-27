@@ -33,6 +33,27 @@ import {
   PERSONALIZATION_ZONES,
 } from "@/lib/types";
 
+/**
+ * Brengt de zones van een personalisatie in lijn met PERSONALIZATION_ZONES voor de gekozen plugin:
+ * behoudt reeds ingevulde kosten per zone (gematcht op key) en vult ontbrekende zones aan met lege
+ * kosten. Nodig omdat een plugin ooit van zone-set kan veranderen (bv. gravure_uv kreeg een back-zone
+ * naast front), zodat bestaande producten die extra zone automatisch krijgen zonder de plugin-keuze
+ * opnieuw te moeten selecteren.
+ */
+function reconcilePersonalizationZones(personalization: Personalization): Personalization {
+  const { plugin, zones } = personalization;
+  if (plugin === "none") {
+    return { plugin: "none", zones: [] };
+  }
+  return {
+    plugin,
+    zones: PERSONALIZATION_ZONES[plugin].map((def) => {
+      const existing = zones.find((z) => z.key === def.key);
+      return existing ?? { key: def.key, print_width_mm: null, print_height_mm: null, cost_inputs: EMPTY_COST_INPUTS, fee: null };
+    }),
+  };
+}
+
 export default function ProductEditPage() {
   const ready = useAuthGuard();
   const params = useParams();
@@ -88,7 +109,7 @@ export default function ProductEditPage() {
     }
     setAttrDraft(p?.attribute_names ?? []);
     setDefaultAttrDraft(p?.default_attribute_values ?? {});
-    setPersonalization({ ...EMPTY_PERSONALIZATION, ...(p?.personalization ?? {}) });
+    setPersonalization(reconcilePersonalizationZones({ ...EMPTY_PERSONALIZATION, ...(p?.personalization ?? {}) }));
     setVariations(v ?? []);
     setMachines(m ?? []);
     setMaterials(mat ?? []);
@@ -259,15 +280,7 @@ export default function ProductEditPage() {
 
   /** Wisselt de personalisatieplugin: bouwt de verwachte zones op, met behoud van reeds ingevulde kosten per zone. */
   function setPersonalizationPlugin(plugin: PersonalizationPlugin) {
-    if (plugin === "none") {
-      setPersonalization({ plugin: "none", zones: [] });
-      return;
-    }
-    const zones = PERSONALIZATION_ZONES[plugin].map((def) => {
-      const existing = personalization.zones.find((z) => z.key === def.key);
-      return existing ?? { key: def.key, print_width_mm: null, print_height_mm: null, cost_inputs: EMPTY_COST_INPUTS, fee: null };
-    });
-    setPersonalization({ plugin, zones });
+    setPersonalization(reconcilePersonalizationZones({ plugin, zones: personalization.zones }));
   }
 
   function updatePersonalizationZoneInputs(key: string, inputs: CostInputs) {

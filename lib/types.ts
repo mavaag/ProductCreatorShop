@@ -89,7 +89,7 @@ export type Product = {
 export type PersonalizationPlugin = "none" | "gravure_uv" | "tshirt" | "mug";
 
 export type PersonalizationZone = {
-  key: string; // "single" | "front" | "back" -- zie PERSONALIZATION_ZONES
+  key: string; // "front" | "back" | "single" (mug) -- zie PERSONALIZATION_ZONES
   // Afmetingen van de printzone in mm, zoals ingesteld in de plugin (WooCommerce product-instellingen
   // "Printbreedte zone (mm)" + de hoogte die daaruit volgt). Optioneel -- enkel nodig om bij een
   // materiaallijn de hoeveelheid (bv. ml inkt bij volledige dekking) te kunnen voorstellen.
@@ -115,7 +115,10 @@ export const PERSONALIZATION_PLUGIN_LABELS: Record<PersonalizationPlugin, string
 
 /** Welke zones (en WooCommerce post-meta sleutel) elke personalisatie-plugin verwacht. */
 export const PERSONALIZATION_ZONES: Record<Exclude<PersonalizationPlugin, "none">, { key: string; label: string; metaKey: string }[]> = {
-  gravure_uv: [{ key: "single", label: "Gravure / UV-print", metaKey: "_tdp_fee" }],
+  gravure_uv: [
+    { key: "front", label: "Voorkant", metaKey: "_tdp_fee" },
+    { key: "back", label: "Achterkant", metaKey: "_tdp_back_fee" },
+  ],
   tshirt: [
     { key: "front", label: "Voorkant", metaKey: "_tdpt_fee" },
     { key: "back", label: "Achterkant", metaKey: "_tdpt_back_fee" },
