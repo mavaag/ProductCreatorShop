@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
 import { confirmDialog } from "@/components/DialogHost";
+import { calculatePrice } from "@/lib/pricing";
+import { CostInputs, EMPTY_COST_INPUTS, Machine, Material } from "@/lib/types";
 
 type Period = "12m" | "this_year" | "last_year" | "all";
 
@@ -41,6 +43,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 type OrderRow = { id: string; status: string; total: number; date_created: string };
 type ItemRow = { name: string; sku: string | null; quantity: number; total: number };
+type VariationCost = { sku: string; cost_inputs: CostInputs };
 
 function periodRange(period: Period): { start: Date | null; end: Date } {
   const now = new Date();
@@ -91,6 +94,23 @@ export default function OrdersPage() {
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
+  const [variationsBySku, setVariationsBySku] = useState<Map<string, VariationCost>>(new Map());
+  const [materialsById, setMaterialsById] = useState<Map<string, Material>>(new Map());
+  const [machinesById, setMachinesById] = useState<Map<string, Machine>>(new Map());
+
+  /** Kostprijsgegevens (varianten, materialen, machines) -- onafhankelijk van de gekozen periode, dus
+   * maar één keer laden. Gebruikt om de omzet per bestelde SKU om te zetten in een kostprijs. */
+  async function loadCostData() {
+    const [{ data: variations }, { data: materials }, { data: machines }] = await Promise.all([
+      supabase.from("product_variations").select("sku, cost_inputs"),
+      supabase.from("materials").select("*"),
+      supabase.from("machines").select("*"),
+    ]);
+    setVariationsBySku(new Map(((variations ?? []) as VariationCost[]).map((v) => [v.sku, v])));
+    setMaterialsById(new Map(((materials ?? []) as Material[]).map((m) => [m.id, m])));
+    setMachinesById(new Map(((machines ?? []) as Machine[]).map((m) => [m.id, m])));
+  }
+
   async function load() {
     setLoading(true);
     const { start, end } = periodRange(period);
@@ -122,6 +142,10 @@ export default function OrdersPage() {
     if (ready) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, period]);
+
+  useEffect(() => {
+    if (ready) loadCostData();
+  }, [ready]);
 
   async function runSync(full: boolean) {
     if (full) {
@@ -196,6 +220,46 @@ export default function OrdersPage() {
     return { count, revenue, avg: count > 0 ? revenue / count : 0 };
   }, [orders]);
 
+  /**
+   * Winst en materiaalkost, per besteld product (SKU) herleid uit de HUIDIGE kostprijsberekening
+   * van die variant -- geen historische snapshot van wat het product kostte op het moment van de
+   * bestelling (net als de Prijzen-pagina). Enkel op basis van de productregels zelf (excl. verzending/
+   * btw); een regel waarvan de SKU niet meer bij een bestaande variant hoort telt mee in de omzet maar
+   * niet in de kostprijs -- die omzet en het aantal regels worden apart getoond zodat duidelijk blijft
+   * welk deel van de winst onbekend is.
+   */
+  const profitSummary = useMemo(() => {
+    let materialsCost = 0;
+    let totalCost = 0;
+    let matchedRevenue = 0;
+    let unmatchedRevenue = 0;
+    let unmatchedCount = 0;
+    for (const it of items) {
+      const variation = it.sku ? variationsBySku.get(it.sku) : undefined;
+      const qty = Number(it.quantity) || 0;
+      const lineRevenue = Number(it.total) || 0;
+      if (!variation) {
+        unmatchedRevenue += lineRevenue;
+        unmatchedCount++;
+        continue;
+      }
+      const inputs: CostInputs = { ...EMPTY_COST_INPUTS, ...(variation.cost_inputs ?? {}) };
+      const { costPrice, breakdown } = calculatePrice(inputs, machinesById, materialsById);
+      materialsCost += breakdown.materials * qty;
+      totalCost += costPrice * qty;
+      matchedRevenue += lineRevenue;
+    }
+    const profit = matchedRevenue - totalCost;
+    return {
+      materialsCost,
+      totalCost,
+      profit,
+      margin: matchedRevenue > 0 ? profit / matchedRevenue : 0,
+      unmatchedRevenue,
+      unmatchedCount,
+    };
+  }, [items, variationsBySku, materialsById, machinesById]);
+
   if (!ready) return null;
 
   return (
@@ -252,7 +316,23 @@ export default function OrdersPage() {
               <div className="stat-label">Gem. bestelwaarde</div>
               <div className="stat-value">{eurCompact(totals.avg)}</div>
             </div>
+            <div className="card stat-tile">
+              <div className="stat-label">Kostprijs materialen</div>
+              <div className="stat-value">{eurCompact(profitSummary.materialsCost)}</div>
+            </div>
+            <div className="card stat-tile">
+              <div className="stat-label">Winst</div>
+              <div className="stat-value" style={{ color: profitSummary.profit >= 0 ? "var(--moss)" : "var(--rust)" }}>{eurCompact(profitSummary.profit)}</div>
+            </div>
+            <div className="card stat-tile">
+              <div className="stat-label">Marge</div>
+              <div className="stat-value" style={{ color: profitSummary.profit >= 0 ? "var(--moss)" : "var(--rust)" }}>{Math.round(profitSummary.margin * 100)}%</div>
+            </div>
           </div>
+          <p className="muted" style={{ fontSize: 12, marginTop: -12, marginBottom: 20 }}>
+            Winst/marge zijn gebaseerd op productregels (excl. verzending) en je HUIDIGE materiaal-/machineprijzen, niet op de kostprijs op het moment van de bestelling.
+            {profitSummary.unmatchedCount > 0 && ` ${eur(profitSummary.unmatchedRevenue)} omzet uit ${profitSummary.unmatchedCount} regel(s) zonder gekende kostprijs (product niet meer gevonden op SKU) telt niet mee in winst/marge.`}
+          </p>
 
           <div className="card" style={{ marginBottom: 16 }}>
             <h2 style={{ marginTop: 0 }}>Bestellingen per maand</h2>
