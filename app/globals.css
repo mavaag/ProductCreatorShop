@@ -561,3 +561,18 @@ input[type="checkbox"] { accent-color: var(--magenta); }
   padding: 4px 14px;
   overflow-x: auto;
 }
+
+/* ---------- Machines: illustratie + kostenverdeling ---------- */
+.mat-icon.mach-illus { width: 64px; height: 64px; }
+.mach-split { display: flex; height: 8px; margin-top: 14px; background: #080918; border: 1px solid var(--line); }
+.mach-split-dep { background: var(--mat-color); box-shadow: 0 0 8px color-mix(in srgb, var(--mat-color) 50%, transparent); }
+.mach-split-power { background: var(--yellow); opacity: 0.85; }
+.mach-legend { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; margin-top: 6px; font-size: 12px; color: var(--ink-soft); }
+.mach-legend .mono { color: var(--ink); margin-left: 3px; }
+.mach-dot { display: inline-block; width: 8px; height: 8px; margin-right: 5px; vertical-align: middle; }
+.mach-dot.dep { background: var(--mat-color); }
+.mach-dot.power { background: var(--yellow); }
+.mach-specs { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin-top: 14px; background: var(--line-soft); border: 1px solid var(--line-soft); }
+.mach-specs > div { display: flex; flex-direction: column; gap: 2px; padding: 7px 9px; background: var(--panel); }
+.mach-specs span { font-size: 10.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
+.mach-specs strong { font-size: 13.5px; font-weight: 600; color: var(--ink); }
