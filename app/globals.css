@@ -468,6 +468,95 @@ input[type="checkbox"] { accent-color: var(--magenta); }
 .rank-bar__fill { transition: filter 0.1s ease; }
 .rank-bar__track:hover .rank-bar__fill { filter: brightness(1.35); }
 
+/* ---------- Producten: kaartjesweergave ---------- */
+.prod-viewbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+.prod-viewbar-left { display: flex; align-items: center; gap: 16px; }
+.prod-selectall {
+  display: flex; align-items: center; gap: 7px; margin: 0;
+  text-transform: none; letter-spacing: normal; font-size: 13.5px; font-weight: 600; color: var(--ink); cursor: pointer;
+}
+.prod-viewtoggle { display: inline-flex; border: 1px solid var(--line); }
+.prod-viewtoggle button {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px;
+  background: var(--panel); border: none; color: var(--ink-soft);
+  font-family: inherit; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  cursor: pointer;
+}
+.prod-viewtoggle button + button { border-left: 1px solid var(--line); }
+.prod-viewtoggle button svg { width: 13px; height: 13px; }
+.prod-viewtoggle button:hover { color: var(--ink); background: var(--panel-2); }
+.prod-viewtoggle button.active { color: var(--cyan); background: rgba(0, 240, 255, 0.1); box-shadow: inset 0 -2px 0 var(--cyan); }
+.prod-viewtoggle button:focus-visible { outline: 2px solid var(--yellow); outline-offset: -2px; }
+
+.prod-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
+.prod-card {
+  --prod-color: var(--cyan);
+  position: relative;
+  display: flex; flex-direction: column;
+  background: linear-gradient(180deg, var(--panel-2), var(--panel));
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--prod-color);
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut)));
+  transition: border-color 0.12s ease;
+}
+.prod-card:hover { border-color: var(--prod-color); }
+.prod-card.selected { border-color: var(--magenta); box-shadow: inset 0 0 0 1px var(--magenta); }
+.prod-thumb { display: block; text-decoration: none; aspect-ratio: 4 / 3; background: #080918; overflow: hidden; border-bottom: 1px solid var(--line-soft); }
+.prod-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.25s ease; }
+.prod-card:hover .prod-thumb img { transform: scale(1.04); }
+.prod-card.unpublished .prod-thumb img { opacity: 0.55; filter: grayscale(0.5); }
+.prod-thumb-empty { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--ink-faint); font-size: 12px; }
+.prod-check {
+  position: absolute; top: 8px; left: 8px; margin: 0;
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px;
+  background: rgba(7, 7, 13, 0.75); border: 1px solid var(--line);
+  cursor: pointer;
+}
+.prod-check input { margin: 0; width: 16px; height: 16px; }
+.prod-process {
+  position: absolute; top: 8px; right: 8px;
+  padding: 2px 8px;
+  background: rgba(7, 7, 13, 0.8);
+  border: 1px solid var(--prod-color);
+  color: var(--prod-color);
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+}
+.prod-export {
+  position: absolute; left: 8px; top: calc(8px + 32px);
+  padding: 2px 7px;
+  background: var(--yellow); color: #14130a;
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+}
+.prod-body { padding: 11px 13px 4px; display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.prod-name { color: #fff; font-weight: 700; font-size: 15px; text-decoration: none; line-height: 1.3; overflow-wrap: anywhere; }
+.prod-name:hover { color: var(--cyan); text-shadow: var(--glow-cyan); }
+.prod-sku { font-size: 11.5px; color: var(--ink-faint); }
+.prod-price { margin-top: 4px; font-size: 18px; font-weight: 700; color: var(--yellow); text-shadow: 0 0 8px rgba(252, 238, 10, 0.4); }
+.prod-price-sep { color: var(--ink-faint); text-shadow: none; }
+.prod-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink-soft); margin-top: 4px; }
+.prod-meta > span:first-child { display: inline-flex; align-items: center; gap: 5px; }
+.prod-meta svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; }
+.prod-attrs { color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.prod-cats { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 6px; }
+.prod-cats .pill { font-size: 10.5px; padding: 1px 7px; }
+.prod-foot { display: flex; justify-content: space-between; align-items: center; padding: 8px 13px 11px; }
+.prod-status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-faint); }
+.prod-status i { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-faint); }
+.prod-status.on { color: var(--moss); }
+.prod-status.on i { background: var(--moss); box-shadow: 0 0 6px var(--moss); }
+.prod-foot .row-menu-panel { top: auto; bottom: calc(100% + 4px); }
+@media (max-width: 640px) {
+  .prod-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .prod-body { padding: 9px 10px 4px; }
+  .prod-name { font-size: 13.5px; }
+  .prod-price { font-size: 15px; }
+  .prod-attrs { display: none; }
+  .prod-foot { padding: 6px 10px 9px; }
+  .prod-status { font-size: 0; gap: 0; }
+  .prod-process { font-size: 9.5px; padding: 1px 5px; }
+}
 /* ---------- Materialen: kaartjes ---------- */
 .mat-stats { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
 .mat-stats .card { margin-bottom: 0; }

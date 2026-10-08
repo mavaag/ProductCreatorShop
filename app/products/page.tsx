@@ -80,6 +80,67 @@ function useCollapsible(storageKey: string): [boolean, () => void] {
   return [open, toggle];
 }
 
+type ViewMode = "cards" | "list";
+
+const PROCESS_COLORS: Record<ProcessType, string> = {
+  "3d_print": "var(--cyan)",
+  uv_print: "#b56bff",
+  laser_engraving: "#ff8a3d",
+  laser_cutting: "#ff5a5a",
+  sublimation: "var(--magenta)",
+};
+
+/** Eerste productfoto: van het product zelf (komma-gescheiden lijst), anders van de eerste variant met een foto. */
+function productImage(p: ProductWithVariations): string | null {
+  const own = String(p.image_url ?? "").split(",").map((u) => u.trim()).find(Boolean);
+  if (own) return own;
+  return p.product_variations.map((v) => v.image_url?.trim()).find((u): u is string => !!u) ?? null;
+}
+
+/** Foto bovenaan een productkaartje, met een lijntekening als er (nog) geen foto is of die niet laadt. */
+function ProductThumb({ product }: { product: ProductWithVariations }) {
+  const src = productImage(product);
+  const [failed, setFailed] = useState(false);
+  if (src && !failed) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={src} alt="" loading="lazy" onError={() => setFailed(true)} />;
+  }
+  return (
+    <div className="prod-thumb-empty">
+      <svg viewBox="0 0 48 48" width="44" height="44" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <rect x="6" y="9" width="36" height="30" />
+        <circle cx="17" cy="19" r="3.5" />
+        <path d="M6 34l11-10 8 7 5-4 12 10" />
+      </svg>
+      <span>Geen foto</span>
+    </div>
+  );
+}
+
+/** Kaart- of lijstweergave, onthouden in localStorage. Standaard kaartjes. */
+function useViewMode(): [ViewMode, (mode: ViewMode) => void] {
+  const [mode, setMode] = useState<ViewMode>("cards");
+
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("products-view") === "list") setMode("list");
+    } catch {
+      // localStorage niet beschikbaar -- dan blijft het gewoon kaartjes.
+    }
+  }, []);
+
+  function change(next: ViewMode) {
+    setMode(next);
+    try {
+      localStorage.setItem("products-view", next);
+    } catch {
+      // localStorage niet beschikbaar -- dan onthouden we de keuze niet tussen bezoeken.
+    }
+  }
+
+  return [mode, change];
+}
+
 export default function ProductsPage() {
   const ready = useAuthGuard();
   const [products, setProducts] = useState<ProductWithVariations[]>([]);
@@ -100,6 +161,7 @@ export default function ProductsPage() {
   const [importProgress, setImportProgress] = useState<{ current: number; total: number; product: string } | null>(null);
   const [exportOpen, toggleExportOpen] = useCollapsible("woo-export-collapsed");
   const [syncOpen, toggleSyncOpen] = useCollapsible("woo-sync-collapsed");
+  const [viewMode, setViewMode] = useViewMode();
 
   async function load() {
     const { data } = await supabase
@@ -737,70 +799,170 @@ export default function ProductsPage() {
         </div>
       )}
 
-      <table>
-        <thead>
-          <tr>
-            <th style={{ width: 32 }}>
+      <div className="prod-viewbar">
+        <div className="prod-viewbar-left">
+          {viewMode === "cards" && filtered.length > 0 && (
+            <label className="prod-selectall">
               <input
                 type="checkbox"
                 style={{ width: "auto" }}
-                aria-label="Alles selecteren"
                 checked={filtered.length > 0 && filtered.every((p) => selected.has(p.id))}
                 onChange={(e) => setSelected(e.target.checked ? new Set(filtered.map((p) => p.id)) : new Set())}
               />
-            </th>
-            <th>Naam</th><th>Techniek</th><th>Categorie</th><th>SKU</th><th>Attributen</th><th>Varianten</th><th>Verkoopprijs</th><th>Gepubliceerd</th><th>Export</th><th></th></tr>
-        </thead>
-        <tbody>
-          {filtered.map((p) => {
-            const { min, max } = priceRange(p);
-            const priceLabel = min == null
-              ? "-- nog niet berekend --"
-              : min !== max
-                ? `€${min.toFixed(2)} - €${max!.toFixed(2)}`
-                : `€${min.toFixed(2)}`;
-            return (
-              <tr key={p.id}>
-                <td>
-                  <input type="checkbox" style={{ width: "auto" }} aria-label={`Selecteer ${p.name}`} checked={selected.has(p.id)} onChange={() => toggle(p.id)} />
-                </td>
-                <td><Link href={`/products/${p.id}`}>{p.name}</Link></td>
-                <td><span className="pill">{PROCESS_TYPE_LABELS[p.process_type]}</span></td>
-                <td>
-                  {productCategories(p).length > 0
-                    ? (
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                        {productCategories(p).map((cat) => <span key={cat} className="pill cyan">{cat}</span>)}
-                      </div>
-                    )
-                    : <span className="muted">Geen</span>}
-                </td>
-                <td className="mono">{p.sku}</td>
-                <td>{p.attribute_names.length > 0 ? p.attribute_names.join(", ") : <span className="muted">Simpel product</span>}</td>
-                <td className="mono">{p.product_variations.length}</td>
-                <td className="mono">{priceLabel}</td>
-                <td>{p.published ? "Ja" : "Nee"}</td>
-                <td>{isChanged(p) ? <span className="pill">{p.last_exported_at ? "Gewijzigd" : "Nieuw"}</span> : <span className="muted">Up-to-date</span>}</td>
-                <td>
-                  <RowActionsMenu
-                    product={p}
-                    busy={busy}
-                    onDuplicate={() => startDuplicate(p)}
-                    onDelete={() => deleteProduct(p.id)}
-                  />
-                </td>
-              </tr>
-            );
-          })}
-          {filtered.length === 0 && (
-            <tr><td colSpan={11} className="muted">
+              Alles selecteren
+            </label>
+          )}
+          <span className="muted">{filtered.length} product{filtered.length === 1 ? "" : "en"}</span>
+        </div>
+        <div className="prod-viewtoggle" role="group" aria-label="Weergave">
+          <button type="button" className={viewMode === "cards" ? "active" : ""} aria-pressed={viewMode === "cards"} onClick={() => setViewMode("cards")}>
+            <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="1" y="1" width="6" height="6" /><rect x="9" y="1" width="6" height="6" /><rect x="1" y="9" width="6" height="6" /><rect x="9" y="9" width="6" height="6" /></svg>
+            Kaartjes
+          </button>
+          <button type="button" className={viewMode === "list" ? "active" : ""} aria-pressed={viewMode === "list"} onClick={() => setViewMode("list")}>
+            <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="1" y="2" width="14" height="2" /><rect x="1" y="7" width="14" height="2" /><rect x="1" y="12" width="14" height="2" /></svg>
+            Lijst
+          </button>
+        </div>
+      </div>
+
+      {viewMode === "cards" ? (
+        filtered.length === 0 ? (
+          <div className="card">
+            <p className="muted" style={{ margin: 0 }}>
               {products.length === 0
                 ? 'Nog geen producten -- klik op "+ Nieuw product" om te starten.'
                 : "Geen producten gevonden voor deze filter/zoekopdracht."}
-            </td></tr>
-          )}
-        </tbody>
-      </table>
+            </p>
+          </div>
+        ) : (
+          <div className="prod-grid">
+            {filtered.map((p) => {
+              const { min, max } = priceRange(p);
+              const categories = productCategories(p);
+              const isSelected = selected.has(p.id);
+              return (
+                <div
+                  key={p.id}
+                  className={`prod-card${isSelected ? " selected" : ""}${p.published ? "" : " unpublished"}`}
+                  style={{ "--prod-color": PROCESS_COLORS[p.process_type] } as CSSProperties}
+                >
+                  <Link href={`/products/${p.id}`} className="prod-thumb" tabIndex={-1} aria-hidden="true">
+                    <ProductThumb product={p} />
+                  </Link>
+                  <label className="prod-check" title="Selecteren">
+                    <input type="checkbox" style={{ width: "auto" }} aria-label={`Selecteer ${p.name}`} checked={isSelected} onChange={() => toggle(p.id)} />
+                  </label>
+                  <span className="prod-process">{PROCESS_TYPE_LABELS[p.process_type]}</span>
+                  {isChanged(p) && <span className="prod-export">{p.last_exported_at ? "Gewijzigd" : "Nieuw"}</span>}
+
+                  <div className="prod-body">
+                    <Link href={`/products/${p.id}`} className="prod-name">{p.name}</Link>
+                    <div className="prod-sku mono">{p.sku}</div>
+                    <div className="prod-price mono">
+                      {min == null
+                        ? <span className="muted" style={{ fontSize: 12.5 }}>nog niet berekend</span>
+                        : min !== max
+                          ? <>€{min.toFixed(2)} <span className="prod-price-sep">-</span> €{max!.toFixed(2)}</>
+                          : <>€{min.toFixed(2)}</>}
+                    </div>
+                    <div className="prod-meta">
+                      <span title={p.attribute_names.length > 0 ? `Attributen: ${p.attribute_names.join(", ")}` : "Simpel product"}>
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8" /><rect x="13" y="3" width="8" height="8" /><rect x="3" y="13" width="8" height="8" /><rect x="13" y="13" width="8" height="8" /></svg>
+                        {p.product_variations.length} var.
+                      </span>
+                      {p.attribute_names.length > 0 && <span className="prod-attrs">{p.attribute_names.join(" · ")}</span>}
+                    </div>
+                    {categories.length > 0 && (
+                      <div className="prod-cats" title={categories.join("\n")}>
+                        {categories.slice(0, 2).map((cat) => <span key={cat} className="pill cyan">{cat.split(">").pop()!.trim()}</span>)}
+                        {categories.length > 2 && <span className="muted" style={{ fontSize: 12 }}>+{categories.length - 2}</span>}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="prod-foot">
+                    <span className={`prod-status${p.published ? " on" : ""}`} title={p.published ? "Gepubliceerd" : "Niet gepubliceerd"}>
+                      <i />{p.published ? "Gepubliceerd" : "Niet gepubliceerd"}
+                    </span>
+                    <RowActionsMenu
+                      product={p}
+                      busy={busy}
+                      onDuplicate={() => startDuplicate(p)}
+                      onDelete={() => deleteProduct(p.id)}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th style={{ width: 32 }}>
+                <input
+                  type="checkbox"
+                  style={{ width: "auto" }}
+                  aria-label="Alles selecteren"
+                  checked={filtered.length > 0 && filtered.every((p) => selected.has(p.id))}
+                  onChange={(e) => setSelected(e.target.checked ? new Set(filtered.map((p) => p.id)) : new Set())}
+                />
+              </th>
+              <th>Naam</th><th>Techniek</th><th>Categorie</th><th>SKU</th><th>Attributen</th><th>Varianten</th><th>Verkoopprijs</th><th>Gepubliceerd</th><th>Export</th><th></th></tr>
+          </thead>
+          <tbody>
+            {filtered.map((p) => {
+              const { min, max } = priceRange(p);
+              const priceLabel = min == null
+                ? "-- nog niet berekend --"
+                : min !== max
+                  ? `€${min.toFixed(2)} - €${max!.toFixed(2)}`
+                  : `€${min.toFixed(2)}`;
+              return (
+                <tr key={p.id}>
+                  <td>
+                    <input type="checkbox" style={{ width: "auto" }} aria-label={`Selecteer ${p.name}`} checked={selected.has(p.id)} onChange={() => toggle(p.id)} />
+                  </td>
+                  <td><Link href={`/products/${p.id}`}>{p.name}</Link></td>
+                  <td><span className="pill">{PROCESS_TYPE_LABELS[p.process_type]}</span></td>
+                  <td>
+                    {productCategories(p).length > 0
+                      ? (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                          {productCategories(p).map((cat) => <span key={cat} className="pill cyan">{cat}</span>)}
+                        </div>
+                      )
+                      : <span className="muted">Geen</span>}
+                  </td>
+                  <td className="mono">{p.sku}</td>
+                  <td>{p.attribute_names.length > 0 ? p.attribute_names.join(", ") : <span className="muted">Simpel product</span>}</td>
+                  <td className="mono">{p.product_variations.length}</td>
+                  <td className="mono">{priceLabel}</td>
+                  <td>{p.published ? "Ja" : "Nee"}</td>
+                  <td>{isChanged(p) ? <span className="pill">{p.last_exported_at ? "Gewijzigd" : "Nieuw"}</span> : <span className="muted">Up-to-date</span>}</td>
+                  <td>
+                    <RowActionsMenu
+                      product={p}
+                      busy={busy}
+                      onDuplicate={() => startDuplicate(p)}
+                      onDelete={() => deleteProduct(p.id)}
+                    />
+                  </td>
+                </tr>
+              );
+            })}
+            {filtered.length === 0 && (
+              <tr><td colSpan={11} className="muted">
+                {products.length === 0
+                  ? 'Nog geen producten -- klik op "+ Nieuw product" om te starten.'
+                  : "Geen producten gevonden voor deze filter/zoekopdracht."}
+              </td></tr>
+            )}
+          </tbody>
+        </table>
+      )}
 
       <PromptModal
         open={duplicateTarget != null}
