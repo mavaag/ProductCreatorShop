@@ -195,6 +195,82 @@ export default function MaterialsPage() {
         </div>
       )}
 
+      <div className="card" style={{ marginBottom: 20 }}>
+        <h2 style={{ marginTop: 0 }}>Nieuw materiaal</h2>
+        <form onSubmit={addMaterial}>
+          <div className="row">
+            <div>
+              <label>Naam</label>
+              <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            </div>
+            <div>
+              <label>Categorie</label>
+              <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+                {CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="row">
+            <div>
+              <label>Eenheid</label>
+              <select value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })}>
+                {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+              </select>
+            </div>
+            <div>
+              <label>Prijs per eenheid (€)</label>
+              <input type="number" step="0.01" value={form.price_per_unit} onChange={(e) => setForm({ ...form, price_per_unit: parseFloat(e.target.value) || 0 })} />
+            </div>
+          </div>
+          {form.unit === "ml" && (
+            <div className="row">
+              <div>
+                <label>Inktverbruik bij volledige dekking (ml/m²)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={form.ink_coverage_ml_per_m2}
+                  onChange={(e) => setForm({ ...form, ink_coverage_ml_per_m2: e.target.value })}
+                  placeholder="optioneel, bv. 12"
+                />
+                <p className="muted" style={{ marginTop: 4, marginBottom: 0, fontSize: 12 }}>
+                  Optioneel -- laat toe om bij een personalisatiezone (UV-print/sublimatie) de hoeveelheid te schatten uit de printzone-afmetingen.
+                </p>
+              </div>
+            </div>
+          )}
+          <div className="row">
+            <div>
+              <label>Voorraad (optioneel, in de eenheid hierboven)</label>
+              <input value={form.stock_quantity} onChange={(e) => setForm({ ...form, stock_quantity: e.target.value })} placeholder="leeg = niet bijhouden" />
+            </div>
+            <div>
+              <label>Waarschuwing onder (optioneel)</label>
+              <input value={form.min_stock} onChange={(e) => setForm({ ...form, min_stock: e.target.value })} placeholder="bv. 2" />
+            </div>
+          </div>
+          <div className="row">
+            <div>
+              <label>Leverancier / Shop naam (optioneel)</label>
+              <input
+                list="suppliers-new"
+                value={form.supplier_name}
+                onChange={(e) => setForm({ ...form, supplier_name: e.target.value })}
+                placeholder="Kies bestaande of typ nieuwe..."
+              />
+              <datalist id="suppliers-new">
+                {suppliers.map((s) => <option key={s} value={s} />)}
+              </datalist>
+            </div>
+            <div>
+              <label>Link naar product (optioneel)</label>
+              <input type="url" value={form.supplier_url} onChange={(e) => setForm({ ...form, supplier_url: e.target.value })} placeholder="https://..." />
+            </div>
+          </div>
+          <button className="btn" type="submit" style={{ marginTop: 16 }}>Materiaal toevoegen</button>
+        </form>
+      </div>
+
       <table>
         <thead>
           <tr><th>Naam</th><th>Categorie</th><th>Eenheid</th><th>Prijs per eenheid</th><th>Voorraad / minimum</th><th>Bestellingen</th><th>Leverancier</th><th>Gebruikt in</th><th></th></tr>
@@ -338,82 +414,6 @@ export default function MaterialsPage() {
           })}
         </tbody>
       </table>
-
-      <div className="card" style={{ marginTop: 20 }}>
-        <h2 style={{ marginTop: 0 }}>Nieuw materiaal</h2>
-        <form onSubmit={addMaterial}>
-          <div className="row">
-            <div>
-              <label>Naam</label>
-              <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-            </div>
-            <div>
-              <label>Categorie</label>
-              <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
-                {CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="row">
-            <div>
-              <label>Eenheid</label>
-              <select value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })}>
-                {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-              </select>
-            </div>
-            <div>
-              <label>Prijs per eenheid (€)</label>
-              <input type="number" step="0.01" value={form.price_per_unit} onChange={(e) => setForm({ ...form, price_per_unit: parseFloat(e.target.value) || 0 })} />
-            </div>
-          </div>
-          {form.unit === "ml" && (
-            <div className="row">
-              <div>
-                <label>Inktverbruik bij volledige dekking (ml/m²)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={form.ink_coverage_ml_per_m2}
-                  onChange={(e) => setForm({ ...form, ink_coverage_ml_per_m2: e.target.value })}
-                  placeholder="optioneel, bv. 12"
-                />
-                <p className="muted" style={{ marginTop: 4, marginBottom: 0, fontSize: 12 }}>
-                  Optioneel -- laat toe om bij een personalisatiezone (UV-print/sublimatie) de hoeveelheid te schatten uit de printzone-afmetingen.
-                </p>
-              </div>
-            </div>
-          )}
-          <div className="row">
-            <div>
-              <label>Voorraad (optioneel, in de eenheid hierboven)</label>
-              <input value={form.stock_quantity} onChange={(e) => setForm({ ...form, stock_quantity: e.target.value })} placeholder="leeg = niet bijhouden" />
-            </div>
-            <div>
-              <label>Waarschuwing onder (optioneel)</label>
-              <input value={form.min_stock} onChange={(e) => setForm({ ...form, min_stock: e.target.value })} placeholder="bv. 2" />
-            </div>
-          </div>
-          <div className="row">
-            <div>
-              <label>Leverancier / Shop naam (optioneel)</label>
-              <input
-                list="suppliers-new"
-                value={form.supplier_name}
-                onChange={(e) => setForm({ ...form, supplier_name: e.target.value })}
-                placeholder="Kies bestaande of typ nieuwe..."
-              />
-              <datalist id="suppliers-new">
-                {suppliers.map((s) => <option key={s} value={s} />)}
-              </datalist>
-            </div>
-            <div>
-              <label>Link naar product (optioneel)</label>
-              <input type="url" value={form.supplier_url} onChange={(e) => setForm({ ...form, supplier_url: e.target.value })} placeholder="https://..." />
-            </div>
-          </div>
-          <button className="btn" type="submit" style={{ marginTop: 16 }}>Materiaal toevoegen</button>
-        </form>
-      </div>
     </div>
   );
 }

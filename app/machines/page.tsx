@@ -84,6 +84,45 @@ export default function MachinesPage() {
       <h1>Machines</h1>
       <p className="sub">Aankoopprijs, levensduur en vermogen -- afschrijving en stroomkosten per uur worden automatisch berekend en meegeteld bij de prijsberekening van je producten.</p>
 
+      <div className="card" style={{ marginBottom: 20 }}>
+        <h2 style={{ marginTop: 0 }}>Nieuwe machine</h2>
+        <form onSubmit={addMachine}>
+          <div className="row">
+            <div>
+              <label>Naam</label>
+              <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            </div>
+            <div>
+              <label>Categorie</label>
+              <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+                {CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="row">
+            <div>
+              <label>Aankoopprijs (€)</label>
+              <input type="number" step="0.01" value={form.purchase_price} onChange={(e) => setForm({ ...form, purchase_price: parseFloat(e.target.value) || 0 })} />
+            </div>
+            <div>
+              <label>Verwachte levensduur (u)</label>
+              <input type="number" value={form.expected_lifetime_hours} onChange={(e) => setForm({ ...form, expected_lifetime_hours: parseFloat(e.target.value) || 0 })} />
+            </div>
+          </div>
+          <div className="row">
+            <div>
+              <label>Gemiddeld vermogen (W)</label>
+              <input type="number" value={form.avg_power_w} onChange={(e) => setForm({ ...form, avg_power_w: parseFloat(e.target.value) || 0 })} />
+            </div>
+            <div>
+              <label>Elektriciteitsprijs (€/kWh)</label>
+              <input type="number" step="0.01" value={form.electricity_price} onChange={(e) => setForm({ ...form, electricity_price: parseFloat(e.target.value) || 0 })} />
+            </div>
+          </div>
+          <button className="btn" type="submit" style={{ marginTop: 16 }}>Machine toevoegen</button>
+        </form>
+      </div>
+
       <table>
         <thead>
           <tr>
@@ -137,45 +176,6 @@ export default function MachinesPage() {
       <p className="muted" style={{ marginTop: 8 }}>
         "Afschrijving/u" en "Stroom/u" zijn precies de twee kostenposten die per machine-uur meegerekend worden in de kostprijs van elk product dat deze machine gebruikt.
       </p>
-
-      <div className="card" style={{ marginTop: 20 }}>
-        <h2 style={{ marginTop: 0 }}>Nieuwe machine</h2>
-        <form onSubmit={addMachine}>
-          <div className="row">
-            <div>
-              <label>Naam</label>
-              <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-            </div>
-            <div>
-              <label>Categorie</label>
-              <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
-                {CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="row">
-            <div>
-              <label>Aankoopprijs (€)</label>
-              <input type="number" step="0.01" value={form.purchase_price} onChange={(e) => setForm({ ...form, purchase_price: parseFloat(e.target.value) || 0 })} />
-            </div>
-            <div>
-              <label>Verwachte levensduur (u)</label>
-              <input type="number" value={form.expected_lifetime_hours} onChange={(e) => setForm({ ...form, expected_lifetime_hours: parseFloat(e.target.value) || 0 })} />
-            </div>
-          </div>
-          <div className="row">
-            <div>
-              <label>Gemiddeld vermogen (W)</label>
-              <input type="number" value={form.avg_power_w} onChange={(e) => setForm({ ...form, avg_power_w: parseFloat(e.target.value) || 0 })} />
-            </div>
-            <div>
-              <label>Elektriciteitsprijs (€/kWh)</label>
-              <input type="number" step="0.01" value={form.electricity_price} onChange={(e) => setForm({ ...form, electricity_price: parseFloat(e.target.value) || 0 })} />
-            </div>
-          </div>
-          <button className="btn" type="submit" style={{ marginTop: 16 }}>Machine toevoegen</button>
-        </form>
-      </div>
     </div>
   );
 }
