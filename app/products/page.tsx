@@ -882,7 +882,7 @@ export default function ProductsPage() {
                   </div>
 
                   <div className="prod-foot">
-                    <span className={`prod-status${p.published ? " on" : ""}`}>
+                    <span className={`prod-status${p.published ? " on" : ""}`} title={p.published ? "Gepubliceerd" : "Niet gepubliceerd"}>
                       <i />{p.published ? "Gepubliceerd" : "Niet gepubliceerd"}
                     </span>
                     <RowActionsMenu
