@@ -52,6 +52,68 @@ function isLowStock(m: Material) {
   return m.stock_quantity != null && m.min_stock != null && m.stock_quantity <= m.min_stock;
 }
 
+const CATEGORY_COLORS: Record<string, string> = {
+  filament: "var(--cyan)",
+  ink: "var(--magenta)",
+  paper: "var(--ink)",
+  blank: "var(--yellow)",
+  laser_material: "#ff8a3d",
+  overig: "var(--ink-soft)",
+};
+// Twee decimalen ("€8.40"), maar fijnere prijzen (bv. €0.018/ml) niet afronden.
+function formatPrice(p: number) {
+  return Number.isInteger(Math.round(p * 1e6) / 1e4) ? p.toFixed(2) : String(p);
+}
+function categoryColor(category: string) {
+  return CATEGORY_COLORS[category] ?? "var(--ink-soft)";
+}
+
+/** Klein lijn-icoon per materiaalcategorie (spoel, druppel, vel, kubus, laserstraal, doos). */
+function CategoryIcon({ category, size = 20 }: { category: string; size?: number }) {
+  const common = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
+  switch (category) {
+    case "filament":
+      return <svg {...common}><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="3" /><path d="M12 3v6M12 15v6M3 12h6M15 12h6" opacity="0.5" /></svg>;
+    case "ink":
+      return <svg {...common}><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z" /><path d="M9.5 15a2.5 2.5 0 0 0 2.5 2.5" opacity="0.6" /></svg>;
+    case "paper":
+      return <svg {...common}><path d="M6 3h8l4 4v14H6z" /><path d="M14 3v4h4M9 12h6M9 16h6" /></svg>;
+    case "blank":
+      return <svg {...common}><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" /><path d="M4 7.5l8 4.5 8-4.5M12 12v9" /></svg>;
+    case "laser_material":
+      return <svg {...common}><path d="M12 2v9" /><path d="M8 11h8l-4 4z" /><path d="M3 20h18M7 17l-2 3M17 17l2 3" /></svg>;
+    default:
+      return <svg {...common}><rect x="3" y="7" width="18" height="13" /><path d="M3 7l3-4h12l3 4M10 11h4" /></svg>;
+  }
+}
+
+/**
+ * Voorraadmeter: balk gevuld tot de huidige voorraad, met een streepje op het minimum. Schaal = 3x het
+ * minimum (of de voorraad zelf als die hoger ligt), zodat "bijna op" visueel meteen opvalt.
+ */
+function StockGauge({ material: m }: { material: Material }) {
+  if (m.stock_quantity == null) {
+    return <div className="mat-gauge-empty muted">Voorraad niet bijgehouden</div>;
+  }
+  const stock = Math.max(0, m.stock_quantity);
+  const min = m.min_stock;
+  const max = Math.max(stock, min != null && min > 0 ? min * 3 : stock, 1);
+  const pct = Math.min(100, (stock / max) * 100);
+  const level = min == null ? "ok" : stock <= min ? "low" : stock <= min * 1.5 ? "mid" : "ok";
+  return (
+    <div className="mat-gauge">
+      <div className="mat-gauge-labels">
+        <span className="mono"><strong>{m.stock_quantity}</strong> {m.unit}</span>
+        {min != null && <span className="muted mono" style={{ fontSize: 11.5 }}>min. {min}</span>}
+      </div>
+      <div className={`mat-gauge-track ${level}`} role="meter" aria-valuemin={0} aria-valuemax={max} aria-valuenow={stock} aria-label="Voorraad">
+        <div className="mat-gauge-fill" style={{ width: `${pct}%` }} />
+        {min != null && min > 0 && <div className="mat-gauge-min" style={{ left: `${(min / max) * 100}%` }} />}
+      </div>
+    </div>
+  );
+}
+
 export default function MaterialsPage() {
   const ready = useAuthGuard();
   const [materials, setMaterials] = useState<Material[]>([]);
@@ -65,6 +127,7 @@ export default function MaterialsPage() {
   const [saving, setSaving] = useState(false);
 
   const [suppliers, setSuppliers] = useState<string[]>([]);
+  const [filter, setFilter] = useState<string>("all");
 
   async function load() {
     const { data } = await supabase.from("materials").select("*").order("category").order("name");
@@ -183,15 +246,44 @@ export default function MaterialsPage() {
 
   if (!ready) return null;
 
+  const lowStock = materials.filter(isLowStock);
+  const stockValue = materials.reduce((sum, m) => sum + (m.stock_quantity ?? 0) * m.price_per_unit, 0);
+  const pendingOrders = Object.values(orders).flat().filter((o) => !o.received_at).length;
+  const visibleMaterials = filter === "all" ? materials : filter === "low" ? lowStock : materials.filter((m) => m.category === filter);
+
   return (
     <div>
       <h1>Materialen</h1>
       <p className="sub">Filament, inkt, papier, blanco objecten, lasermateriaal, ... -- prijs per eenheid (filament geef je in per kg, de rest per ml/vel/stuk/m²).</p>
 
-      {materials.some(isLowStock) && (
-        <div className="warning" style={{ marginBottom: 16 }}>
-          <strong>Voorraad bijna op:</strong>{" "}
-          {materials.filter(isLowStock).map((m) => `${m.name} (${m.stock_quantity} ${m.unit}, minimum ${m.min_stock})`).join(" -- ")}
+      <div className="mat-stats">
+        <div className="card stat-tile">
+          <div className="stat-label">Materialen</div>
+          <div className="stat-value">{materials.length}</div>
+        </div>
+        <div className="card stat-tile">
+          <div className="stat-label">Voorraadwaarde</div>
+          <div className="stat-value">€{stockValue.toFixed(0)}</div>
+        </div>
+        <div className="card stat-tile">
+          <div className="stat-label">Bijna op</div>
+          <div className="stat-value" style={lowStock.length > 0 ? { color: "var(--rust)", textShadow: "0 0 10px rgba(255, 56, 96, 0.6)" } : { color: "var(--moss)", textShadow: "none" }}>{lowStock.length}</div>
+        </div>
+        <div className="card stat-tile">
+          <div className="stat-label">Onderweg</div>
+          <div className="stat-value">{pendingOrders}</div>
+        </div>
+      </div>
+
+      {lowStock.length > 0 && (
+        <div className="warning mat-lowstock">
+          <strong>Voorraad bijna op:</strong>
+          {lowStock.map((m) => (
+            <button key={m.id} type="button" className="mat-lowstock-chip" onClick={() => setFilter("low")} title={`minimum ${m.min_stock} ${m.unit}`}>
+              <CategoryIcon category={m.category} size={14} />
+              {m.name} <span className="mono">{m.stock_quantity} {m.unit}</span>
+            </button>
+          ))}
         </div>
       )}
 
@@ -271,149 +363,172 @@ export default function MaterialsPage() {
         </form>
       </div>
 
-      <table>
-        <thead>
-          <tr><th>Naam</th><th>Categorie</th><th>Eenheid</th><th>Prijs per eenheid</th><th>Voorraad / minimum</th><th>Bestellingen</th><th>Leverancier</th><th>Gebruikt in</th><th></th></tr>
-        </thead>
-        <tbody>
-          {materials.map((m) => {
-            if (editingId === m.id) {
-              return (
-                <tr key={m.id}>
-                  <td><input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} /></td>
-                  <td>
+      <div className="tabs">
+        <button type="button" className={`tab${filter === "all" ? " active" : ""}`} onClick={() => setFilter("all")}>
+          Alles <span className="tab-count">{materials.length}</span>
+        </button>
+        {CATEGORIES.filter((c) => materials.some((m) => m.category === c.value)).map((c) => (
+          <button key={c.value} type="button" className={`tab mat-tab${filter === c.value ? " active" : ""}`} onClick={() => setFilter(c.value)}>
+            <CategoryIcon category={c.value} size={15} />
+            {c.label} <span className="tab-count">{materials.filter((m) => m.category === c.value).length}</span>
+          </button>
+        ))}
+        {lowStock.length > 0 && (
+          <button type="button" className={`tab${filter === "low" ? " active" : ""}`} onClick={() => setFilter("low")} style={{ color: filter === "low" ? undefined : "var(--rust)" }}>
+            Bijna op <span className="tab-count">{lowStock.length}</span>
+          </button>
+        )}
+      </div>
+
+      {visibleMaterials.length === 0 && <p className="muted">Geen materialen in deze selectie.</p>}
+
+      <div className="mat-grid">
+        {visibleMaterials.map((m) => {
+          const color = categoryColor(m.category);
+          if (editingId === m.id) {
+            return (
+              <div key={m.id} className="mat-card editing" style={{ "--mat-color": color } as React.CSSProperties}>
+                <label style={{ marginTop: 0 }}>Naam</label>
+                <input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
+                <div className="row">
+                  <div>
+                    <label>Categorie</label>
                     <select value={editForm.category} onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}>
                       {CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
                     </select>
-                  </td>
-                  <td>
+                  </div>
+                  <div>
+                    <label>Eenheid</label>
                     <select value={editForm.unit} onChange={(e) => setEditForm({ ...editForm, unit: e.target.value })}>
                       {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
                     </select>
-                  </td>
-                  <td>
+                  </div>
+                </div>
+                <div className="row">
+                  <div>
+                    <label>Prijs / eenheid (€)</label>
                     <input className="mono" type="number" step="0.01" value={editForm.price_per_unit} onChange={(e) => setEditForm({ ...editForm, price_per_unit: parseFloat(e.target.value) || 0 })} />
-                    {editForm.unit === "ml" && (
-                      <input
-                        className="mono"
-                        type="number"
-                        step="0.1"
-                        style={{ marginTop: 4 }}
-                        placeholder="ml/m² volle dekking"
-                        value={editForm.ink_coverage_ml_per_m2}
-                        onChange={(e) => setEditForm({ ...editForm, ink_coverage_ml_per_m2: e.target.value })}
-                      />
-                    )}
-                  </td>
-                  <td>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <input className="mono" placeholder="voorraad" value={editForm.stock_quantity} onChange={(e) => setEditForm({ ...editForm, stock_quantity: e.target.value })} />
-                      <input className="mono" placeholder="minimum" value={editForm.min_stock} onChange={(e) => setEditForm({ ...editForm, min_stock: e.target.value })} />
+                  </div>
+                  {editForm.unit === "ml" && (
+                    <div>
+                      <label>ml/m² volle dekking</label>
+                      <input className="mono" type="number" step="0.1" value={editForm.ink_coverage_ml_per_m2} onChange={(e) => setEditForm({ ...editForm, ink_coverage_ml_per_m2: e.target.value })} />
                     </div>
-                  </td>
-                  <td></td>
-                  <td>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      <input
-                        list="suppliers-edit"
-                        placeholder="Shop naam"
-                        value={editForm.supplier_name}
-                        onChange={(e) => setEditForm({ ...editForm, supplier_name: e.target.value })}
-                      />
-                      <datalist id="suppliers-edit">
-                        {suppliers.map((s) => <option key={s} value={s} />)}
-                      </datalist>
-                      <input placeholder="Link (optioneel)" value={editForm.supplier_url} onChange={(e) => setEditForm({ ...editForm, supplier_url: e.target.value })} />
-                    </div>
-                  </td>
-                  <td></td>
-                  <td style={{ whiteSpace: "nowrap" }}>
-                    <button className="btn" onClick={() => saveEdit(m.id)} disabled={saving} style={{ marginRight: 6 }}>{saving ? "..." : "Opslaan"}</button>
-                    <button className="btn secondary" onClick={() => setEditingId(null)}>Annuleer</button>
-                  </td>
-                </tr>
-              );
-            }
-            const materialOrders = orders[m.id] ?? [];
-            const pending = materialOrders.filter((o) => !o.received_at).length;
-            return (
-              <Fragment key={m.id}>
-                <tr>
-                  <td>{m.name}</td>
-                  <td>{CATEGORIES.find((c) => c.value === m.category)?.label ?? m.category}</td>
-                  <td className="mono">{m.unit}</td>
-                  <td className="mono">
-                    €{m.price_per_unit}
-                    {m.unit === "ml" && m.ink_coverage_ml_per_m2 != null && (
-                      <div className="muted" style={{ fontSize: 11 }}>{m.ink_coverage_ml_per_m2} ml/m² volle dekking</div>
-                    )}
-                  </td>
-                  <td className="mono">
-                    {m.stock_quantity == null ? <span className="muted">niet bijgehouden</span> : (
-                      <span style={isLowStock(m) ? { color: "var(--rust)", fontWeight: 600 } : undefined}>
-                        {m.stock_quantity} {m.unit}{m.min_stock != null ? ` / min. ${m.min_stock}` : ""}
-                      </span>
-                    )}
-                  </td>
-                  <td>
-                    <a href="#" onClick={(e) => { e.preventDefault(); setOpenOrders(openOrders === m.id ? null : m.id); }}>
-                      {materialOrders.length === 0 ? "Bestelling toevoegen" : `${materialOrders.length} bestelling(en)`}
-                    </a>
-                    {pending > 0 && <div className="muted" style={{ fontSize: 11 }}>{pending} onderweg</div>}
-                  </td>
-                  <td>
-                    {!m.supplier_name ? <span className="muted">--</span> : (
-                      <>
-                        {m.supplier_url ? (
-                          <a href={m.supplier_url} target="_blank" rel="noopener noreferrer" style={{ color: "#0ff" }}>
-                            {m.supplier_name}
-                          </a>
-                        ) : (
-                          <span>{m.supplier_name}</span>
-                        )}
-                      </>
-                    )}
-                  </td>
-                  <td>
-                    {(usage[m.id]?.length ?? 0) === 0 ? <span className="muted">--</span> : (
-                      <>
-                        <a href="#" onClick={(e) => { e.preventDefault(); setOpenUsage(openUsage === m.id ? null : m.id); }}>
-                          {usage[m.id].length} product(en)
-                        </a>
-                        {openUsage === m.id && (
-                          <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
-                            {usage[m.id].map((u) => (
-                              <li key={u.productId}><Link href={`/products/${u.productId}`}>{u.productName}</Link> <span className="muted">({u.variations} var.)</span></li>
-                            ))}
-                          </ul>
-                        )}
-                      </>
-                    )}
-                  </td>
-                  <td style={{ whiteSpace: "nowrap" }}>
-                    <button className="btn secondary" onClick={() => startEdit(m)} style={{ marginRight: 6 }}>Bewerken</button>
-                    <button className="btn danger" onClick={() => deleteMaterial(m.id)}>Verwijder</button>
-                  </td>
-                </tr>
-                {openOrders === m.id && (
-                  <tr>
-                    <td colSpan={9} style={{ background: "var(--panel-2)" }}>
-                      <MaterialOrdersPanel
-                        material={m}
-                        orders={materialOrders}
-                        suppliers={suppliers}
-                        onSubmit={(order, markReceived) => submitOrder(m, order, markReceived)}
-                        onReceive={receiveOrder}
-                        onDelete={removeOrder}
-                      />
-                    </td>
-                  </tr>
-                )}
-              </Fragment>
+                  )}
+                </div>
+                <div className="row">
+                  <div>
+                    <label>Voorraad</label>
+                    <input className="mono" placeholder="leeg = niet bijhouden" value={editForm.stock_quantity} onChange={(e) => setEditForm({ ...editForm, stock_quantity: e.target.value })} />
+                  </div>
+                  <div>
+                    <label>Minimum</label>
+                    <input className="mono" value={editForm.min_stock} onChange={(e) => setEditForm({ ...editForm, min_stock: e.target.value })} />
+                  </div>
+                </div>
+                <div className="row">
+                  <div>
+                    <label>Leverancier</label>
+                    <input list="suppliers-edit" placeholder="Shop naam" value={editForm.supplier_name} onChange={(e) => setEditForm({ ...editForm, supplier_name: e.target.value })} />
+                    <datalist id="suppliers-edit">
+                      {suppliers.map((s) => <option key={s} value={s} />)}
+                    </datalist>
+                  </div>
+                  <div>
+                    <label>Link</label>
+                    <input placeholder="https://..." value={editForm.supplier_url} onChange={(e) => setEditForm({ ...editForm, supplier_url: e.target.value })} />
+                  </div>
+                </div>
+                <div style={{ marginTop: 14 }}>
+                  <button className="btn" onClick={() => saveEdit(m.id)} disabled={saving} style={{ marginRight: 6 }}>{saving ? "..." : "Opslaan"}</button>
+                  <button className="btn secondary" onClick={() => setEditingId(null)}>Annuleer</button>
+                </div>
+              </div>
             );
-          })}
-        </tbody>
-      </table>
+          }
+          const materialOrders = orders[m.id] ?? [];
+          const pending = materialOrders.filter((o) => !o.received_at).length;
+          const used = usage[m.id] ?? [];
+          return (
+            <Fragment key={m.id}>
+              <div className={`mat-card${isLowStock(m) ? " low" : ""}`} style={{ "--mat-color": color } as React.CSSProperties}>
+                <div className="mat-head">
+                  <div className="mat-icon"><CategoryIcon category={m.category} size={26} /></div>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div className="mat-name">{m.name}</div>
+                    <div className="mat-cat">{CATEGORIES.find((c) => c.value === m.category)?.label ?? m.category}</div>
+                  </div>
+                  <div className="mat-price">
+                    <span className="mono">€{formatPrice(m.price_per_unit)}</span>
+                    <span className="mat-unit">/ {m.unit}</span>
+                  </div>
+                </div>
+
+                <StockGauge material={m} />
+                {m.unit === "ml" && m.ink_coverage_ml_per_m2 != null && (
+                  <div className="muted" style={{ fontSize: 11.5, marginTop: 6 }}>{m.ink_coverage_ml_per_m2} ml/m² bij volle dekking</div>
+                )}
+
+                <div className="mat-chips">
+                  <button type="button" className={`mat-chip${openOrders === m.id ? " active" : ""}`} onClick={() => setOpenOrders(openOrders === m.id ? null : m.id)} title="Bestellingen">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h2l2.4 11h11L21 7H6.2" /><circle cx="9" cy="19.5" r="1.5" /><circle cx="17" cy="19.5" r="1.5" /></svg>
+                    {materialOrders.length === 0 ? "Bestellen" : materialOrders.length}
+                    {pending > 0 && <span className="mat-chip-badge" title={`${pending} onderweg`}>{pending} onderweg</span>}
+                  </button>
+                  {used.length > 0 && (
+                    <button type="button" className={`mat-chip${openUsage === m.id ? " active" : ""}`} onClick={() => setOpenUsage(openUsage === m.id ? null : m.id)} title="Gebruikt in producten">
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" /><path d="M4 7.5l8 4.5 8-4.5M12 12v9" /></svg>
+                      {used.length} product{used.length === 1 ? "" : "en"}
+                    </button>
+                  )}
+                  {m.supplier_name && (
+                    m.supplier_url ? (
+                      <a className="mat-chip" href={m.supplier_url} target="_blank" rel="noopener noreferrer" title="Open bij leverancier">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9l1.5-5h15L21 9M3 9v11h18V9M3 9h18M9 20v-6h6v6" /></svg>
+                        {m.supplier_name} ↗
+                      </a>
+                    ) : (
+                      <span className="mat-chip static">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9l1.5-5h15L21 9M3 9v11h18V9M3 9h18M9 20v-6h6v6" /></svg>
+                        {m.supplier_name}
+                      </span>
+                    )
+                  )}
+                </div>
+
+                {openUsage === m.id && used.length > 0 && (
+                  <ul className="mat-usage">
+                    {used.map((u) => (
+                      <li key={u.productId}><Link href={`/products/${u.productId}`}>{u.productName}</Link> <span className="muted">({u.variations} var.)</span></li>
+                    ))}
+                  </ul>
+                )}
+
+                <div className="mat-actions">
+                  <button className="icon-btn" onClick={() => startEdit(m)} title="Bewerken" aria-label="Bewerken">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z" /></svg>
+                  </button>
+                  <button className="icon-btn mat-delete" onClick={() => deleteMaterial(m.id)} title="Verwijderen" aria-label="Verwijderen">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" /></svg>
+                  </button>
+                </div>
+              </div>
+              {openOrders === m.id && (
+                <div className="mat-orders-panel">
+                  <MaterialOrdersPanel
+                    material={m}
+                    orders={materialOrders}
+                    suppliers={suppliers}
+                    onSubmit={(order, markReceived) => submitOrder(m, order, markReceived)}
+                    onReceive={receiveOrder}
+                    onDelete={removeOrder}
+                  />
+                </div>
+              )}
+            </Fragment>
+          );
+        })}
+      </div>
     </div>
   );
 }
