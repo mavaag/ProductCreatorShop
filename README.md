@@ -101,6 +101,18 @@ Voer eerst `supabase/migration_004_beheerfuncties.sql` uit in de Supabase SQL Ed
 - **Rechtstreeks synchroniseren** met WooCommerce via de REST API: stel `WOOCOMMERCE_URL`, `WOOCOMMERCE_CONSUMER_KEY` en `WOOCOMMERCE_CONSUMER_SECRET` in (zie `.env.local.example`, en in Vercel bij de environment variables). "Prijzen direct naar WooCommerce sturen" past enkel de prijzen van bestaande producten aan (gekoppeld via SKU). "Nieuwe producten aanmaken in WooCommerce" maakt ook producten aan die er nog niet zijn (variabel product met attributen, varianten en prijzen, beschrijving, categorieën, afbeelding(en), gewicht, verzendklasse), na een overzicht om te bevestigen.
 - **Materialen**: voorraad + minimumvoorraad met waarschuwing, en overzicht in welke producten elk materiaal zit.
 
+## 6. Gravure-preview instellen vanuit de app
+
+Kies bij een product onder **Personalisatie (plugin)** de plugin *Gravure / UV-print (3DP Gravure Preview)*.
+Je krijgt dan dezelfde instellingen als in WooCommerce: soort (lasergravure/UV-print), verplicht, logo-upload,
+gravurekleur, max. tekens, materiaaltextuur, en per kant (voor/achter) een foto waarop je de gravurezone tekent.
+Klik op **Personalisatie opslaan** en synchroniseer het product: de sync stuurt alles mee als `_tdp_*`-post-meta.
+
+- De foto per kant is een van de productafbeeldingen (1 = hoofdafbeelding). Na het opslaan in WooCommerce zet de
+  sync de preview-afbeelding op de URL van die foto in de eigen mediabibliotheek (nodig voor de live preview).
+- Producten waarvan de instellingen nog niet in de app staan, laat de sync ongemoeid. Heb je ze al in WooCommerce
+  ingesteld, haal ze dan eerst binnen met **Metadata uit WooCommerce importeren**.
+
 ## Projectstructuur
 
 ```
