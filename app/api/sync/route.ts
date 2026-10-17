@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { gravureSettingsMeta, gravureImageMeta, withExistingMetaIds, metaUpToDate } from "@/lib/gravure";
 
 // Synchroniseert rechtstreeks met WooCommerce via de REST API, zonder CSV-import:
 //   * producten die al in de shop staan (zelfde SKU): update product metadata (naam, beschrijving, categorieën,
@@ -304,7 +305,30 @@ function buildPersonalizationMetaData(
     const found = existing.find((m) => m.key === metaKey);
     result.push({ ...(found ? { id: found.id } : {}), key: metaKey, value: Number(zone.fee).toFixed(2) });
   }
+  // 3DP Gravure Preview: ook de zone, soort, kleur, ... (alles behalve de afbeeldingen -- die volgen in
+  // syncGravureImages, omdat we daarvoor de URL's nodig hebben die WooCommerce aan de foto's geeft).
+  result.push(...withExistingMetaIds(existing, gravureSettingsMeta(personalization as any)));
   return result;
+}
+
+/**
+ * Tweede stap voor de 3DP Gravure Preview-plugin: zet _tdp_image / _tdp_back_image op de URL die
+ * WooCommerce aan de gekozen productafbeelding gaf. Kan pas NA het opslaan van het product, want
+ * WooCommerce downloadt de afbeeldingen zelf en geeft ze een nieuwe URL op de eigen site.
+ * Doet niets (geen extra request) als alles al klopt.
+ */
+async function syncGravureImages(wc: WcFn, saved: any, p: any, report: Report): Promise<void> {
+  const srcs: string[] = (saved?.images ?? []).map((img: any) => String(img?.src ?? "")).filter(Boolean);
+  const { meta, warnings } = gravureImageMeta(p.personalization, srcs);
+  for (const w of warnings) report.notes.push(`${p.sku}: ${w}`);
+  if (meta.length === 0) return;
+  const existing: { id: number; key: string; value: unknown }[] = saved?.meta_data ?? [];
+  if (metaUpToDate(existing, meta)) return;
+  try {
+    await wc(`/products/${saved.id}`, { method: "PUT", body: JSON.stringify({ meta_data: withExistingMetaIds(existing, meta) }) });
+  } catch (e: any) {
+    report.notes.push(`${p.sku}: gravure-afbeeldingen niet ingesteld (${e.message})`);
+  }
 }
 
 /** Maakt een variabel product met al zijn varianten (of een simpel product) aan in WooCommerce. Geeft true terug als dat gelukt is. */
@@ -377,6 +401,8 @@ async function createProduct(wc: WcFn, base: string, p: any, report: Report, cat
       return false;
     }
   }
+
+  await syncGravureImages(wc, created, p, report);
 
   if (simple) return true;
 
@@ -463,7 +489,8 @@ async function updateProductMetadata(
       }
     }
 
-    await wc(`/products/${productId}`, { method: "PUT", body: JSON.stringify(payload) });
+    const saved = await wc(`/products/${productId}`, { method: "PUT", body: JSON.stringify(payload) });
+    await syncGravureImages(wc, saved, p, report);
     console.log(`[WooCommerce Sync] Product ${p.sku} metadata bijgewerkt`);
     return true;
   } catch (e: any) {

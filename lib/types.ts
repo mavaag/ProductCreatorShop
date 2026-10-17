@@ -140,11 +140,37 @@ export type PersonalizationZone = {
   print_height_mm: number | null;
   cost_inputs: CostInputs;
   fee: number | null; // laatst berekende voorgestelde meerprijs (excl. btw) -- dit wordt naar de post-meta hieronder geëxporteerd
+  // Enkel voor gravure_uv: de rechthoek op de productfoto waar de klant mag graveren/printen (in % van
+  // de foto, zoals de zone-editor in WooCommerce), en welke productafbeelding (index in image_url, 0 =
+  // hoofdafbeelding) als achtergrond dient. Ontbreekt = standaardwaarden uit lib/gravure.ts.
+  rect?: ZoneRect | null;
+  image_index?: number | null;
+};
+
+/** Rechthoek in % van de preview-afbeelding (0-100), zoals de plugin hem bewaart in _tdp_x/_tdp_y/_tdp_w/_tdp_h. */
+export type ZoneRect = { x: number; y: number; w: number; h: number };
+
+/**
+ * Instellingen van de 3DP Gravure Preview-plugin die je anders in WooCommerce bij het product invult
+ * (tabblad Algemeen > "Gravure-preview"). Worden bij de sync als post-meta _tdp_* meegestuurd.
+ * Ontbreekt dit object, dan stuurt de sync enkel de meerprijs mee (zoals vroeger) en blijven de
+ * instellingen in WooCommerce onaangeroerd.
+ */
+export type GravureSettings = {
+  enabled: boolean; // _tdp_enabled -- "Personalisatie inschakelen"
+  mode: "engrave" | "uv"; // _tdp_mode
+  required: boolean; // _tdp_required (enkel lasergravure; UV is altijd verplicht)
+  allow_logo: boolean; // _tdp_allow_logo (enkel lasergravure)
+  color: string; // _tdp_color -- gravurekleur in de preview
+  max_chars: number | null; // _tdp_max_chars
+  texture: number | null; // _tdp_texture -- materiaaltextuur in % (UV)
+  back_enabled: boolean; // _tdp_back_enabled
 };
 
 export type Personalization = {
   plugin: PersonalizationPlugin;
   zones: PersonalizationZone[];
+  gravure?: GravureSettings | null;
 };
 
 export const EMPTY_PERSONALIZATION: Personalization = { plugin: "none", zones: [] };

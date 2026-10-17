@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { personalizationFromWooMeta, stableStringify } from "@/lib/gravure";
+import { EMPTY_PERSONALIZATION } from "@/lib/types";
 
 // Haalt naam, beschrijving, categorieën, afbeeldingen, gewicht en verzendklasse van bestaande WooCommerce
 // producten op en schrijft deze naar de lokale database. Dit is een "reverse sync" - van WooCommerce naar
@@ -59,7 +61,7 @@ export async function POST(request: Request) {
   // Haal alle lokale producten op
   const { data: products, error } = await supabase
     .from("products")
-    .select("id, sku, name, description, categories, image_url, weight_kg, shipping_class, product_variations(id, sku, image_url)")
+    .select("id, sku, name, description, categories, image_url, weight_kg, shipping_class, personalization, product_variations(id, sku, image_url)")
     .order("name");
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -158,6 +160,15 @@ export async function POST(request: Request) {
       if (imageChanged) updates.image_url = wcImageUrl;
       if (weightChanged) updates.weight_kg = wcWeight;
       if (shippingClassChanged) updates.shipping_class = wcShippingClass;
+
+      // Instellingen van de 3DP Gravure Preview-plugin (zone, soort, kleur, voor-/achterkant, ...) zoals
+      // ze in WooCommerce bij het product staan. De meerprijs en de kostenberekening blijven lokaal.
+      const currentPersonalization = { ...EMPTY_PERSONALIZATION, ...(p.personalization ?? {}) };
+      const wcImageSrcs: string[] = (wcProduct.images || []).map((img: any) => img.src).filter(Boolean);
+      const wooPersonalization = personalizationFromWooMeta(currentPersonalization, wcProduct.meta_data || [], wcImageSrcs);
+      if (wooPersonalization && stableStringify(wooPersonalization) !== stableStringify(currentPersonalization)) {
+        updates.personalization = wooPersonalization;
+      }
 
       if (Object.keys(updates).length > 0) {
         await supabase.from("products").update(updates).eq("id", p.id);

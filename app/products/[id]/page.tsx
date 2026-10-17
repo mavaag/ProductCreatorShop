@@ -14,6 +14,8 @@ import { cartesian, comboKey } from "@/lib/variants";
 import { toHours } from "@/lib/types";
 import { slugifyForSku, nextAvailableSku, skuExists } from "@/lib/sku";
 import { uploadProductImage } from "@/lib/uploadImage";
+import { GravureSettingsEditor } from "@/components/GravureSettingsEditor";
+import { DEFAULT_GRAVURE_SETTINGS, splitImageUrls, stableStringify } from "@/lib/gravure";
 import {
   Product,
   ProductVariation,
@@ -31,6 +33,8 @@ import {
   EMPTY_PERSONALIZATION,
   PERSONALIZATION_PLUGIN_LABELS,
   PERSONALIZATION_ZONES,
+  GravureSettings,
+  PersonalizationZone,
 } from "@/lib/types";
 
 /**
@@ -46,6 +50,7 @@ function reconcilePersonalizationZones(personalization: Personalization): Person
     return { plugin: "none", zones: [] };
   }
   return {
+    ...personalization, // behoudt o.a. de gravure-instellingen (personalization.gravure)
     plugin,
     zones: PERSONALIZATION_ZONES[plugin].map((def) => {
       const existing = zones.find((z) => z.key === def.key);
@@ -74,6 +79,7 @@ export default function ProductEditPage() {
   const [uploadingWcImage, setUploadingWcImage] = useState(false);
   const [personalization, setPersonalization] = useState<Personalization>(EMPTY_PERSONALIZATION);
   const [savingPersonalization, setSavingPersonalization] = useState(false);
+  const [uploadingGravureImage, setUploadingGravureImage] = useState(false);
   const [duplicateSkuPrompt, setDuplicateSkuPrompt] = useState<{ suggested: string } | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
@@ -280,7 +286,50 @@ export default function ProductEditPage() {
 
   /** Wisselt de personalisatieplugin: bouwt de verwachte zones op, met behoud van reeds ingevulde kosten per zone. */
   function setPersonalizationPlugin(plugin: PersonalizationPlugin) {
-    setPersonalization(reconcilePersonalizationZones({ plugin, zones: personalization.zones }));
+    const next = reconcilePersonalizationZones({ ...personalization, plugin, zones: personalization.zones });
+    // Gravure-plugin net gekozen: meteen de instellingen vanuit de app beheren (met de standaardwaarden van de plugin).
+    if (plugin === "gravure_uv" && !next.gravure) next.gravure = { ...DEFAULT_GRAVURE_SETTINGS };
+    setPersonalization(next);
+  }
+
+  /** Wijzigt een instelling van de 3DP Gravure Preview-plugin (vanaf dan beheert de app die instellingen). */
+  function updateGravureSettings(patch: Partial<GravureSettings>) {
+    setPersonalization((prev) => ({ ...prev, gravure: { ...DEFAULT_GRAVURE_SETTINGS, ...(prev.gravure ?? {}), ...patch } }));
+  }
+
+  /** Wijzigt de zone (rechthoek) of de gekozen foto van een kant. */
+  function updateGravureZone(key: string, patch: Partial<PersonalizationZone>) {
+    setPersonalization((prev) => ({
+      ...prev,
+      gravure: prev.gravure ?? { ...DEFAULT_GRAVURE_SETTINGS },
+      zones: prev.zones.map((z) => (z.key === key ? { ...z, ...patch } : z)),
+    }));
+  }
+
+  /**
+   * Laadt een foto voor de gravure-preview op, zet ze achteraan bij de productafbeeldingen (die worden
+   * meteen bewaard, zodat de sync ze naar WooCommerce stuurt) en kiest ze als foto voor die kant.
+   */
+  async function onGravureImageChosen(zoneKey: string, file: File) {
+    setUploadingGravureImage(true);
+    try {
+      const url = await uploadProductImage(file);
+      const savedUrls = splitImageUrls(product?.image_url);
+      const nextSaved = [...savedUrls, url].join(", ");
+      const { error } = await supabase.from("products").update({ image_url: nextSaved, updated_at: new Date().toISOString() }).eq("id", productId);
+      if (error) throw error;
+      setProduct((prev) => (prev ? { ...prev, image_url: nextSaved } : prev));
+      // Niet-opgeslagen wijzigingen in het afbeeldingsveld behouden; enkel de nieuwe URL toevoegen.
+      setWc((prev) => {
+        const draft = splitImageUrls(prev.image_url);
+        return { ...prev, image_url: (draft.join(", ") === savedUrls.join(", ") ? nextSaved : [...draft, url].join(", ")) };
+      });
+      updateGravureZone(zoneKey, { image_index: savedUrls.length });
+    } catch (err: any) {
+      await alertDialog("Opladen mislukt: " + (err?.message ?? String(err)));
+    } finally {
+      setUploadingGravureImage(false);
+    }
   }
 
   function updatePersonalizationZoneInputs(key: string, inputs: CostInputs) {
@@ -524,7 +573,7 @@ export default function ProductEditPage() {
   const attrsChanged = JSON.stringify(attrDraft.map((n) => n.trim()).filter(Boolean)) !== JSON.stringify(product.attribute_names);
   const savedDefaultAttrs = Object.fromEntries(Object.entries(product.default_attribute_values ?? {}).filter(([, v]) => v));
   const defaultAttrsChanged = JSON.stringify(defaultAttrDraft) !== JSON.stringify(savedDefaultAttrs);
-  const personalizationDirty = JSON.stringify(personalization) !== JSON.stringify({ ...EMPTY_PERSONALIZATION, ...(product.personalization ?? {}) });
+  const personalizationDirty = stableStringify(personalization) !== stableStringify({ ...EMPTY_PERSONALIZATION, ...(product.personalization ?? {}) });
   const wcDirty =
     wc.description !== (product.description ?? "") ||
     wc.categories !== (product.categories ?? "") ||
@@ -729,7 +778,8 @@ export default function ProductEditPage() {
           Voor producten waarbij de klant zelf een tekst, logo, tekening of ontwerp opgeeft via de 3DP Gravure
           Preview-, 3DP T-shirt Preview- of 3DPFY Mug Designer-plugin. De meerprijs hieronder staat los van de gewone
           verkoopprijs hierboven -- ze wordt bij de WooCommerce-sync als aparte post-meta meegestuurd, precies zoals
-          de plugin ze zelf verwacht.
+          de plugin ze zelf verwacht. Bij de 3DP Gravure Preview-plugin stel je hier ook de gravurezone, de soort en
+          de voor-/achterkant in, net zoals in WooCommerce -- de sync stuurt die mee.
         </p>
         <label>Plugin</label>
         <select
@@ -740,6 +790,19 @@ export default function ProductEditPage() {
             <option key={value} value={value}>{label}</option>
           ))}
         </select>
+
+        {personalization.plugin === "gravure_uv" && (
+          <GravureSettingsEditor
+            settings={personalization.gravure}
+            zones={personalization.zones}
+            imageUrls={splitImageUrls(wc.image_url)}
+            managed={!!personalization.gravure}
+            uploading={uploadingGravureImage}
+            onChangeSettings={updateGravureSettings}
+            onChangeZone={updateGravureZone}
+            onUploadImage={onGravureImageChosen}
+          />
+        )}
 
         {personalization.plugin !== "none" &&
           personalization.zones.map((zone) => {
