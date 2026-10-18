@@ -3,18 +3,84 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
-import { MockupTemplate } from "@/lib/types";
+import { MockupTechnique, MockupTemplate } from "@/lib/types";
 import { DEFAULT_CORNERS, Quad, drawPrintInQuad, loadImage } from "@/lib/mockup";
+import {
+  ENGRAVE_COLOR_PRESETS,
+  ENGRAVE_FONTS,
+  EngraveOptions,
+  drawEngravingInQuad,
+  loadEngraveFont,
+} from "@/lib/engraveMockup";
 import { confirmDialog, alertDialog } from "@/components/DialogHost";
 
 type Screen = { kind: "list" } | { kind: "edit-template"; template: MockupTemplate | null } | { kind: "compose"; template: MockupTemplate };
 
 const CORNER_LABELS = ["linksboven", "rechtsboven", "rechtsonder", "linksonder"];
 
+/** Tabbladen bovenaan: één per techniek, elk met zijn eigen templates. */
+const TECHNIQUES: { key: MockupTechnique; label: string; intro: string; templateHint: string }[] = [
+  {
+    key: "uv",
+    label: "UV-print",
+    intro: "Plaats een print (bv. een UV-print) realistisch in het kader van een kamerfoto, en download het resultaat als één afbeelding.",
+    templateHint: "een kamerfoto met de positie van het kader erin ingesteld",
+  },
+  {
+    key: "engrave",
+    label: "Lasergravure",
+    intro: "Toon hoe een logo, foto of tekst eruitziet als lasergravure op een product (hout, leisteen, metaal, leder), en download het resultaat als één afbeelding.",
+    templateHint: "een foto van het product met de zone waar de gravure komt",
+  },
+];
+
+const TECHNIQUE_STORAGE_KEY = "mockup-technique";
+
+const templateTechnique = (t: MockupTemplate): MockupTechnique => t.technique ?? "uv";
+
+/** Tekent één mockup: de foto van de template met de print of de gravure in de zone. */
+function renderMockup(
+  ctx: CanvasRenderingContext2D,
+  roomImg: HTMLImageElement,
+  quad: Quad,
+  design: HTMLImageElement | null,
+  engrave: EngraveOptions | null
+) {
+  ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  ctx.drawImage(roomImg, 0, 0);
+  if (engrave) drawEngravingInQuad(ctx, design, quad, engrave);
+  else if (design) drawPrintInQuad(ctx, design, quad);
+}
+
+function templateQuad(template: MockupTemplate, width: number, height: number): Quad {
+  return (template.corners as { x: number; y: number }[]).map((c) => ({ x: c.x * width, y: c.y * height })) as Quad;
+}
+
 export default function MockupPage() {
   const ready = useAuthGuard();
   const [templates, setTemplates] = useState<MockupTemplate[]>([]);
   const [screen, setScreen] = useState<Screen>({ kind: "list" });
+  const [technique, setTechnique] = useState<MockupTechnique>("uv");
+
+  // Laatst gekozen tabblad onthouden (enkel in deze browser).
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(TECHNIQUE_STORAGE_KEY);
+      if (saved === "uv" || saved === "engrave") setTechnique(saved);
+    } catch {
+      // geen opslag beschikbaar: dan gewoon UV-print
+    }
+  }, []);
+
+  function chooseTechnique(next: MockupTechnique) {
+    setTechnique(next);
+    setScreen({ kind: "list" });
+    try {
+      localStorage.setItem(TECHNIQUE_STORAGE_KEY, next);
+    } catch {
+      // niet erg
+    }
+  }
 
   async function load() {
     const { data } = await supabase.from("mockup_templates").select("*").order("name");
@@ -33,25 +99,44 @@ export default function MockupPage() {
 
   if (!ready) return null;
 
+  const tech = TECHNIQUES.find((t) => t.key === technique)!;
+  const visibleTemplates = templates.filter((t) => templateTechnique(t) === technique);
+
   return (
     <div>
       <h1>Mockup generator</h1>
-      <p className="sub">Plaats een print (bv. een UV-print) realistisch in het kader van een kamerfoto, en download het resultaat als één afbeelding.</p>
+
+      <div role="tablist" aria-label="Techniek" style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "12px 0" }}>
+        {TECHNIQUES.map((t) => (
+          <button
+            key={t.key}
+            role="tab"
+            aria-selected={t.key === technique}
+            className={t.key === technique ? "btn" : "btn secondary"}
+            onClick={() => chooseTechnique(t.key)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <p className="sub">{tech.intro}</p>
 
       {screen.kind === "list" && (
         <>
           <div className="card">
-            <h2>Templates</h2>
-            {templates.length === 0 ? (
-              <p className="muted">Nog geen templates. Maak er hieronder één aan: een kamerfoto met de positie van het kader erin ingesteld. Die kan je daarna telkens hergebruiken.</p>
+            <h2>Templates -- {tech.label}</h2>
+            {visibleTemplates.length === 0 ? (
+              <p className="muted">Nog geen templates voor {tech.label.toLowerCase()}. Maak er hieronder één aan: {tech.templateHint}. Die kan je daarna telkens hergebruiken.</p>
             ) : (
               <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
-                {templates.map((t) => (
+                {visibleTemplates.map((t) => (
                   <div key={t.id} className="card" style={{ width: 220, padding: 12 }}>
                     <img src={t.room_image_url} alt={t.name} style={{ width: "100%", aspectRatio: "4/3", objectFit: "cover", borderRadius: 2, display: "block" }} />
                     <div style={{ fontWeight: 700, margin: "10px 0 8px" }}>{t.name}</div>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      <button className="btn" onClick={() => setScreen({ kind: "compose", template: t })}>Print plaatsen</button>
+                      <button className="btn" onClick={() => setScreen({ kind: "compose", template: t })}>
+                        {technique === "engrave" ? "Gravure plaatsen" : "Print plaatsen"}
+                      </button>
                       <button className="btn secondary" onClick={() => setScreen({ kind: "edit-template", template: t })}>Kader bijstellen</button>
                       <button className="btn danger" onClick={() => deleteTemplate(t)}>Verwijder</button>
                     </div>
@@ -63,7 +148,9 @@ export default function MockupPage() {
 
           <div className="card" style={{ marginTop: 20 }}>
             <h2>Nieuwe template</h2>
-            <button className="btn" onClick={() => setScreen({ kind: "edit-template", template: null })}>+ Kamerfoto opladen</button>
+            <button className="btn" onClick={() => setScreen({ kind: "edit-template", template: null })}>
+              {technique === "engrave" ? "+ Productfoto opladen" : "+ Kamerfoto opladen"}
+            </button>
           </div>
         </>
       )}
@@ -71,6 +158,7 @@ export default function MockupPage() {
       {screen.kind === "edit-template" && (
         <TemplateEditor
           template={screen.template}
+          technique={screen.template ? templateTechnique(screen.template) : technique}
           onCancel={() => setScreen({ kind: "list" })}
           onSaved={() => {
             setScreen({ kind: "list" });
@@ -80,7 +168,7 @@ export default function MockupPage() {
       )}
 
       {screen.kind === "compose" && (
-        <ComposeView template={screen.template} onBack={() => setScreen({ kind: "list" })} />
+        <ComposeView template={screen.template} technique={templateTechnique(screen.template)} onBack={() => setScreen({ kind: "list" })} />
       )}
     </div>
   );
@@ -92,13 +180,16 @@ export default function MockupPage() {
 
 function TemplateEditor({
   template,
+  technique,
   onCancel,
   onSaved,
 }: {
   template: MockupTemplate | null;
+  technique: MockupTechnique;
   onCancel: () => void;
   onSaved: () => void;
 }) {
+  const engrave = technique === "engrave";
   const [name, setName] = useState(template?.name ?? "");
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(template?.room_image_url ?? null);
@@ -145,7 +236,7 @@ function TemplateEditor({
 
   async function save() {
     if (!name.trim()) { await alertDialog("Geef de template een naam."); return; }
-    if (!previewUrl) { await alertDialog("Kies eerst een kamerfoto."); return; }
+    if (!previewUrl) { await alertDialog(engrave ? "Kies eerst een productfoto." : "Kies eerst een kamerfoto."); return; }
     setSaving(true);
     try {
       let roomImageUrl = template?.room_image_url ?? "";
@@ -160,7 +251,8 @@ function TemplateEditor({
       if (template) {
         await supabase.from("mockup_templates").update({ name: name.trim(), room_image_url: roomImageUrl, corners }).eq("id", template.id);
       } else {
-        await supabase.from("mockup_templates").insert({ name: name.trim(), room_image_url: roomImageUrl, corners });
+        const { error } = await supabase.from("mockup_templates").insert({ name: name.trim(), room_image_url: roomImageUrl, corners, technique });
+        if (error) throw error;
       }
       onSaved();
     } catch (err: any) {
@@ -176,10 +268,10 @@ function TemplateEditor({
       <div className="row">
         <div>
           <label>Naam</label>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="bv. Gaming room" />
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder={engrave ? "bv. Onderlegger leisteen" : "bv. Gaming room"} />
         </div>
         <div>
-          <label>Kamerfoto</label>
+          <label>{engrave ? "Productfoto" : "Kamerfoto"}</label>
           <input type="file" accept="image/*" onChange={(e) => onFileChosen(e.target.files?.[0] ?? null)} />
         </div>
       </div>
@@ -187,7 +279,9 @@ function TemplateEditor({
       {previewUrl && (
         <>
           <p className="muted" style={{ marginTop: 16 }}>
-            Sleep de 4 punten naar de binnenkant van het kader (waar de print zichtbaar moet worden).
+            {engrave
+              ? "Sleep de 4 punten naar de hoeken van de zone waar de gravure mag komen. Ligt het product schuin op de foto, volg dan het perspectief. Voor een ronde zone: zet de punten op de hoeken van het vierkant rond de cirkel."
+              : "Sleep de 4 punten naar de binnenkant van het kader (waar de print zichtbaar moet worden)."}
           </p>
           <div
             ref={imgWrapRef}
@@ -239,13 +333,19 @@ function TemplateEditor({
 // Print in het kader plaatsen en het resultaat downloaden
 // ============================================================
 
-function ComposeView({ template, onBack }: { template: MockupTemplate; onBack: () => void }) {
+const DEFAULT_ENGRAVE: EngraveOptions = { color: "#3b2414", shape: "rect", imageMode: "auto", text: "", font: "Montserrat" };
+
+function ComposeView({ template, technique, onBack }: { template: MockupTemplate; technique: MockupTechnique; onBack: () => void }) {
   const [mode, setMode] = useState<"single" | "batch">("single");
+  const [engraveOpts, setEngraveOpts] = useState<EngraveOptions>(DEFAULT_ENGRAVE);
   const batchSupported = typeof window !== "undefined" && "showDirectoryPicker" in window;
+  const engrave = technique === "engrave" ? engraveOpts : null;
 
   return (
     <div className="card">
-      <h2>Print plaatsen -- {template.name}</h2>
+      <h2>{engrave ? "Gravure plaatsen" : "Print plaatsen"} -- {template.name}</h2>
+
+      {engrave && <EngraveSettings value={engraveOpts} onChange={(patch) => setEngraveOpts((prev) => ({ ...prev, ...patch }))} />}
 
       <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
         <button className={mode === "single" ? "btn" : "btn secondary"} onClick={() => setMode("single")}>Eén foto</button>
@@ -259,9 +359,9 @@ function ComposeView({ template, onBack }: { template: MockupTemplate; onBack: (
       )}
 
       {mode === "single" ? (
-        <SingleCompose template={template} />
+        <SingleCompose template={template} engrave={engrave} />
       ) : (
-        batchSupported && <BatchCompose template={template} />
+        batchSupported && <BatchCompose template={template} engrave={engrave} />
       )}
 
       <div style={{ marginTop: 20 }}>
@@ -271,21 +371,91 @@ function ComposeView({ template, onBack }: { template: MockupTemplate; onBack: (
   );
 }
 
-function SingleCompose({ template }: { template: MockupTemplate }) {
+/** Instellingen van de gravure: kleur (materiaal), vorm van de zone, soort afbeelding en een tekst. */
+function EngraveSettings({ value, onChange }: { value: EngraveOptions; onChange: (patch: Partial<EngraveOptions>) => void }) {
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div className="row">
+        <div>
+          <label>Gravurekleur</label>
+          <div style={{ display: "flex", gap: 6 }}>
+            <input
+              type="color"
+              value={/^#[0-9a-f]{6}$/i.test(value.color) ? value.color : "#3b2414"}
+              onChange={(e) => onChange({ color: e.target.value })}
+              style={{ width: 44, padding: 2 }}
+            />
+            <input value={value.color} onChange={(e) => onChange({ color: e.target.value })} />
+          </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+            {ENGRAVE_COLOR_PRESETS.map((p) => (
+              <button key={p.label} type="button" className="btn secondary" onClick={() => onChange({ color: p.color })}>
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label>Vorm van de zone</label>
+          <select value={value.shape} onChange={(e) => onChange({ shape: e.target.value as EngraveOptions["shape"] })}>
+            <option value="rect">Rechthoek / vierkant</option>
+            <option value="ellipse">Cirkel</option>
+          </select>
+        </div>
+        <div>
+          <label>Afbeelding is</label>
+          <select value={value.imageMode} onChange={(e) => onChange({ imageMode: e.target.value as EngraveOptions["imageMode"] })}>
+            <option value="auto">Automatisch herkennen</option>
+            <option value="logo">Logo (zwart = graveren)</option>
+            <option value="photo">Foto</option>
+          </select>
+        </div>
+      </div>
+      <div className="row">
+        <div>
+          <label>Tekst (optioneel)</label>
+          <input value={value.text} onChange={(e) => onChange({ text: e.target.value })} placeholder="bv. Lotte" />
+        </div>
+        <div>
+          <label>Lettertype</label>
+          <select value={value.font} onChange={(e) => onChange({ font: e.target.value })} style={{ fontFamily: `"${value.font}"` }}>
+            {Object.keys(ENGRAVE_FONTS).map((f) => (
+              <option key={f} value={f}>{f}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <p className="muted" style={{ fontSize: 12, margin: "4px 0 0" }}>
+        Donkere kleur voor hout en leder, lichtgrijs/wit voor leisteen en geanodiseerd metaal. Een logo (zwart op wit of
+        transparant) wordt gegraveerd waar het zwart is; bij een foto op een lichte gravure worden de lichte delen
+        gegraveerd, zodat ze er niet als negatief uitziet -- net zoals in de preview in de shop.
+      </p>
+    </div>
+  );
+}
+
+function SingleCompose({ template, engrave }: { template: MockupTemplate; engrave: EngraveOptions | null }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [printFile, setPrintFile] = useState<File | null>(null);
   const [printUrl, setPrintUrl] = useState<string | null>(null);
   const [rendering, setRendering] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Bij een gravure mag het ook enkel tekst zijn.
+  const hasContent = !!printUrl || !!engrave?.text.trim();
+  const engraveKey = engrave ? JSON.stringify(engrave) : "";
 
   useEffect(() => {
-    if (!printUrl) return;
+    if (!hasContent) return;
     let cancelled = false;
     setRendering(true);
     setError(null);
     (async () => {
       try {
-        const [roomImg, printImg] = await Promise.all([loadImage(template.room_image_url), loadImage(printUrl)]);
+        const [roomImg, printImg] = await Promise.all([
+          loadImage(template.room_image_url),
+          printUrl ? loadImage(printUrl) : Promise.resolve(null),
+          engrave?.text.trim() ? loadEngraveFont(engrave.font) : Promise.resolve(),
+        ]);
         if (cancelled) return;
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -293,13 +463,7 @@ function SingleCompose({ template }: { template: MockupTemplate }) {
         canvas.height = roomImg.naturalHeight;
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(roomImg, 0, 0);
-        const quad = (template.corners as { x: number; y: number }[]).map((c) => ({
-          x: c.x * canvas.width,
-          y: c.y * canvas.height,
-        })) as [{ x: number; y: number }, { x: number; y: number }, { x: number; y: number }, { x: number; y: number }];
-        drawPrintInQuad(ctx, printImg, quad);
+        renderMockup(ctx, roomImg, templateQuad(template, canvas.width, canvas.height), printImg, engrave);
       } catch (err: any) {
         if (!cancelled) setError("Afbeelding laden mislukt: " + (err?.message ?? String(err)));
       } finally {
@@ -309,7 +473,7 @@ function SingleCompose({ template }: { template: MockupTemplate }) {
     return () => {
       cancelled = true;
     };
-  }, [template, printUrl]);
+  }, [template, printUrl, hasContent, engraveKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function onPrintChosen(f: File | null) {
     setPrintFile(f);
@@ -327,13 +491,13 @@ function SingleCompose({ template }: { template: MockupTemplate }) {
 
   return (
     <div>
-      <label>Print-afbeelding (bv. de UV-print)</label>
+      <label>{engrave ? "Logo of foto om te graveren (optioneel als je een tekst opgeeft)" : "Print-afbeelding (bv. de UV-print)"}</label>
       <input type="file" accept="image/*" onChange={(e) => onPrintChosen(e.target.files?.[0] ?? null)} />
 
       {error && <div className="warning" style={{ marginTop: 12 }}>{error}</div>}
 
       <div style={{ marginTop: 16 }}>
-        {!printFile ? (
+        {!hasContent ? (
           <img src={template.room_image_url} alt="" style={{ maxWidth: "100%", width: 700, display: "block" }} />
         ) : (
           <canvas ref={canvasRef} style={{ maxWidth: "100%", width: 700, display: "block", opacity: rendering ? 0.6 : 1 }} />
@@ -341,7 +505,7 @@ function SingleCompose({ template }: { template: MockupTemplate }) {
       </div>
 
       <div style={{ marginTop: 20 }}>
-        <button className="btn" onClick={download} disabled={!printFile || rendering}>Downloaden als afbeelding</button>
+        <button className="btn" onClick={download} disabled={!hasContent || rendering}>Downloaden als afbeelding</button>
       </div>
     </div>
   );
@@ -394,7 +558,7 @@ async function getUniqueFileName(dirHandle: FileSystemDirectoryHandle, stem: str
   return candidate;
 }
 
-function BatchCompose({ template }: { template: MockupTemplate }) {
+function BatchCompose({ template, engrave }: { template: MockupTemplate; engrave: EngraveOptions | null }) {
   const [sourceHandle, setSourceHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [sourceFiles, setSourceFiles] = useState<{ name: string; handle: FileSystemFileHandle }[]>([]);
   const [targetHandle, setTargetHandle] = useState<FileSystemDirectoryHandle | null>(null);
@@ -441,15 +605,13 @@ function BatchCompose({ template }: { template: MockupTemplate }) {
     setProcessing(true);
     try {
       const roomImg = await loadImage(template.room_image_url);
+      if (engrave?.text.trim()) await loadEngraveFont(engrave.font);
       const canvas = document.createElement("canvas");
       canvas.width = roomImg.naturalWidth;
       canvas.height = roomImg.naturalHeight;
       const ctx = canvas.getContext("2d");
       if (!ctx) throw new Error("Kon geen canvas-context aanmaken.");
-      const quad = (template.corners as { x: number; y: number }[]).map((c) => ({
-        x: c.x * canvas.width,
-        y: c.y * canvas.height,
-      })) as [{ x: number; y: number }, { x: number; y: number }, { x: number; y: number }, { x: number; y: number }];
+      const quad = templateQuad(template, canvas.width, canvas.height);
       const claimedNames = new Set<string>();
 
       for (let i = 0; i < sourceFiles.length; i++) {
@@ -461,9 +623,7 @@ function BatchCompose({ template }: { template: MockupTemplate }) {
           objectUrl = URL.createObjectURL(file);
           const printImg = await loadImage(objectUrl);
 
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(roomImg, 0, 0);
-          drawPrintInQuad(ctx, printImg, quad);
+          renderMockup(ctx, roomImg, quad, printImg, engrave);
 
           const blob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
           if (!blob) throw new Error("Afbeelding maken mislukt.");
@@ -497,8 +657,8 @@ function BatchCompose({ template }: { template: MockupTemplate }) {
   return (
     <div>
       <p className="muted">
-        Kies een map met printfoto's en een doelmap: voor elke foto in de bronmap wordt automatisch een mockup met deze
-        template gemaakt en als PNG opgeslagen in de doelmap (zelfde bestandsnaam). Bestaat er al een bestand met die
+        Kies een map met {engrave ? "logo's of foto's" : "printfoto's"} en een doelmap: voor elke afbeelding in de bronmap
+        wordt automatisch een mockup met deze template{engrave ? " (en de gravure-instellingen hierboven)" : ""} gemaakt en als PNG opgeslagen in de doelmap (zelfde bestandsnaam). Bestaat er al een bestand met die
         naam (bv. van een vorige template op dezelfde foto's), dan wordt er een nummer toegevoegd (foto-1.png,
         foto-2.png, ...) zodat er nooit iets overschreven wordt.
       </p>

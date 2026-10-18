@@ -88,9 +88,9 @@ function drawWarpedTriangle(
  * en elke driehoek krijgt zijn eigen affiene transform -- de standaardtruc om een
  * rechthoek met perspectief in canvas 2D te warpen (canvas kent geen projectieve transform).
  */
-export function drawPrintInQuad(ctx: CanvasRenderingContext2D, printImg: HTMLImageElement, quad: Quad) {
-  const w = printImg.naturalWidth || printImg.width;
-  const h = printImg.naturalHeight || printImg.height;
+export function drawPrintInQuad(ctx: CanvasRenderingContext2D, printImg: HTMLImageElement | HTMLCanvasElement, quad: Quad) {
+  const w = printImg instanceof HTMLImageElement ? printImg.naturalWidth || printImg.width : printImg.width;
+  const h = printImg instanceof HTMLImageElement ? printImg.naturalHeight || printImg.height : printImg.height;
   const [tl, tr, br, bl] = quad;
   const srcTL = { x: 0, y: 0 };
   const srcTR = { x: w, y: 0 };
