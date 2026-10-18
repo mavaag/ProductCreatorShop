@@ -16,6 +16,9 @@ export type EngraveOptions = {
   imageScale: number; // 1 = zo groot mogelijk binnen de zone; kleiner/groter naar keuze
   imageOffsetX: number; // verschuiving van de afbeelding t.o.v. het midden, in fractie van de zonebreedte
   imageOffsetY: number; // idem, in fractie van de zonehoogte
+  textScale: number; // 1 = zo groot mogelijk binnen de tekstruimte
+  textOffsetX: number; // verschuiving van de tekst, in fractie van de zonebreedte
+  textOffsetY: number; // idem, in fractie van de zonehoogte
 };
 
 /** Zelfde lettertypes als in de plugin. */
@@ -165,11 +168,16 @@ function buildEngravingLayer(design: HTMLImageElement | null, quad: Quad, opts: 
     ctx.font = `${size}px "${opts.font}"`;
     const measured = ctx.measureText(text).width;
     if (measured > textArea.w) size = (size * textArea.w) / measured;
+    size *= opts.textScale || 1;
     ctx.font = `${size}px "${opts.font}"`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillStyle = opts.color;
-    ctx.fillText(text, textArea.x + textArea.w / 2, textArea.y + textArea.h / 2);
+    ctx.fillText(
+      text,
+      textArea.x + textArea.w / 2 + (opts.textOffsetX || 0) * W,
+      textArea.y + textArea.h / 2 + (opts.textOffsetY || 0) * H
+    );
   }
 
   if (opts.shape === "ellipse") {

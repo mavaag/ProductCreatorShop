@@ -396,7 +396,56 @@ const DEFAULT_ENGRAVE: EngraveOptions = {
   imageScale: 1,
   imageOffsetX: 0,
   imageOffsetY: 0,
+  textScale: 1,
+  textOffsetX: 0,
+  textOffsetY: 0,
 };
+
+/** Wat je op de mockup versleept of met scrollen vergroot -- zoals de knoppen "Tekst" en "Logo" in de shop. */
+type MoveTarget = "image" | "text";
+
+const MOVE_FIELDS: Record<MoveTarget, { scale: "imageScale" | "textScale"; x: "imageOffsetX" | "textOffsetX"; y: "imageOffsetY" | "textOffsetY"; max: number }> = {
+  image: { scale: "imageScale", x: "imageOffsetX", y: "imageOffsetY", max: 3 },
+  text: { scale: "textScale", x: "textOffsetX", y: "textOffsetY", max: 2 },
+};
+
+function SizeSlider({
+  label,
+  target,
+  value,
+  onChange,
+}: {
+  label: string;
+  target: MoveTarget;
+  value: EngraveOptions;
+  onChange: (patch: Partial<EngraveOptions>) => void;
+}) {
+  const f = MOVE_FIELDS[target];
+  return (
+    <div>
+      <label>{label}: {Math.round(value[f.scale] * 100)}%</label>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <input
+          type="range"
+          min={10}
+          max={f.max * 100}
+          step={5}
+          value={Math.round(value[f.scale] * 100)}
+          onChange={(e) => onChange({ [f.scale]: Number(e.target.value) / 100 })}
+          style={{ flex: 1 }}
+        />
+        <button
+          type="button"
+          className="btn secondary"
+          onClick={() => onChange({ [f.scale]: 1, [f.x]: 0, [f.y]: 0 })}
+          title="Terug op 100% en op de standaardplaats"
+        >
+          Reset
+        </button>
+      </div>
+    </div>
+  );
+}
 
 // Kleur, vorm, soort afbeelding en lettertype onthouden per template (bv. een ronde onderlegger blijft "Cirkel").
 const engraveStorageKey = (template: MockupTemplate) => `mockup-engrave-${template.id}`;
@@ -496,32 +545,13 @@ function EngraveSettings({ value, onChange }: { value: EngraveOptions; onChange:
         </div>
       </div>
       <div className="row">
-        <div>
-          <label>Grootte afbeelding: {Math.round(value.imageScale * 100)}%</label>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input
-              type="range"
-              min={10}
-              max={300}
-              step={5}
-              value={Math.round(value.imageScale * 100)}
-              onChange={(e) => onChange({ imageScale: Number(e.target.value) / 100 })}
-              style={{ flex: 1 }}
-            />
-            <button
-              type="button"
-              className="btn secondary"
-              onClick={() => onChange({ imageScale: 1, imageOffsetX: 0, imageOffsetY: 0 })}
-              title="Terug op 100% en in het midden"
-            >
-              Reset
-            </button>
-          </div>
-          <p className="muted" style={{ fontSize: 12, margin: "4px 0 0" }}>
-            Verschuiven: sleep de afbeelding op de mockup hieronder. Scrollen op de mockup maakt ze ook groter of kleiner.
-          </p>
-        </div>
+        <SizeSlider label="Grootte afbeelding" target="image" value={value} onChange={onChange} />
+        <SizeSlider label="Grootte tekst" target="text" value={value} onChange={onChange} />
       </div>
+      <p className="muted" style={{ fontSize: 12, margin: "4px 0 0" }}>
+        Verschuiven: sleep op de mockup hieronder (kies eerst "Tekst" of "Afbeelding" als je beide hebt). Scrollen op de
+        mockup maakt het gekozen element groter of kleiner.
+      </p>
       <div className="row">
         <div>
           <label>Tekst (optioneel)</label>
@@ -565,7 +595,12 @@ function SingleCompose({
   const hasContent = !!printUrl || !!engrave?.text.trim();
   const engraveKey = engrave ? JSON.stringify(engrave) : "";
   const needsFont = !!engrave?.text.trim();
-  const canMoveImage = !!engrave && !!images?.print;
+  const hasText = !!engrave?.text.trim();
+  const hasImage = !!engrave && !!images?.print;
+  const [chosenTarget, setChosenTarget] = useState<MoveTarget>("image");
+  // Enkel tekst of enkel een afbeelding: dan is er maar één ding om te verplaatsen.
+  const moveTarget: MoveTarget | null = !engrave ? null : hasImage && hasText ? chosenTarget : hasImage ? "image" : hasText ? "text" : null;
+  const canMove = moveTarget !== null;
   const dragRef = useRef<{ x: number; y: number; offsetX: number; offsetY: number } | null>(null);
 
   // Afbeeldingen enkel (opnieuw) laden als de template of het gekozen bestand verandert...
@@ -626,18 +661,20 @@ function SingleCompose({
   }
 
   function onPointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
-    if (!engrave || !canMoveImage) return;
+    if (!engrave || !moveTarget) return;
+    const f = MOVE_FIELDS[moveTarget];
     e.currentTarget.setPointerCapture(e.pointerId);
-    dragRef.current = { x: e.clientX, y: e.clientY, offsetX: engrave.imageOffsetX, offsetY: engrave.imageOffsetY };
+    dragRef.current = { x: e.clientX, y: e.clientY, offsetX: engrave[f.x], offsetY: engrave[f.y] };
   }
 
   function onPointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
     const drag = dragRef.current;
     const zone = zoneSizeOnScreen();
-    if (!drag || !zone) return;
+    if (!drag || !zone || !moveTarget) return;
+    const f = MOVE_FIELDS[moveTarget];
     onEngraveChange({
-      imageOffsetX: drag.offsetX + (e.clientX - drag.x) / Math.max(1, zone.w),
-      imageOffsetY: drag.offsetY + (e.clientY - drag.y) / Math.max(1, zone.h),
+      [f.x]: drag.offsetX + (e.clientX - drag.x) / Math.max(1, zone.w),
+      [f.y]: drag.offsetY + (e.clientY - drag.y) / Math.max(1, zone.h),
     });
   }
 
@@ -645,19 +682,20 @@ function SingleCompose({
     dragRef.current = null;
   }
 
-  // Scrollen op de mockup = afbeelding groter/kleiner (niet-passieve listener, anders scrollt de pagina mee).
-  const imageScale = engrave?.imageScale ?? 1;
+  // Scrollen op de mockup = gekozen element groter/kleiner (niet-passieve listener, anders scrollt de pagina mee).
+  const currentScale = engrave && moveTarget ? engrave[MOVE_FIELDS[moveTarget].scale] : 1;
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !canMoveImage) return;
+    if (!canvas || !moveTarget) return;
+    const f = MOVE_FIELDS[moveTarget];
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const next = Math.min(3, Math.max(0.1, imageScale * (e.deltaY < 0 ? 1.05 : 1 / 1.05)));
-      onEngraveChange({ imageScale: Math.round(next * 100) / 100 });
+      const next = Math.min(f.max, Math.max(0.1, currentScale * (e.deltaY < 0 ? 1.05 : 1 / 1.05)));
+      onEngraveChange({ [f.scale]: Math.round(next * 100) / 100 });
     };
     canvas.addEventListener("wheel", onWheel, { passive: false });
     return () => canvas.removeEventListener("wheel", onWheel);
-  }, [canMoveImage, imageScale, hasContent]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [moveTarget, currentScale, hasContent]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function onPrintChosen(f: File | null) {
     setPrintFile(f);
@@ -680,6 +718,14 @@ function SingleCompose({
 
       {error && <div className="warning" style={{ marginTop: 12 }}>{error}</div>}
 
+      {hasImage && hasText && (
+        <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 12 }}>
+          <span className="muted" style={{ fontSize: 12 }}>Verplaatsen / vergroten:</span>
+          <button type="button" className={moveTarget === "text" ? "btn" : "btn secondary"} onClick={() => setChosenTarget("text")}>Tekst</button>
+          <button type="button" className={moveTarget === "image" ? "btn" : "btn secondary"} onClick={() => setChosenTarget("image")}>Afbeelding</button>
+        </div>
+      )}
+
       <div style={{ marginTop: 16 }}>
         {!hasContent ? (
           <img src={template.room_image_url} alt="" style={{ maxWidth: "100%", width: 700, display: "block" }} />
@@ -695,8 +741,8 @@ function SingleCompose({
               width: 700,
               display: "block",
               opacity: rendering ? 0.6 : 1,
-              cursor: canMoveImage ? "move" : undefined,
-              touchAction: canMoveImage ? "none" : undefined,
+              cursor: canMove ? "move" : undefined,
+              touchAction: canMove ? "none" : undefined,
             }}
           />
         )}
