@@ -150,6 +150,7 @@ export function GravureSettingsEditor({
                 shape={zoneShape(zone)}
                 printWidthMm={zone?.print_width_mm ?? null}
                 printHeightMm={zone?.print_height_mm ?? null}
+                showDimensions={uv}
                 imageIndex={zoneImageIndex(zone, key)}
                 imageUrls={imageUrls}
                 color={uv ? "#ffffff" : g.color}
@@ -194,6 +195,7 @@ function ZoneImageEditor({
   shape,
   printWidthMm,
   printHeightMm,
+  showDimensions,
   imageIndex,
   imageUrls,
   color,
@@ -211,6 +213,7 @@ function ZoneImageEditor({
   shape: ZoneShape;
   printWidthMm: number | null;
   printHeightMm: number | null;
+  showDimensions: boolean; // enkel bij UV-print: printbreedte voor de pixelcontrole + inktverbruik
   imageIndex: number;
   imageUrls: string[];
   color: string;
@@ -239,7 +242,7 @@ function ZoneImageEditor({
   // de hoogte (mm) mee aangepast -- ook als je de breedte in het kostenblok hieronder invult. Bij het laden
   // blijft een bestaande hoogte staan (die kan bewust anders ingevuld zijn); enkel een lege wordt aangevuld.
   useEffect(() => {
-    if (!loaded || !printWidthMm || printWidthMm <= 0 || rect.w <= 0) return;
+    if (!showDimensions || !loaded || !printWidthMm || printWidthMm <= 0 || rect.w <= 0) return;
     const key = `${rect.w}|${rect.h}|${aspect}|${printWidthMm}`;
     const first = dimsKey.current === null;
     if (dimsKey.current === key) return;
@@ -247,7 +250,7 @@ function ZoneImageEditor({
     if (first && printHeightMm) return;
     const h = heightFromWidth(printWidthMm, rect);
     if (h !== printHeightMm) onChangeDimensions({ print_height_mm: h });
-  }, [loaded, rect.w, rect.h, aspect, printWidthMm]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [showDimensions, loaded, rect.w, rect.h, aspect, printWidthMm]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Waarden van buitenaf (bv. typen in de %-velden, of na laden) volgen, behalve tijdens het slepen.
   useEffect(() => {
@@ -480,6 +483,8 @@ function ZoneImageEditor({
         ))}
       </div>
 
+      {showDimensions && (
+      <>
       <div className="row" style={{ marginTop: 8 }}>
         <div style={{ minWidth: 120 }}>
           <label>{circle ? "Diameter in het echt (mm)" : "Breedte in het echt (mm)"}</label>
@@ -511,6 +516,8 @@ function ZoneImageEditor({
         Meet op het product hoe breed de zone in het echt is. De hoogte wordt dan berekend uit de verhouding van je
         selectie op de foto. De breedte is ook de printbreedte die de plugin gebruikt.
       </p>
+      </>
+      )}
     </div>
   );
 }
