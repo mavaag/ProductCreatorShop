@@ -333,19 +333,55 @@ function TemplateEditor({
 // Print in het kader plaatsen en het resultaat downloaden
 // ============================================================
 
-const DEFAULT_ENGRAVE: EngraveOptions = { color: "#3b2414", shape: "rect", imageMode: "auto", text: "", font: "Montserrat" };
+const DEFAULT_ENGRAVE: EngraveOptions = {
+  color: "#3b2414",
+  shape: "rect",
+  imageMode: "auto",
+  text: "",
+  font: "Montserrat",
+  imageScale: 1,
+  imageOffsetX: 0,
+  imageOffsetY: 0,
+};
+
+// Kleur, vorm, soort afbeelding en lettertype onthouden per template (bv. een ronde onderlegger blijft "Cirkel").
+const engraveStorageKey = (template: MockupTemplate) => `mockup-engrave-${template.id}`;
+const REMEMBERED_ENGRAVE_KEYS = ["color", "shape", "imageMode", "font"] as const;
+
+function loadRememberedEngrave(template: MockupTemplate): EngraveOptions {
+  try {
+    const saved = JSON.parse(localStorage.getItem(engraveStorageKey(template)) ?? "null");
+    if (saved && typeof saved === "object") {
+      const picked = Object.fromEntries(REMEMBERED_ENGRAVE_KEYS.filter((k) => k in saved).map((k) => [k, saved[k]]));
+      return { ...DEFAULT_ENGRAVE, ...picked };
+    }
+  } catch {
+    // geen opslag beschikbaar -- standaardwaarden
+  }
+  return DEFAULT_ENGRAVE;
+}
 
 function ComposeView({ template, technique, onBack }: { template: MockupTemplate; technique: MockupTechnique; onBack: () => void }) {
   const [mode, setMode] = useState<"single" | "batch">("single");
-  const [engraveOpts, setEngraveOpts] = useState<EngraveOptions>(DEFAULT_ENGRAVE);
+  const [engraveOpts, setEngraveOpts] = useState<EngraveOptions>(() => loadRememberedEngrave(template));
   const batchSupported = typeof window !== "undefined" && "showDirectoryPicker" in window;
   const engrave = technique === "engrave" ? engraveOpts : null;
+  const updateEngrave = (patch: Partial<EngraveOptions>) => setEngraveOpts((prev) => ({ ...prev, ...patch }));
+
+  useEffect(() => {
+    try {
+      const remembered = Object.fromEntries(REMEMBERED_ENGRAVE_KEYS.map((k) => [k, engraveOpts[k]]));
+      localStorage.setItem(engraveStorageKey(template), JSON.stringify(remembered));
+    } catch {
+      // niet erg
+    }
+  }, [template, engraveOpts]);
 
   return (
     <div className="card">
       <h2>{engrave ? "Gravure plaatsen" : "Print plaatsen"} -- {template.name}</h2>
 
-      {engrave && <EngraveSettings value={engraveOpts} onChange={(patch) => setEngraveOpts((prev) => ({ ...prev, ...patch }))} />}
+      {engrave && <EngraveSettings value={engraveOpts} onChange={updateEngrave} />}
 
       <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
         <button className={mode === "single" ? "btn" : "btn secondary"} onClick={() => setMode("single")}>Eén foto</button>
@@ -359,7 +395,7 @@ function ComposeView({ template, technique, onBack }: { template: MockupTemplate
       )}
 
       {mode === "single" ? (
-        <SingleCompose template={template} engrave={engrave} />
+        <SingleCompose template={template} engrave={engrave} onEngraveChange={updateEngrave} />
       ) : (
         batchSupported && <BatchCompose template={template} engrave={engrave} />
       )}
@@ -399,7 +435,7 @@ function EngraveSettings({ value, onChange }: { value: EngraveOptions; onChange:
           <label>Vorm van de zone</label>
           <select value={value.shape} onChange={(e) => onChange({ shape: e.target.value as EngraveOptions["shape"] })}>
             <option value="rect">Rechthoek / vierkant</option>
-            <option value="ellipse">Cirkel</option>
+            <option value="ellipse">Cirkel (bv. ronde onderlegger)</option>
           </select>
         </div>
         <div>
@@ -409,6 +445,33 @@ function EngraveSettings({ value, onChange }: { value: EngraveOptions; onChange:
             <option value="logo">Logo (zwart = graveren)</option>
             <option value="photo">Foto</option>
           </select>
+        </div>
+      </div>
+      <div className="row">
+        <div>
+          <label>Grootte afbeelding: {Math.round(value.imageScale * 100)}%</label>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input
+              type="range"
+              min={10}
+              max={300}
+              step={5}
+              value={Math.round(value.imageScale * 100)}
+              onChange={(e) => onChange({ imageScale: Number(e.target.value) / 100 })}
+              style={{ flex: 1 }}
+            />
+            <button
+              type="button"
+              className="btn secondary"
+              onClick={() => onChange({ imageScale: 1, imageOffsetX: 0, imageOffsetY: 0 })}
+              title="Terug op 100% en in het midden"
+            >
+              Reset
+            </button>
+          </div>
+          <p className="muted" style={{ fontSize: 12, margin: "4px 0 0" }}>
+            Verschuiven: sleep de afbeelding op de mockup hieronder. Scrollen op de mockup maakt ze ook groter of kleiner.
+          </p>
         </div>
       </div>
       <div className="row">
@@ -434,16 +497,30 @@ function EngraveSettings({ value, onChange }: { value: EngraveOptions; onChange:
   );
 }
 
-function SingleCompose({ template, engrave }: { template: MockupTemplate; engrave: EngraveOptions | null }) {
+function SingleCompose({
+  template,
+  engrave,
+  onEngraveChange,
+}: {
+  template: MockupTemplate;
+  engrave: EngraveOptions | null;
+  onEngraveChange: (patch: Partial<EngraveOptions>) => void;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [printFile, setPrintFile] = useState<File | null>(null);
   const [printUrl, setPrintUrl] = useState<string | null>(null);
+  const [images, setImages] = useState<{ room: HTMLImageElement; print: HTMLImageElement | null } | null>(null);
+  const [fontTick, setFontTick] = useState(0);
   const [rendering, setRendering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Bij een gravure mag het ook enkel tekst zijn.
   const hasContent = !!printUrl || !!engrave?.text.trim();
   const engraveKey = engrave ? JSON.stringify(engrave) : "";
+  const needsFont = !!engrave?.text.trim();
+  const canMoveImage = !!engrave && !!images?.print;
+  const dragRef = useRef<{ x: number; y: number; offsetX: number; offsetY: number } | null>(null);
 
+  // Afbeeldingen enkel (opnieuw) laden als de template of het gekozen bestand verandert...
   useEffect(() => {
     if (!hasContent) return;
     let cancelled = false;
@@ -451,19 +528,11 @@ function SingleCompose({ template, engrave }: { template: MockupTemplate; engrav
     setError(null);
     (async () => {
       try {
-        const [roomImg, printImg] = await Promise.all([
+        const [room, print] = await Promise.all([
           loadImage(template.room_image_url),
           printUrl ? loadImage(printUrl) : Promise.resolve(null),
-          engrave?.text.trim() ? loadEngraveFont(engrave.font) : Promise.resolve(),
         ]);
-        if (cancelled) return;
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        canvas.width = roomImg.naturalWidth;
-        canvas.height = roomImg.naturalHeight;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-        renderMockup(ctx, roomImg, templateQuad(template, canvas.width, canvas.height), printImg, engrave);
+        if (!cancelled) setImages({ room, print });
       } catch (err: any) {
         if (!cancelled) setError("Afbeelding laden mislukt: " + (err?.message ?? String(err)));
       } finally {
@@ -473,7 +542,73 @@ function SingleCompose({ template, engrave }: { template: MockupTemplate; engrav
     return () => {
       cancelled = true;
     };
-  }, [template, printUrl, hasContent, engraveKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [template, printUrl, hasContent]);
+
+  useEffect(() => {
+    if (!needsFont || !engrave) return;
+    let cancelled = false;
+    loadEngraveFont(engrave.font).then(() => {
+      if (!cancelled) setFontTick((t) => t + 1);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [needsFont, engrave?.font]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ...en bij elke andere wijziging (grootte, positie, kleur, tekst) meteen hertekenen.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!hasContent || !images || !canvas) return;
+    canvas.width = images.room.naturalWidth;
+    canvas.height = images.room.naturalHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    renderMockup(ctx, images.room, templateQuad(template, canvas.width, canvas.height), images.print, engrave);
+  }, [images, hasContent, engraveKey, fontTick]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Zonegrootte op het scherm, om een sleepbeweging om te rekenen naar een verschuiving binnen de zone.
+  function zoneSizeOnScreen() {
+    const canvas = canvasRef.current;
+    if (!canvas || !canvas.width) return null;
+    const k = canvas.getBoundingClientRect().width / canvas.width;
+    const [tl, tr, br, bl] = templateQuad(template, canvas.width, canvas.height);
+    const d = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
+    return { w: ((d(tl, tr) + d(bl, br)) / 2) * k, h: ((d(tl, bl) + d(tr, br)) / 2) * k };
+  }
+
+  function onPointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
+    if (!engrave || !canMoveImage) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = { x: e.clientX, y: e.clientY, offsetX: engrave.imageOffsetX, offsetY: engrave.imageOffsetY };
+  }
+
+  function onPointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
+    const drag = dragRef.current;
+    const zone = zoneSizeOnScreen();
+    if (!drag || !zone) return;
+    onEngraveChange({
+      imageOffsetX: drag.offsetX + (e.clientX - drag.x) / Math.max(1, zone.w),
+      imageOffsetY: drag.offsetY + (e.clientY - drag.y) / Math.max(1, zone.h),
+    });
+  }
+
+  function onPointerUp() {
+    dragRef.current = null;
+  }
+
+  // Scrollen op de mockup = afbeelding groter/kleiner (niet-passieve listener, anders scrollt de pagina mee).
+  const imageScale = engrave?.imageScale ?? 1;
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !canMoveImage) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const next = Math.min(3, Math.max(0.1, imageScale * (e.deltaY < 0 ? 1.05 : 1 / 1.05)));
+      onEngraveChange({ imageScale: Math.round(next * 100) / 100 });
+    };
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", onWheel);
+  }, [canMoveImage, imageScale, hasContent]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function onPrintChosen(f: File | null) {
     setPrintFile(f);
@@ -500,7 +635,21 @@ function SingleCompose({ template, engrave }: { template: MockupTemplate; engrav
         {!hasContent ? (
           <img src={template.room_image_url} crossOrigin="anonymous" alt="" style={{ maxWidth: "100%", width: 700, display: "block" }} />
         ) : (
-          <canvas ref={canvasRef} style={{ maxWidth: "100%", width: 700, display: "block", opacity: rendering ? 0.6 : 1 }} />
+          <canvas
+            ref={canvasRef}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
+            style={{
+              maxWidth: "100%",
+              width: 700,
+              display: "block",
+              opacity: rendering ? 0.6 : 1,
+              cursor: canMoveImage ? "move" : undefined,
+              touchAction: canMoveImage ? "none" : undefined,
+            }}
+          />
         )}
       </div>
 
