@@ -101,12 +101,30 @@ export function drawPrintInQuad(ctx: CanvasRenderingContext2D, printImg: HTMLIma
   drawWarpedTriangle(ctx, printImg, [srcTL, srcBR, srcBL], [tl, br, bl]);
 }
 
-export function loadImage(src: string): Promise<HTMLImageElement> {
+function loadImageOnce(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => resolve(img);
-    img.onerror = reject;
+    img.onerror = () => reject(new Error("kon de afbeelding niet laden"));
     img.src = src;
   });
+}
+
+/**
+ * Laadt een afbeelding zodat ze in een canvas bewerkt en gedownload mag worden (CORS). Mislukt dat voor een
+ * externe URL, dan nog één keer buiten de browsercache om: de opslag stuurt geen "Vary: Origin" mee, dus
+ * een eerder als gewone <img> geladen (en gecachete) versie zonder CORS-header laat het laden mislukken.
+ */
+export async function loadImage(src: string): Promise<HTMLImageElement> {
+  try {
+    return await loadImageOnce(src);
+  } catch (err) {
+    if (/^(blob|data):/.test(src)) throw new Error("kon het gekozen bestand niet openen (is het wel een JPG, PNG of WebP?)");
+    try {
+      return await loadImageOnce(`${src}${src.includes("?") ? "&" : "?"}cors=1`);
+    } catch {
+      throw new Error("kon de foto van de template niet laden");
+    }
+  }
 }
