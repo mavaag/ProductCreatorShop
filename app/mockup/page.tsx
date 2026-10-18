@@ -3,14 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
-import { MockupTechnique, MockupTemplate } from "@/lib/types";
-import { DEFAULT_CORNERS, Quad, drawPrintInQuad, loadImage } from "@/lib/mockup";
+import { MockupTechnique, MockupTemplate, ZoneShape } from "@/lib/types";
+import { DEFAULT_CORNERS, Quad, drawPrintInZone, loadImage, pointInQuad, zoneQuad } from "@/lib/mockup";
 import {
   ENGRAVE_COLOR_PRESETS,
   ENGRAVE_FONTS,
   EngraveOptions,
   drawEngravingInQuad,
-  engravingQuad,
   loadEngraveFont,
 } from "@/lib/engraveMockup";
 import { confirmDialog, alertDialog } from "@/components/DialogHost";
@@ -45,12 +44,31 @@ function renderMockup(
   roomImg: HTMLImageElement,
   quad: Quad,
   design: HTMLImageElement | null,
-  engrave: EngraveOptions | null
+  engrave: EngraveOptions | null,
+  shape: ZoneShape | undefined
 ) {
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   ctx.drawImage(roomImg, 0, 0);
   if (engrave) drawEngravingInQuad(ctx, design, quad, engrave);
-  else if (design) drawPrintInQuad(ctx, design, quad);
+  else if (design) drawPrintInZone(ctx, design, quad, shape);
+}
+
+const SHAPES: { key: ZoneShape; label: string }[] = [
+  { key: "rect", label: "Rechthoek / vierkant" },
+  { key: "ellipse", label: "Cirkel" },
+];
+
+/** Omtrek van de zone in % van de foto (voor de SVG in de template-editor); een cirkel als veelhoek. */
+function zoneOutline(corners: Quad, shape: ZoneShape, imgW: number, imgH: number): string {
+  if (shape !== "ellipse") return corners.map((c) => `${c.x * 100},${c.y * 100}`).join(" ");
+  // In pixels rekenen, anders kloppen de hoeken niet bij een niet-vierkante foto.
+  const px = corners.map((c) => ({ x: c.x * imgW, y: c.y * imgH })) as Quad;
+  const q = zoneQuad(px, shape);
+  return Array.from({ length: 64 }, (_, i) => {
+    const a = (i / 64) * Math.PI * 2;
+    const p = pointInQuad(q, 0.5 + 0.5 * Math.cos(a), 0.5 + 0.5 * Math.sin(a));
+    return `${(p.x / imgW) * 100},${(p.y / imgH) * 100}`;
+  }).join(" ");
 }
 
 function templateQuad(template: MockupTemplate, width: number, height: number): Quad {
@@ -197,6 +215,8 @@ function TemplateEditor({
   const [corners, setCorners] = useState<Quad>(
     template ? (template.corners as Quad) : DEFAULT_CORNERS
   );
+  const [shape, setShape] = useState<ZoneShape>(template?.shape ?? "rect");
+  const [imgSize, setImgSize] = useState({ w: 1, h: 1 });
   const [saving, setSaving] = useState(false);
   const imgWrapRef = useRef<HTMLDivElement>(null);
   const draggingIndex = useRef<number | null>(null);
@@ -250,9 +270,9 @@ function TemplateEditor({
         roomImageUrl = data.publicUrl;
       }
       if (template) {
-        await supabase.from("mockup_templates").update({ name: name.trim(), room_image_url: roomImageUrl, corners }).eq("id", template.id);
+        await supabase.from("mockup_templates").update({ name: name.trim(), room_image_url: roomImageUrl, corners, shape }).eq("id", template.id);
       } else {
-        const { error } = await supabase.from("mockup_templates").insert({ name: name.trim(), room_image_url: roomImageUrl, corners, technique });
+        const { error } = await supabase.from("mockup_templates").insert({ name: name.trim(), room_image_url: roomImageUrl, corners, technique, shape });
         if (error) throw error;
       }
       onSaved();
@@ -275,26 +295,60 @@ function TemplateEditor({
           <label>{engrave ? "Productfoto" : "Kamerfoto"}</label>
           <input type="file" accept="image/*" onChange={(e) => onFileChosen(e.target.files?.[0] ?? null)} />
         </div>
+        <div>
+          <label>Vorm van de zone</label>
+          <div style={{ display: "flex", gap: 6 }}>
+            {SHAPES.map((s) => (
+              <button key={s.key} type="button" className={shape === s.key ? "btn" : "btn secondary"} onClick={() => setShape(s.key)}>
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {previewUrl && (
         <>
           <p className="muted" style={{ marginTop: 16 }}>
-            {engrave
-              ? "Sleep de 4 punten naar de hoeken van de zone waar de gravure mag komen. Ligt het product schuin op de foto, volg dan het perspectief. Voor een ronde zone: zet de punten op de rand van de cirkel (boven, rechts, onder, links) of op de hoeken van het vierkant errond, en kies bij het plaatsen de vorm \"Cirkel\"."
-              : "Sleep de 4 punten naar de binnenkant van het kader (waar de print zichtbaar moet worden)."}
+            {shape === "ellipse"
+              ? "Sleep de 4 punten op de rand van de cirkel (boven, rechts, onder, links), of op de hoeken van het vierkant errond. Staat het product schuin op de foto, volg dan het perspectief: de lijn toont de cirkel zoals hij gebruikt wordt."
+              : engrave
+                ? "Sleep de 4 punten naar de hoeken van de zone waar de gravure mag komen. Ligt het product schuin op de foto, volg dan het perspectief."
+                : "Sleep de 4 punten naar de binnenkant van het kader (waar de print zichtbaar moet worden)."}
           </p>
           <div
             ref={imgWrapRef}
             style={{ position: "relative", display: "inline-block", maxWidth: "100%", userSelect: "none", touchAction: "none" }}
           >
-            <img src={previewUrl} crossOrigin="anonymous" alt="" style={{ display: "block", maxWidth: "100%", width: 700 }} draggable={false} />
-            <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
+            <img
+              src={previewUrl}
+              crossOrigin="anonymous"
+              alt=""
+              style={{ display: "block", maxWidth: "100%", width: 700 }}
+              draggable={false}
+              onLoad={(e) => setImgSize({ w: e.currentTarget.naturalWidth || 1, h: e.currentTarget.naturalHeight || 1 })}
+            />
+            <svg
+              viewBox="0 0 100 100"
+              preserveAspectRatio="none"
+              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}
+            >
+              {shape === "ellipse" && (
+                <polygon
+                  points={corners.map((c) => `${c.x * 100},${c.y * 100}`).join(" ")}
+                  fill="none"
+                  stroke="var(--cyan)"
+                  strokeWidth={1}
+                  strokeDasharray="4 4"
+                  vectorEffect="non-scaling-stroke"
+                />
+              )}
               <polygon
-                points={corners.map((c) => `${c.x * 100}%,${c.y * 100}%`).join(" ")}
+                points={zoneOutline(corners, shape, imgSize.w, imgSize.h)}
                 fill="rgba(0,240,255,0.18)"
                 stroke="var(--cyan)"
                 strokeWidth={2}
+                vectorEffect="non-scaling-stroke"
               />
             </svg>
             {corners.map((c, i) => (
@@ -347,7 +401,7 @@ const DEFAULT_ENGRAVE: EngraveOptions = {
 
 // Kleur, vorm, soort afbeelding en lettertype onthouden per template (bv. een ronde onderlegger blijft "Cirkel").
 const engraveStorageKey = (template: MockupTemplate) => `mockup-engrave-${template.id}`;
-const REMEMBERED_ENGRAVE_KEYS = ["color", "shape", "imageMode", "font"] as const;
+const REMEMBERED_ENGRAVE_KEYS = ["color", "imageMode", "font"] as const;
 
 function loadRememberedEngrave(template: MockupTemplate): EngraveOptions {
   try {
@@ -366,7 +420,8 @@ function ComposeView({ template, technique, onBack }: { template: MockupTemplate
   const [mode, setMode] = useState<"single" | "batch">("single");
   const [engraveOpts, setEngraveOpts] = useState<EngraveOptions>(() => loadRememberedEngrave(template));
   const batchSupported = typeof window !== "undefined" && "showDirectoryPicker" in window;
-  const engrave = technique === "engrave" ? engraveOpts : null;
+  // De vorm van de zone komt van de template zelf.
+  const engrave = technique === "engrave" ? { ...engraveOpts, shape: template.shape ?? "rect" } : null;
   const updateEngrave = (patch: Partial<EngraveOptions>) => setEngraveOpts((prev) => ({ ...prev, ...patch }));
 
   useEffect(() => {
@@ -431,13 +486,6 @@ function EngraveSettings({ value, onChange }: { value: EngraveOptions; onChange:
               </button>
             ))}
           </div>
-        </div>
-        <div>
-          <label>Vorm van de zone</label>
-          <select value={value.shape} onChange={(e) => onChange({ shape: e.target.value as EngraveOptions["shape"] })}>
-            <option value="rect">Rechthoek / vierkant</option>
-            <option value="ellipse">Cirkel (bv. ronde onderlegger)</option>
-          </select>
         </div>
         <div>
           <label>Afbeelding is</label>
@@ -564,7 +612,7 @@ function SingleCompose({
     canvas.height = images.room.naturalHeight;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    renderMockup(ctx, images.room, templateQuad(template, canvas.width, canvas.height), images.print, engrave);
+    renderMockup(ctx, images.room, templateQuad(template, canvas.width, canvas.height), images.print, engrave, template.shape);
   }, [images, hasContent, engraveKey, fontTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Zonegrootte op het scherm, om een sleepbeweging om te rekenen naar een verschuiving binnen de zone.
@@ -573,7 +621,7 @@ function SingleCompose({
     if (!canvas || !canvas.width) return null;
     const k = canvas.getBoundingClientRect().width / canvas.width;
     const quad = templateQuad(template, canvas.width, canvas.height);
-    const [tl, tr, br, bl] = engrave ? engravingQuad(quad, engrave.shape) : quad;
+    const [tl, tr, br, bl] = zoneQuad(quad, template.shape);
     const d = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
     return { w: ((d(tl, tr) + d(bl, br)) / 2) * k, h: ((d(tl, bl) + d(tr, br)) / 2) * k };
   }
@@ -774,7 +822,7 @@ function BatchCompose({ template, engrave }: { template: MockupTemplate; engrave
           objectUrl = URL.createObjectURL(file);
           const printImg = await loadImage(objectUrl);
 
-          renderMockup(ctx, roomImg, quad, printImg, engrave);
+          renderMockup(ctx, roomImg, quad, printImg, engrave, template.shape);
 
           const blob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
           if (!blob) throw new Error("Afbeelding maken mislukt.");

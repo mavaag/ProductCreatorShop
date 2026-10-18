@@ -221,6 +221,7 @@ export type MockupTemplate = {
   room_image_url: string;
   corners: { x: number; y: number }[]; // 4 punten (0-1), volgorde: LB, RB, RO, LO
   technique?: MockupTechnique; // ontbreekt bij oudere templates = "uv"
+  shape?: ZoneShape; // vorm van de zone binnen de 4 punten; ontbreekt = "rect"
   created_at: string;
 };
 

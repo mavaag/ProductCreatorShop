@@ -1,4 +1,5 @@
-import { Quad, drawPrintInQuad } from "./mockup";
+import { Quad, drawPrintInQuad, zoneQuad } from "./mockup";
+import { ZoneShape } from "./types";
 
 /**
  * Mockup van een lasergravure: het ontwerp (logo, foto en/of tekst) wordt omgezet naar één gravurekleur
@@ -8,7 +9,7 @@ import { Quad, drawPrintInQuad } from "./mockup";
 
 export type EngraveOptions = {
   color: string; // gravurekleur, bv. #3b2414 (hout) of #f2f2f2 (leisteen)
-  shape: "rect" | "ellipse"; // ronde zone = cirkel/ovaal binnen de 4 hoekpunten
+  shape: ZoneShape; // vorm van de template-zone; ronde zone = cirkel/ovaal binnen de 4 hoekpunten
   imageMode: "auto" | "logo" | "photo"; // logo: donker = graveren; foto op lichte gravure: licht = graveren
   text: string;
   font: string;
@@ -182,30 +183,11 @@ function buildEngravingLayer(design: HTMLImageElement | null, quad: Quad, opts: 
 }
 
 /**
- * Bij een ronde zone mogen de 4 punten van de template ook óp de rand van de cirkel staan (boven, rechts,
- * onder, links) i.p.v. op de hoeken van het vierkant errond. Dat herkennen we aan de zijden die ~45° schuin
- * staan; dan worden de hoeken van het omschreven vierkant berekend (exact, ook met perspectief: de raaklijnen
- * in de 4 punten lopen evenwijdig aan de diameters).
- */
-export function engravingQuad(quad: Quad, shape: EngraveOptions["shape"]): Quad {
-  if (shape !== "ellipse") return quad;
-  const [p0, p1, p2, p3] = quad;
-  const tilt = (a: { x: number; y: number }, b: { x: number; y: number }) => {
-    const deg = Math.abs((Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI) % 90;
-    return deg > 22.5 && deg < 67.5;
-  };
-  if (!(tilt(p0, p1) && tilt(p1, p2) && tilt(p2, p3) && tilt(p3, p0))) return quad;
-  const c = { x: (p0.x + p1.x + p2.x + p3.x) / 4, y: (p0.y + p1.y + p2.y + p3.y) / 4 };
-  const corner = (a: { x: number; y: number }, b: { x: number; y: number }) => ({ x: a.x + b.x - c.x, y: a.y + b.y - c.y });
-  return [corner(p0, p3), corner(p0, p1), corner(p2, p1), corner(p2, p3)];
-}
-
-/**
  * Tekent de gravure op `ctx` (waar de productfoto al op staat). Een lichte gravurekleur licht de foto op
  * ('screen'), een donkere maakt ze donkerder ('multiply'); een smalle rand eronder geeft wat diepte.
  */
 export function drawEngravingInQuad(ctx: CanvasRenderingContext2D, design: HTMLImageElement | null, zone: Quad, opts: EngraveOptions) {
-  const quad = engravingQuad(zone, opts.shape);
+  const quad = zoneQuad(zone, opts.shape);
   const layer = buildEngravingLayer(design, quad, opts);
   const warped = document.createElement("canvas");
   warped.width = ctx.canvas.width;

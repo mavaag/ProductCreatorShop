@@ -1,3 +1,5 @@
+import { ZoneShape } from "./types";
+
 export type Point = { x: number; y: number };
 
 /** Hoekpunten van het kader, volgorde: linksboven, rechtsboven, rechtsonder, linksonder. */
@@ -99,6 +101,51 @@ export function drawPrintInQuad(ctx: CanvasRenderingContext2D, printImg: HTMLIma
 
   drawWarpedTriangle(ctx, printImg, [srcTL, srcTR, srcBR], [tl, tr, br]);
   drawWarpedTriangle(ctx, printImg, [srcTL, srcBR, srcBL], [tl, br, bl]);
+}
+
+/**
+ * Bij een ronde zone mogen de 4 punten van de template ook óp de rand van de cirkel staan (boven, rechts,
+ * onder, links) i.p.v. op de hoeken van het vierkant errond. Dat herkennen we aan de zijden die ~45° schuin
+ * staan; dan worden de hoeken van het omschreven vierkant berekend (exact, ook met perspectief: de raaklijnen
+ * in de 4 punten lopen evenwijdig aan de diameters).
+ */
+export function zoneQuad(quad: Quad, shape: ZoneShape | undefined): Quad {
+  if (shape !== "ellipse") return quad;
+  const [p0, p1, p2, p3] = quad;
+  const tilt = (a: Point, b: Point) => {
+    const deg = Math.abs((Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI) % 90;
+    return deg > 22.5 && deg < 67.5;
+  };
+  if (!(tilt(p0, p1) && tilt(p1, p2) && tilt(p2, p3) && tilt(p3, p0))) return quad;
+  const c = { x: (p0.x + p1.x + p2.x + p3.x) / 4, y: (p0.y + p1.y + p2.y + p3.y) / 4 };
+  const corner = (a: Point, b: Point) => ({ x: a.x + b.x - c.x, y: a.y + b.y - c.y });
+  return [corner(p0, p3), corner(p0, p1), corner(p2, p1), corner(p2, p3)];
+}
+
+/** Punt (u, v in 0-1) binnen de vierhoek, bilineair -- om de cirkel in de template-editor te tonen. */
+export function pointInQuad(quad: Quad, u: number, v: number): Point {
+  const [tl, tr, br, bl] = quad;
+  const top = { x: tl.x + (tr.x - tl.x) * u, y: tl.y + (tr.y - tl.y) * u };
+  const bottom = { x: bl.x + (br.x - bl.x) * u, y: bl.y + (br.y - bl.y) * u };
+  return { x: top.x + (bottom.x - top.x) * v, y: top.y + (bottom.y - top.y) * v };
+}
+
+/** Print in de zone van de template: bij een ronde zone wordt ze tot de cirkel binnen de zone bijgesneden. */
+export function drawPrintInZone(ctx: CanvasRenderingContext2D, printImg: HTMLImageElement, quad: Quad, shape: ZoneShape | undefined) {
+  if (shape !== "ellipse") {
+    drawPrintInQuad(ctx, printImg, quad);
+    return;
+  }
+  const c = document.createElement("canvas");
+  c.width = printImg.naturalWidth || printImg.width;
+  c.height = printImg.naturalHeight || printImg.height;
+  const x = c.getContext("2d")!;
+  x.drawImage(printImg, 0, 0);
+  x.globalCompositeOperation = "destination-in";
+  x.beginPath();
+  x.ellipse(c.width / 2, c.height / 2, c.width / 2, c.height / 2, 0, 0, Math.PI * 2);
+  x.fill();
+  drawPrintInQuad(ctx, c, zoneQuad(quad, shape));
 }
 
 function loadImageOnce(src: string): Promise<HTMLImageElement> {
