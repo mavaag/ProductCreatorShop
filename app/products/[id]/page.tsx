@@ -336,10 +336,10 @@ export default function ProductEditPage() {
 
   function updatePersonalizationZoneInputs(key: string, inputs: CostInputs) {
     const price = calculatePrice(inputs, new Map(machines.map((m) => [m.id, m])), new Map(materials.map((m) => [m.id, m])));
-    setPersonalization({
-      ...personalization,
-      zones: personalization.zones.map((z) => (z.key === key ? { ...z, cost_inputs: inputs, fee: price.suggestedPrice } : z)),
-    });
+    setPersonalization((prev) => ({
+      ...prev,
+      zones: prev.zones.map((z) => (z.key === key ? { ...z, cost_inputs: inputs, fee: price.suggestedPrice } : z)),
+    }));
   }
 
   function updatePersonalizationZoneDimensions(key: string, patch: { print_width_mm?: number | null; print_height_mm?: number | null }) {
@@ -1477,7 +1477,14 @@ function PersonalizationZoneEditor({
 }) {
   const machinesById = new Map(machines.map((m) => [m.id, m]));
   const materialsById = new Map(materials.map((m) => [m.id, m]));
-  const { costPrice, breakdown, warnings } = calculatePrice(costInputs, machinesById, materialsById);
+  const { costPrice, suggestedPrice, breakdown, warnings } = calculatePrice(costInputs, machinesById, materialsById);
+
+  // Bewaarde meerprijs die niet meer klopt met de berekening (bv. na een wijziging in de prijsberekening,
+  // of een prijs van een machine/materiaal) bijwerken -- zo stuurt de sync nooit een verouderde meerprijs.
+  // Niet zolang er machines/materialen ontbreken (dan zou de berekening te laag uitvallen).
+  useEffect(() => {
+    if (warnings.length === 0 && suggestedPrice !== fee) onChange(costInputs);
+  }, [suggestedPrice, fee, warnings.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function updateMaterialLine(idx: number, patch: Partial<{ material_id: string; quantity: number }>) {
     const next = [...costInputs.materials];
