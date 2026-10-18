@@ -12,6 +12,9 @@ export type EngraveOptions = {
   imageMode: "auto" | "logo" | "photo"; // logo: donker = graveren; foto op lichte gravure: licht = graveren
   text: string;
   font: string;
+  imageScale: number; // 1 = zo groot mogelijk binnen de zone; kleiner/groter naar keuze
+  imageOffsetX: number; // verschuiving van de afbeelding t.o.v. het midden, in fractie van de zonebreedte
+  imageOffsetY: number; // idem, in fractie van de zonehoogte
 };
 
 /** Zelfde lettertypes als in de plugin. */
@@ -105,12 +108,26 @@ function engraveImage(img: HTMLImageElement, opts: EngraveOptions): HTMLCanvasEl
   return c;
 }
 
+// Het omzetten naar gravurekleur is per pixel en dus traag: hergebruiken zolang kleur en soort gelijk blijven,
+// zodat verschuiven/vergroten van de afbeelding vlot blijft.
+const engraveCache = new WeakMap<HTMLImageElement, { key: string; canvas: HTMLCanvasElement }>();
+
+function engraveImageCached(img: HTMLImageElement, opts: EngraveOptions): HTMLCanvasElement {
+  const key = `${opts.color}|${opts.imageMode}`;
+  const hit = engraveCache.get(img);
+  if (hit && hit.key === key) return hit.canvas;
+  const canvas = engraveImage(img, opts);
+  engraveCache.set(img, { key, canvas });
+  return canvas;
+}
+
 const dist = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
 
 /**
  * Bouwt het ontwerp (afbeelding en/of tekst) als gravure op een vlak met dezelfde verhouding als de zone,
- * zodat het na het vervormen niet uitgerekt is. Afbeelding en tekst worden binnen de zone gepast (niet
- * bijgesneden); bij een ronde zone binnen de grootste rechthoek die in de cirkel past.
+ * zodat het na het vervormen niet uitgerekt is. Op 100% past de afbeelding net in de zone; bij een ronde zone
+ * zonder tekst vult ze de volledige cirkel (de hoeken vallen weg), met tekst erbij past alles binnen de grootste
+ * rechthoek in de cirkel. Wat na vergroten/verschuiven buiten de zone valt, wordt weggesneden.
  */
 function buildEngravingLayer(design: HTMLImageElement | null, quad: Quad, opts: EngraveOptions): HTMLCanvasElement {
   const [tl, tr, br, bl] = quad;
@@ -128,15 +145,18 @@ function buildEngravingLayer(design: HTMLImageElement | null, quad: Quad, opts: 
   const area = { x: W * (inset + pad), y: H * (inset + pad), w: W * (1 - 2 * (inset + pad)), h: H * (1 - 2 * (inset + pad)) };
 
   const text = opts.text.trim();
-  const imageArea = design && text ? { ...area, h: area.h * 0.7 } : area;
+  const fullArea = { x: 0, y: 0, w: W, h: H };
+  const imageArea = design && text ? { ...area, h: area.h * 0.7 } : opts.shape === "ellipse" ? fullArea : area;
   const textArea = design && text ? { ...area, y: area.y + area.h * 0.75, h: area.h * 0.25 } : area;
 
   if (design) {
-    const engraved = engraveImage(design, opts);
-    const fit = Math.min(imageArea.w / engraved.width, imageArea.h / engraved.height);
+    const engraved = engraveImageCached(design, opts);
+    const fit = Math.min(imageArea.w / engraved.width, imageArea.h / engraved.height) * (opts.imageScale || 1);
     const w = engraved.width * fit;
     const h = engraved.height * fit;
-    ctx.drawImage(engraved, imageArea.x + (imageArea.w - w) / 2, imageArea.y + (imageArea.h - h) / 2, w, h);
+    const cx = imageArea.x + imageArea.w / 2 + (opts.imageOffsetX || 0) * W;
+    const cy = imageArea.y + imageArea.h / 2 + (opts.imageOffsetY || 0) * H;
+    ctx.drawImage(engraved, cx - w / 2, cy - h / 2, w, h);
   }
 
   if (text) {
