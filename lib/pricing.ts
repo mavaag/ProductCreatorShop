@@ -19,6 +19,7 @@ export function machineHourlyCosts(machine: Machine) {
  * pas gerust zelf aan als je liever een ronde prijs of een andere eindcijfer gebruikt.
  */
 export function suggestRetailPrice(price: number): number {
+  if (price <= 0) return 0; // niets aan te rekenen (bv. gratis gravure) -- niet afronden naar €0,95
   let candidate = Math.ceil(price) - 0.05;
   if (candidate < price) candidate += 1;
   return round2(candidate);
