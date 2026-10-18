@@ -150,7 +150,7 @@ export default function MockupPage() {
               <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
                 {visibleTemplates.map((t) => (
                   <div key={t.id} className="card" style={{ width: 220, padding: 12 }}>
-                    <img src={t.room_image_url} crossOrigin="anonymous" alt={t.name} style={{ width: "100%", aspectRatio: "4/3", objectFit: "cover", borderRadius: 2, display: "block" }} />
+                    <img src={t.room_image_url} alt={t.name} style={{ width: "100%", aspectRatio: "4/3", objectFit: "cover", borderRadius: 2, display: "block" }} />
                     <div style={{ fontWeight: 700, margin: "10px 0 8px" }}>{t.name}</div>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                       <button className="btn" onClick={() => setScreen({ kind: "compose", template: t })}>
@@ -322,7 +322,6 @@ function TemplateEditor({
           >
             <img
               src={previewUrl}
-              crossOrigin="anonymous"
               alt=""
               style={{ display: "block", maxWidth: "100%", width: 700 }}
               draggable={false}
@@ -683,7 +682,7 @@ function SingleCompose({
 
       <div style={{ marginTop: 16 }}>
         {!hasContent ? (
-          <img src={template.room_image_url} crossOrigin="anonymous" alt="" style={{ maxWidth: "100%", width: 700, display: "block" }} />
+          <img src={template.room_image_url} alt="" style={{ maxWidth: "100%", width: 700, display: "block" }} />
         ) : (
           <canvas
             ref={canvasRef}
