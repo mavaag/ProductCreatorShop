@@ -145,7 +145,11 @@ export type PersonalizationZone = {
   // hoofdafbeelding) als achtergrond dient. Ontbreekt = standaardwaarden uit lib/gravure.ts.
   rect?: ZoneRect | null;
   image_index?: number | null;
+  shape?: ZoneShape | null; // vorm van de zone binnen de rechthoek; ontbreekt = "rect"
 };
+
+/** Vorm van de gravurezone: rechthoek/vierkant, of cirkel/ovaal binnen de rechthoek (_tdp_shape / _tdp_back_shape). */
+export type ZoneShape = "rect" | "ellipse";
 
 /** Rechthoek in % van de preview-afbeelding (0-100), zoals de plugin hem bewaart in _tdp_x/_tdp_y/_tdp_w/_tdp_h. */
 export type ZoneRect = { x: number; y: number; w: number; h: number };

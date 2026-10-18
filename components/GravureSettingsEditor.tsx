@@ -1,14 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { GravureSettings, PersonalizationZone, ZoneRect } from "@/lib/types";
-import { DEFAULT_GRAVURE_SETTINGS, zoneImageIndex, zoneRect } from "@/lib/gravure";
+import type { GravureSettings, PersonalizationZone, ZoneRect, ZoneShape } from "@/lib/types";
+import { DEFAULT_GRAVURE_SETTINGS, zoneImageIndex, zoneRect, zoneShape } from "@/lib/gravure";
 
 /**
  * Instellingen van de 3DP Gravure Preview-plugin, net zoals je ze in WooCommerce bij het product invult:
  * soort (gravure/UV), verplicht, logo-upload, kleur, max. tekens, textuur, voor- en achterkant met elk een
- * eigen foto en een rechthoek die je op die foto tekent. De meerprijs en printbreedte per kant staan in de
- * kostenblokken eronder (die bestonden al).
+ * eigen foto en een zone (rechthoek of cirkel) die je op die foto tekent. De meerprijs per kant staat in de
+ * kostenblokken eronder (die bestonden al); de printzone-afmetingen in mm delen ze met deze editor.
  */
 
 const checkboxLabel: React.CSSProperties = {
@@ -147,12 +147,17 @@ export function GravureSettingsEditor({
                 title={key === "front" ? "Voorkant" : "Achterkant"}
                 zoneKey={key}
                 rect={zoneRect(zone)}
+                shape={zoneShape(zone)}
+                printWidthMm={zone?.print_width_mm ?? null}
+                printHeightMm={zone?.print_height_mm ?? null}
                 imageIndex={zoneImageIndex(zone, key)}
                 imageUrls={imageUrls}
                 color={uv ? "#ffffff" : g.color}
                 sampleText={uv ? "Foto" : "Voorbeeld"}
                 uploading={uploading}
                 onChangeRect={(rect) => onChangeZone(key, { rect })}
+                onChangeShape={(shape, rect) => onChangeZone(key, { shape, rect })}
+                onChangeDimensions={(patch) => onChangeZone(key, patch)}
                 onChangeImage={(image_index) => onChangeZone(key, { image_index })}
                 onUpload={(file) => onUploadImage(key, file)}
               />
@@ -166,6 +171,19 @@ export function GravureSettingsEditor({
 const MIN = 2; // minimale breedte/hoogte in %
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 const round = (v: number) => Math.round(v * 2) / 2; // stappen van 0,5%
+const round2 = (v: number) => Math.round(v * 100) / 100;
+
+/**
+ * Cirkel: in pixels even breed als hoog. Alles hieronder rekent in % van de foto, dus de breedte in % is
+ * hoogte% / aspect (aspect = fotobreedte / fotohoogte).
+ */
+function circleFromCenter(cx: number, cy: number, size: number, aspect: number): ZoneRect {
+  // size = diameter in % van de fotohoogte
+  const maxSize = Math.min(2 * cx * aspect, 2 * (100 - cx) * aspect, 2 * cy, 2 * (100 - cy));
+  const h = round2(Math.max(MIN, Math.min(size, maxSize)));
+  const w = round2(h / aspect);
+  return { x: round2(clamp(cx - w / 2, 0, 100 - w)), y: round2(clamp(cy - h / 2, 0, 100 - h)), w, h };
+}
 
 type Action = { type: "move"; dx: number; dy: number } | { type: "resize" | "draw"; ax: number; ay: number };
 
@@ -173,24 +191,34 @@ function ZoneImageEditor({
   title,
   zoneKey,
   rect,
+  shape,
+  printWidthMm,
+  printHeightMm,
   imageIndex,
   imageUrls,
   color,
   sampleText,
   uploading,
   onChangeRect,
+  onChangeShape,
+  onChangeDimensions,
   onChangeImage,
   onUpload,
 }: {
   title: string;
   zoneKey: string;
   rect: ZoneRect;
+  shape: ZoneShape;
+  printWidthMm: number | null;
+  printHeightMm: number | null;
   imageIndex: number;
   imageUrls: string[];
   color: string;
   sampleText: string;
   uploading: boolean;
   onChangeRect: (rect: ZoneRect) => void;
+  onChangeShape: (shape: ZoneShape, rect: ZoneRect) => void;
+  onChangeDimensions: (patch: { print_width_mm?: number | null; print_height_mm?: number | null }) => void;
   onChangeImage: (index: number) => void;
   onUpload: (file: File) => void;
 }) {
@@ -198,8 +226,28 @@ function ZoneImageEditor({
   const action = useRef<Action | null>(null);
   const [r, setR] = useState<ZoneRect>(rect);
   const [loaded, setLoaded] = useState(false);
+  const [aspect, setAspect] = useState(1); // breedte / hoogte van de foto
   const [rectHeightPx, setRectHeightPx] = useState(0);
   const src = imageUrls[imageIndex] ?? "";
+  const circle = shape === "ellipse";
+
+  /** Hoogte in mm volgens de verhoudingen van de getekende zone op de foto. */
+  const heightFromWidth = (widthMm: number, z: ZoneRect) => Math.round((widthMm * z.h) / (z.w * aspect));
+  const dimsKey = useRef<string | null>(null);
+
+  // De zone op de foto bepaalt de verhouding breedte/hoogte: past de zone of de breedte (mm) aan, dan wordt
+  // de hoogte (mm) mee aangepast -- ook als je de breedte in het kostenblok hieronder invult. Bij het laden
+  // blijft een bestaande hoogte staan (die kan bewust anders ingevuld zijn); enkel een lege wordt aangevuld.
+  useEffect(() => {
+    if (!loaded || !printWidthMm || printWidthMm <= 0 || rect.w <= 0) return;
+    const key = `${rect.w}|${rect.h}|${aspect}|${printWidthMm}`;
+    const first = dimsKey.current === null;
+    if (dimsKey.current === key) return;
+    dimsKey.current = key;
+    if (first && printHeightMm) return;
+    const h = heightFromWidth(printWidthMm, rect);
+    if (h !== printHeightMm) onChangeDimensions({ print_height_mm: h });
+  }, [loaded, rect.w, rect.h, aspect, printWidthMm]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Waarden van buitenaf (bv. typen in de %-velden, of na laden) volgen, behalve tijdens het slepen.
   useEffect(() => {
@@ -219,6 +267,14 @@ function ZoneImageEditor({
   }
 
   function fromCorners(ax: number, ay: number, bx: number, by: number): ZoneRect {
+    if (circle) {
+      // Vanuit het vaste punt een vierkant (in pixels) trekken, in de richting van de muis.
+      const sx = bx >= ax ? 1 : -1, sy = by >= ay ? 1 : -1;
+      const room = Math.min((sx > 0 ? 100 - ax : ax) * aspect, sy > 0 ? 100 - ay : ay);
+      const h = Math.max(MIN, Math.min(Math.max(Math.abs(bx - ax) * aspect, Math.abs(by - ay)), room));
+      const w = h / aspect;
+      return { x: sx > 0 ? ax : ax - w, y: sy > 0 ? ay : ay - h, w, h };
+    }
     const x1 = Math.min(ax, bx), x2 = Math.max(ax, bx);
     const y1 = Math.min(ay, by), y2 = Math.max(ay, by);
     const next = { x: x1, y: y1, w: Math.max(MIN, x2 - x1), h: Math.max(MIN, y2 - y1) };
@@ -259,7 +315,9 @@ function ZoneImageEditor({
   function stop() {
     if (!action.current) return;
     action.current = null;
-    const next = { x: round(r.x), y: round(r.y), w: round(r.w), h: round(r.h) };
+    const next = circle
+      ? { x: round2(r.x), y: round2(r.y), w: round2(r.w), h: round2(r.w * aspect) }
+      : { x: round(r.x), y: round(r.y), w: round(r.w), h: round(r.h) };
     setR(next);
     onChangeRect(next);
   }
@@ -267,7 +325,19 @@ function ZoneImageEditor({
   function setField(k: keyof ZoneRect, value: string) {
     const v = parseFloat(value);
     if (Number.isNaN(v)) return;
-    onChangeRect({ ...r, [k]: clamp(v, 0, 100) });
+    const next = { ...r, [k]: clamp(v, 0, 100) };
+    // Cirkel: breedte en hoogte gaan samen.
+    if (circle && k === "w") next.h = round2(next.w * aspect);
+    if (circle && k === "h") next.w = round2(next.h / aspect);
+    onChangeRect(next);
+  }
+
+  function setShape(next: ZoneShape) {
+    if (next === shape) return;
+    // Naar cirkel: zelfde middelpunt, diameter = kleinste zijde van de huidige rechthoek.
+    const z = next === "ellipse" ? circleFromCenter(r.x + r.w / 2, r.y + r.h / 2, Math.min(r.w * aspect, r.h), aspect) : r;
+    setR(z);
+    onChangeShape(next, z);
   }
 
   const handle = (h: string, style: React.CSSProperties) => (
@@ -308,10 +378,27 @@ function ZoneImageEditor({
           : "Gebruik liefst een foto recht van achteren, in hetzelfde formaat als de voorkant."}
       </p>
 
+      <label>Vorm van de zone</label>
+      <div style={{ display: "flex", gap: 16, marginBottom: 6 }}>
+        {(
+          [
+            ["rect", "Rechthoek / vierkant"],
+            ["ellipse", "Cirkel"],
+          ] as const
+        ).map(([value, label]) => (
+          <label key={value} style={checkboxLabel}>
+            <input type="radio" style={{ width: "auto" }} name={`shape-${zoneKey}`} checked={shape === value} onChange={() => setShape(value)} />
+            {label}
+          </label>
+        ))}
+      </div>
+
       {src ? (
         <>
           <p className="muted" style={{ fontSize: 12, margin: "0 0 6px" }}>
-            Teken een rechthoek op de foto waar de gravure mag komen. Versleep hem of trek aan de hoeken om hem aan te passen.
+            {circle
+              ? "Teken een cirkel op de foto waar de gravure mag komen. Versleep hem of trek aan de hoeken om hem groter of kleiner te maken."
+              : "Teken een rechthoek op de foto waar de gravure mag komen. Versleep hem of trek aan de hoeken om hem aan te passen."}
           </p>
           <div
             ref={stageRef}
@@ -324,7 +411,11 @@ function ZoneImageEditor({
             <img
               src={src}
               alt=""
-              onLoad={() => setLoaded(true)}
+              onLoad={(e) => {
+                const img = e.currentTarget;
+                if (img.naturalWidth && img.naturalHeight) setAspect(img.naturalWidth / img.naturalHeight);
+                setLoaded(true);
+              }}
               style={{ display: "block", width: "100%", height: "auto", pointerEvents: "none" }}
             />
             {loaded && (
@@ -342,6 +433,7 @@ function ZoneImageEditor({
                   justifyContent: "center",
                   overflow: "hidden",
                   border: "2px dashed var(--cyan)",
+                  borderRadius: circle ? "50%" : 0,
                   background: "rgba(0, 240, 255, 0.12)",
                   cursor: "move",
                 }}
@@ -380,6 +472,38 @@ function ZoneImageEditor({
           </div>
         ))}
       </div>
+
+      <div className="row" style={{ marginTop: 8 }}>
+        <div style={{ minWidth: 120 }}>
+          <label>{circle ? "Diameter in het echt (mm)" : "Breedte in het echt (mm)"}</label>
+          <input
+            type="number"
+            step="1"
+            min={0}
+            value={printWidthMm ?? ""}
+            onChange={(e) => {
+              const w = e.target.value === "" ? null : parseFloat(e.target.value) || 0;
+              onChangeDimensions({ print_width_mm: w, ...(w && loaded ? { print_height_mm: heightFromWidth(w, r) } : {}) });
+            }}
+            placeholder="bv. 80"
+          />
+        </div>
+        <div style={{ minWidth: 120 }}>
+          <label>Hoogte in het echt (mm)</label>
+          <input
+            type="number"
+            step="1"
+            min={0}
+            value={printHeightMm ?? ""}
+            onChange={(e) => onChangeDimensions({ print_height_mm: e.target.value === "" ? null : parseFloat(e.target.value) || 0 })}
+            placeholder={loaded ? "volgt uit de breedte" : "bv. 60"}
+          />
+        </div>
+      </div>
+      <p className="muted" style={{ fontSize: 12, margin: "4px 0 0" }}>
+        Meet op het product hoe breed de zone in het echt is. De hoogte wordt dan berekend uit de verhouding van je
+        selectie op de foto. De breedte is ook de printbreedte die de plugin gebruikt.
+      </p>
     </div>
   );
 }

@@ -341,10 +341,10 @@ export default function ProductEditPage() {
   }
 
   function updatePersonalizationZoneDimensions(key: string, patch: { print_width_mm?: number | null; print_height_mm?: number | null }) {
-    setPersonalization({
-      ...personalization,
-      zones: personalization.zones.map((z) => (z.key === key ? { ...z, ...patch } : z)),
-    });
+    setPersonalization((prev) => ({
+      ...prev,
+      zones: prev.zones.map((z) => (z.key === key ? { ...z, ...patch } : z)),
+    }));
   }
 
   async function savePersonalization() {
@@ -805,7 +805,10 @@ export default function ProductEditPage() {
         )}
 
         {personalization.plugin !== "none" &&
-          personalization.zones.map((zone) => {
+          personalization.zones
+            // Gravure zonder achterkant: dan hoeft de achterkant ook niet ingevuld of berekend te worden.
+            .filter((zone) => !(personalization.plugin === "gravure_uv" && zone.key === "back" && personalization.gravure && !personalization.gravure.back_enabled))
+            .map((zone) => {
             const def = PERSONALIZATION_ZONES[personalization.plugin as Exclude<PersonalizationPlugin, "none">].find((d) => d.key === zone.key);
             return (
               <PersonalizationZoneEditor

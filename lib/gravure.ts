@@ -1,5 +1,5 @@
 import { EMPTY_COST_INPUTS } from "@/lib/types";
-import type { GravureSettings, Personalization, PersonalizationZone, ZoneRect } from "@/lib/types";
+import type { GravureSettings, Personalization, PersonalizationZone, ZoneRect, ZoneShape } from "@/lib/types";
 
 /**
  * Alles rond de instellingen van de 3DP Gravure Preview-plugin (zone, soort, kleur, ...), gedeeld door
@@ -7,7 +7,7 @@ import type { GravureSettings, Personalization, PersonalizationZone, ZoneRect } 
  *
  * De plugin bewaart alles als post-meta op het product:
  *   _tdp_enabled, _tdp_mode, _tdp_required, _tdp_allow_logo, _tdp_color, _tdp_max_chars, _tdp_texture,
- *   _tdp_image, _tdp_x, _tdp_y, _tdp_w, _tdp_h, _tdp_print_w, _tdp_fee                        (voorkant)
+ *   _tdp_image, _tdp_x, _tdp_y, _tdp_w, _tdp_h, _tdp_shape, _tdp_print_w, _tdp_fee           (voorkant)
  *   _tdp_back_enabled, _tdp_back_image, _tdp_back_x, ..., _tdp_back_print_w, _tdp_back_fee    (achterkant)
  * De meerprijzen (_tdp_fee / _tdp_back_fee) worden apart behandeld in de sync (buildPersonalizationMetaData).
  */
@@ -33,6 +33,10 @@ export function defaultImageIndex(zoneKey: string): number {
 
 export function zoneRect(zone: PersonalizationZone | undefined): ZoneRect {
   return { ...DEFAULT_ZONE_RECT, ...(zone?.rect ?? {}) };
+}
+
+export function zoneShape(zone: PersonalizationZone | undefined): ZoneShape {
+  return zone?.shape === "ellipse" ? "ellipse" : "rect";
 }
 
 export function zoneImageIndex(zone: PersonalizationZone | undefined, zoneKey: string): number {
@@ -86,6 +90,7 @@ export function gravureSettingsMeta(personalization: Personalization | null | un
       { key: `${p}y`, value: num(r.y) },
       { key: `${p}w`, value: num(r.w) },
       { key: `${p}h`, value: num(r.h) },
+      { key: `${p}shape`, value: zoneShape(zone) },
       { key: `${p}print_w`, value: num(zone?.print_width_mm ?? null) }
     );
   }
@@ -206,6 +211,7 @@ export function personalizationFromWooMeta(
     const p = prefix(zoneKey);
     const existing = current.zones.find((z) => z.key === zoneKey);
     const printW = n(`${p}print_w`, null);
+    const shape = get(`${p}shape`);
     return {
       key: zoneKey,
       print_width_mm: printW && printW > 0 ? printW : existing?.print_width_mm ?? null,
@@ -219,6 +225,7 @@ export function personalizationFromWooMeta(
         h: n(`${p}h`, DEFAULT_ZONE_RECT.h) as number,
       },
       image_index: imageIndex(`${p}image`, zoneKey),
+      shape: shape ? (shape === "ellipse" ? "ellipse" : "rect") : existing?.shape ?? "rect",
     } satisfies PersonalizationZone;
   });
 
