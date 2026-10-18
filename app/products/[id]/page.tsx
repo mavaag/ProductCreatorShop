@@ -79,6 +79,8 @@ export default function ProductEditPage() {
   const [uploadingWcImage, setUploadingWcImage] = useState(false);
   const [personalization, setPersonalization] = useState<Personalization>(EMPTY_PERSONALIZATION);
   const [savingPersonalization, setSavingPersonalization] = useState(false);
+  const [personalizationError, setPersonalizationError] = useState<string | null>(null);
+  const personalizationSaveSeq = useRef(0);
   const [uploadingGravureImage, setUploadingGravureImage] = useState(false);
   const [duplicateSkuPrompt, setDuplicateSkuPrompt] = useState<{ suggested: string } | null>(null);
   const [editingName, setEditingName] = useState(false);
@@ -347,16 +349,28 @@ export default function ProductEditPage() {
     }));
   }
 
-  async function savePersonalization() {
+  async function savePersonalization(toSave: Personalization) {
+    const seq = ++personalizationSaveSeq.current;
     setSavingPersonalization(true);
     const { error } = await supabase
       .from("products")
-      .update({ personalization, updated_at: new Date().toISOString() })
+      .update({ personalization: toSave, updated_at: new Date().toISOString() })
       .eq("id", productId);
+    if (seq !== personalizationSaveSeq.current) return; // er is intussen al een nieuwere versie onderweg
     setSavingPersonalization(false);
-    if (error) await alertDialog(error.message);
-    load();
+    setPersonalizationError(error ? error.message : null);
+    // Niet herladen: dat zou wijzigingen overschrijven die je intussen al deed.
+    if (!error) setProduct((prev) => (prev ? { ...prev, personalization: toSave } : prev));
   }
+
+  // Personalisatie automatisch bewaren, kort nadat je iets wijzigt (vroeger moest dat met een aparte knop,
+  // en wie die vergat, verloor de plugin-instellingen).
+  useEffect(() => {
+    if (!product) return;
+    if (stableStringify(personalization) === stableStringify({ ...EMPTY_PERSONALIZATION, ...(product.personalization ?? {}) })) return;
+    const t = setTimeout(() => savePersonalization(personalization), 800);
+    return () => clearTimeout(t);
+  }, [personalization, product]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const genCombos = product
     ? (() => {
@@ -767,11 +781,15 @@ export default function ProductEditPage() {
         </div>
       </div>
 
-      <div className="card" style={personalizationDirty ? { borderColor: "var(--yellow)" } : undefined}>
+      <div className="card" style={personalizationError ? { borderColor: "var(--rust)" } : undefined}>
         <h2 style={{ marginTop: 0, fontSize: 14 }}>
           Personalisatie (plugin)
-          {personalizationDirty && (
-            <span className="mono" style={{ marginLeft: 8, fontSize: 11, color: "var(--yellow)" }}>* niet opgeslagen</span>
+          {personalizationError ? (
+            <span className="mono" style={{ marginLeft: 8, fontSize: 11, color: "var(--rust)" }}>* niet opgeslagen</span>
+          ) : personalizationDirty || savingPersonalization ? (
+            <span className="mono muted" style={{ marginLeft: 8, fontSize: 11 }}>opslaan...</span>
+          ) : (
+            <span className="mono muted" style={{ marginLeft: 8, fontSize: 11 }}>✓ opgeslagen</span>
           )}
         </h2>
         <p className="muted">
@@ -827,10 +845,11 @@ export default function ProductEditPage() {
             );
           })}
 
-        {personalizationDirty && (
+        {personalizationError && (
           <div style={{ marginTop: 12 }}>
-            <button className="btn" onClick={savePersonalization} disabled={savingPersonalization}>
-              {savingPersonalization ? "Opslaan..." : "Personalisatie opslaan"}
+            <p style={{ fontSize: 12, color: "var(--rust)", margin: "0 0 8px" }}>Opslaan mislukt: {personalizationError}</p>
+            <button className="btn" onClick={() => savePersonalization(personalization)} disabled={savingPersonalization}>
+              {savingPersonalization ? "Opslaan..." : "Opnieuw proberen"}
             </button>
           </div>
         )}
