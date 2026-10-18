@@ -837,6 +837,8 @@ export default function ProductEditPage() {
                 fee={zone.fee}
                 printWidthMm={zone.print_width_mm ?? null}
                 printHeightMm={zone.print_height_mm ?? null}
+                // Lasergravure gebruikt geen inkt en de plugin doet er niets mee: afmetingen dan niet tonen.
+                showDimensions={!(personalization.plugin === "gravure_uv" && personalization.gravure?.mode !== "uv")}
                 machines={machines}
                 materials={materials}
                 onChange={(inputs) => updatePersonalizationZoneInputs(zone.key, inputs)}
@@ -1455,6 +1457,7 @@ function PersonalizationZoneEditor({
   fee,
   printWidthMm,
   printHeightMm,
+  showDimensions,
   machines,
   materials,
   onChange,
@@ -1466,6 +1469,7 @@ function PersonalizationZoneEditor({
   fee: number | null;
   printWidthMm: number | null;
   printHeightMm: number | null;
+  showDimensions: boolean;
   machines: Machine[];
   materials: Material[];
   onChange: (inputs: CostInputs) => void;
@@ -1504,6 +1508,8 @@ function PersonalizationZoneEditor({
         {label} <span className="mono muted" style={{ fontSize: 11, fontWeight: 400 }}>({metaKey})</span>
       </h3>
 
+      {showDimensions && (
+      <>
       <div className="row" style={{ marginBottom: 4 }}>
         <div>
           <label>Printzone breedte (mm)</label>
@@ -1529,6 +1535,8 @@ function PersonalizationZoneEditor({
       <p className="muted" style={{ marginTop: 0, marginBottom: 12, fontSize: 12 }}>
         Zelfde afmetingen als de printzone die je in de plugin instelde -- enkel nodig om hieronder bij een inkt-materiaal de hoeveelheid bij volledige dekking te kunnen voorstellen.
       </p>
+      </>
+      )}
 
       <h2 style={{ fontSize: 13, marginTop: 12 }}>Materialen</h2>
       {costInputs.materials.map((line, idx) => {
