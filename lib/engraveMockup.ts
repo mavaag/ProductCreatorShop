@@ -1,4 +1,5 @@
-import { Quad, drawPrintInQuad } from "./mockup";
+import { Quad, drawPrintInQuad, zoneQuad } from "./mockup";
+import { ZoneShape } from "./types";
 
 /**
  * Mockup van een lasergravure: het ontwerp (logo, foto en/of tekst) wordt omgezet naar één gravurekleur
@@ -8,7 +9,7 @@ import { Quad, drawPrintInQuad } from "./mockup";
 
 export type EngraveOptions = {
   color: string; // gravurekleur, bv. #3b2414 (hout) of #f2f2f2 (leisteen)
-  shape: "rect" | "ellipse"; // ronde zone = cirkel/ovaal binnen de 4 hoekpunten
+  shape: ZoneShape; // vorm van de template-zone; ronde zone = cirkel/ovaal binnen de 4 hoekpunten
   imageMode: "auto" | "logo" | "photo"; // logo: donker = graveren; foto op lichte gravure: licht = graveren
   text: string;
   font: string;
@@ -185,7 +186,8 @@ function buildEngravingLayer(design: HTMLImageElement | null, quad: Quad, opts: 
  * Tekent de gravure op `ctx` (waar de productfoto al op staat). Een lichte gravurekleur licht de foto op
  * ('screen'), een donkere maakt ze donkerder ('multiply'); een smalle rand eronder geeft wat diepte.
  */
-export function drawEngravingInQuad(ctx: CanvasRenderingContext2D, design: HTMLImageElement | null, quad: Quad, opts: EngraveOptions) {
+export function drawEngravingInQuad(ctx: CanvasRenderingContext2D, design: HTMLImageElement | null, zone: Quad, opts: EngraveOptions) {
+  const quad = zoneQuad(zone, opts.shape);
   const layer = buildEngravingLayer(design, quad, opts);
   const warped = document.createElement("canvas");
   warped.width = ctx.canvas.width;
