@@ -226,6 +226,7 @@ function ZoneImageEditor({
   onUpload: (file: File) => void;
 }) {
   const stageRef = useRef<HTMLDivElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
   const action = useRef<Action | null>(null);
   const [r, setR] = useState<ZoneRect>(rect);
   const [loaded, setLoaded] = useState(false);
@@ -257,7 +258,18 @@ function ZoneImageEditor({
     if (!action.current) setR(rect);
   }, [rect.x, rect.y, rect.w, rect.h]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => setLoaded(false), [src]);
+  function onImageReady(img: HTMLImageElement) {
+    if (img.naturalWidth && img.naturalHeight) setAspect(img.naturalWidth / img.naturalHeight);
+    setLoaded(true);
+  }
+
+  // Andere foto: opnieuw wachten op het laden. Een foto uit de browsercache kan al geladen zijn vóór dit
+  // effect loopt (dan komt onLoad niet meer), dus in dat geval meteen als geladen beschouwen.
+  useEffect(() => {
+    const img = imgRef.current;
+    if (img && img.complete && img.naturalWidth) onImageReady(img);
+    else setLoaded(false);
+  }, [src]);
 
   useEffect(() => {
     const stage = stageRef.current;
@@ -412,13 +424,10 @@ function ZoneImageEditor({
             style={{ position: "relative", display: "inline-block", width: "100%", maxWidth: 480, cursor: "crosshair", touchAction: "none", userSelect: "none", background: "var(--void)" }}
           >
             <img
+              ref={imgRef}
               src={src}
               alt=""
-              onLoad={(e) => {
-                const img = e.currentTarget;
-                if (img.naturalWidth && img.naturalHeight) setAspect(img.naturalWidth / img.naturalHeight);
-                setLoaded(true);
-              }}
+              onLoad={(e) => onImageReady(e.currentTarget)}
               style={{ display: "block", width: "100%", height: "auto", pointerEvents: "none" }}
             />
             {loaded && (
