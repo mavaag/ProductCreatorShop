@@ -10,6 +10,7 @@ import {
   ENGRAVE_FONTS,
   EngraveOptions,
   drawEngravingInQuad,
+  engravingQuad,
   loadEngraveFont,
 } from "@/lib/engraveMockup";
 import { confirmDialog, alertDialog } from "@/components/DialogHost";
@@ -280,7 +281,7 @@ function TemplateEditor({
         <>
           <p className="muted" style={{ marginTop: 16 }}>
             {engrave
-              ? "Sleep de 4 punten naar de hoeken van de zone waar de gravure mag komen. Ligt het product schuin op de foto, volg dan het perspectief. Voor een ronde zone: zet de punten op de hoeken van het vierkant rond de cirkel."
+              ? "Sleep de 4 punten naar de hoeken van de zone waar de gravure mag komen. Ligt het product schuin op de foto, volg dan het perspectief. Voor een ronde zone: zet de punten op de rand van de cirkel (boven, rechts, onder, links) of op de hoeken van het vierkant errond, en kies bij het plaatsen de vorm \"Cirkel\"."
               : "Sleep de 4 punten naar de binnenkant van het kader (waar de print zichtbaar moet worden)."}
           </p>
           <div
@@ -571,7 +572,8 @@ function SingleCompose({
     const canvas = canvasRef.current;
     if (!canvas || !canvas.width) return null;
     const k = canvas.getBoundingClientRect().width / canvas.width;
-    const [tl, tr, br, bl] = templateQuad(template, canvas.width, canvas.height);
+    const quad = templateQuad(template, canvas.width, canvas.height);
+    const [tl, tr, br, bl] = engrave ? engravingQuad(quad, engrave.shape) : quad;
     const d = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
     return { w: ((d(tl, tr) + d(bl, br)) / 2) * k, h: ((d(tl, bl) + d(tr, br)) / 2) * k };
   }
