@@ -431,14 +431,21 @@ function ZoneImageEditor({
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  overflow: "hidden",
-                  border: "2px dashed var(--cyan)",
-                  borderRadius: circle ? "50%" : 0,
-                  background: "rgba(0, 240, 255, 0.12)",
                   cursor: "move",
                 }}
               >
-                <span style={{ color, fontWeight: 600, lineHeight: 1, whiteSpace: "nowrap", opacity: 0.85, pointerEvents: "none", fontSize: Math.max(10, rectHeightPx * 0.45) }}>
+                {/* Rand apart, zodat de hoekgrepen bij een cirkel niet mee weggeknipt worden. */}
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    border: "2px dashed var(--cyan)",
+                    borderRadius: circle ? "50%" : 0,
+                    background: "rgba(0, 240, 255, 0.12)",
+                    pointerEvents: "none",
+                  }}
+                />
+                <span style={{ color, fontWeight: 600, lineHeight: 1, whiteSpace: "nowrap", maxWidth: "100%", overflow: "hidden", opacity: 0.85, pointerEvents: "none", fontSize: Math.max(10, rectHeightPx * 0.45) }}>
                   {sampleText}
                 </span>
                 {handle("nw", { left: -2, top: -2, cursor: "nwse-resize" })}
