@@ -212,11 +212,15 @@ export type ProductVariation = {
   image_url: string | null; // één URL -- WooCommerce-varianten ondersteunen (i.t.t. producten) maar 1 afbeelding
 };
 
+/** Techniek van een mockup-template = tabblad in de mockup-generator. */
+export type MockupTechnique = "uv" | "engrave";
+
 export type MockupTemplate = {
   id: string;
   name: string;
   room_image_url: string;
   corners: { x: number; y: number }[]; // 4 punten (0-1), volgorde: LB, RB, RO, LO
+  technique?: MockupTechnique; // ontbreekt bij oudere templates = "uv"
   created_at: string;
 };
 
