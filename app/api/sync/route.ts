@@ -183,10 +183,10 @@ export async function POST(request: Request) {
         continue;
       }
 
-      const remote = new Map<string, { id: number; regular_price: string; image_src: string | null }>();
+      const remote = new Map<string, { id: number; regular_price: string; image_src: string | null; attributes: { id: number; name?: string; option: string }[] }>();
       for (let page = 1; ; page++) {
         const chunk = await wc(`/products/${parent.id}/variations?per_page=100&page=${page}`);
-        for (const rv of chunk) remote.set(rv.sku, { id: rv.id, regular_price: rv.regular_price, image_src: rv.image?.src ?? null });
+        for (const rv of chunk) remote.set(rv.sku, { id: rv.id, regular_price: rv.regular_price, image_src: rv.image?.src ?? null, attributes: rv.attributes ?? [] });
         if (chunk.length < 100) break;
       }
 
@@ -226,6 +226,32 @@ export async function POST(request: Request) {
       // Update product metadata (naam, beschrijving, categorieën, afbeeldingen, attributen, etc.)
       if (!dryRun) {
         await updateProductMetadata(wc, base, parent, p, report, categoryCache, attributeCache, mediaCache, effectivePublished);
+      }
+
+      // Variant-attributen (globaal) herstellen/zetten wanneer ze ontbreken of afwijken van de app-data.
+      // Nodig o.a. nadat een attribuut van lokaal naar globaal is omgezet: de varianten moeten dan opnieuw
+      // aan de globale termen worden gekoppeld, anders kan een klant geen variant (en dus geen prijs) kiezen.
+      if (!dryRun && !isSimple(p)) {
+        const attrNames: string[] = p.attribute_names ?? [];
+        const attrFixes: { id: number; attributes: ({ id: number; option: string } | { name: string; option: string })[] }[] = [];
+        for (const v of p.product_variations as { sku: string; attribute_values: Record<string, string> }[]) {
+          const rv = remote.get(v.sku);
+          if (!rv) continue;
+          const desired = attrNames
+            .filter((n) => v.attribute_values?.[n])
+            .map((n) => {
+              const id = attributeCache.get(n.toLowerCase());
+              return id ? { id, option: v.attribute_values[n] } : { name: n, option: v.attribute_values[n] };
+            });
+          if (desired.length === 0) continue;
+          const norm = (arr: { id?: number; name?: string; option: string }[]) =>
+            arr.map((a) => `${a.id ?? a.name ?? ""}=${String(a.option).toLowerCase()}`).sort().join("|");
+          if (norm(rv.attributes) !== norm(desired)) attrFixes.push({ id: rv.id, attributes: desired });
+        }
+        for (let i = 0; i < attrFixes.length; i += 100) {
+          await wc(`/products/${parent.id}/variations/batch`, { method: "POST", body: JSON.stringify({ update: attrFixes.slice(i, i + 100) }) });
+        }
+        if (attrFixes.length > 0) report.notes.push(`${p.sku}: ${attrFixes.length} variant-attributen (her)gekoppeld aan de globale termen.`);
       }
 
       // Update prijzen van varianten
