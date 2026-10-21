@@ -10,12 +10,11 @@ import { gravureSettingsMeta, gravureImageMeta, withExistingMetaIds, metaUpToDat
 //     attributen, varianten + prijzen, beschrijving, categorieën, afbeelding(en), gewicht en verzendklasse).
 //     Anders worden ze gerapporteerd.
 //
-// Attributen: als een attribuut (bv. "Kleur") al bestaat als GLOBAAL WooCommerce-attribuut (Producten >
-// Attributen), wordt het als zodanig gekoppeld -- een nieuwe waarde ervoor wordt dan automatisch als term
-// aangemaakt, zodat ze ook zichtbaar is in de waardenlijst van dat attribuut. Bestaat het attribuut nog
-// niet globaal, dan wordt het NIET automatisch aangemaakt: de app maakt zelf geen nieuwe globale attributen
-// aan, enkel nieuwe waarden voor een attribuut dat al bestaat. In dat geval blijft het attribuut lokaal
-// (per product), zoals voorheen.
+// Attributen: elk product-attribuut (bv. "Kleur", "Maat") wordt gekoppeld aan het GLOBALE WooCommerce-
+// attribuut met die naam (Producten > Attributen). Bestaat dat globale attribuut nog niet, dan maakt de
+// app het nu zelf aan en gebruikt het -- zo delen alle producten hetzelfde globale attribuut (nodig voor
+// kleur-swatches, filters en consistente varianten). Een nieuwe waarde wordt automatisch als term
+// aangemaakt. Zo kan een product nooit meer een los lokaal attribuut met dezelfde naam krijgen.
 //
 // Vereist server-side omgevingsvariabelen (nooit NEXT_PUBLIC_, de sleutels mogen niet naar de browser):
 //   WOOCOMMERCE_URL              bv. https://jouwshop.be
@@ -475,9 +474,8 @@ async function updateProductMetadata(
     if (personalizationMeta.length > 0) payload.meta_data = personalizationMeta;
 
     if (!isSimple(p)) {
-      // Attributen mee bijwerken: een nieuwe waarde voor een attribuut dat al globaal bestaat, wordt zo
-      // alsnog als term aangemaakt en zichtbaar in de waardenlijst van dat attribuut. Bestaat het attribuut
-      // zelf nog niet globaal, dan blijft het lokaal (er wordt geen nieuw globaal attribuut aangemaakt).
+      // Attributen mee bijwerken: ze worden gekoppeld aan het globale attribuut (dat zo nodig wordt
+      // aangemaakt). Een nieuwe waarde wordt automatisch als term van dat globale attribuut aangemaakt.
       try {
         const attrNames: string[] = p.attribute_names ?? [];
         const variations = p.product_variations as { attribute_values: Record<string, string> }[];
@@ -500,26 +498,41 @@ async function updateProductMetadata(
 }
 
 /**
- * Zoekt een BESTAAND globaal WooCommerce-attribuut (Producten > Attributen) op naam op (hoofdletterongevoelig).
- * Maakt zelf GEEN nieuw globaal attribuut aan -- geeft 0 terug als er nog geen attribuut met die naam bestaat,
- * dan blijft het attribuut lokaal (per product), zoals voorheen.
+ * Zoekt een globaal WooCommerce-attribuut (Producten > Attributen) op naam op (hoofdletterongevoelig).
+ * Bestaat het nog niet globaal, dan wordt het nu als globaal attribuut AANGEMAAKT en gebruikt, zodat elk
+ * product hetzelfde globale attribuut deelt (nodig voor kleur-swatches, filters en consistente varianten).
+ * Geeft het id terug, of 0 als aanmaken onverhoopt niet lukte (dan valt dat ene product terug op lokaal).
  */
 async function resolveGlobalAttribute(wc: WcFn, name: string, cache: Map<string, number>): Promise<number> {
   const key = name.toLowerCase();
   const cached = cache.get(key);
   if (cached !== undefined) return cached;
   const found: any[] = await wc(`/products/attributes?per_page=100&search=${encodeURIComponent(name)}`);
-  const match = found.find((a) => String(a.name).toLowerCase() === key);
-  const id = match?.id ?? 0;
+  let id = found.find((a) => String(a.name).toLowerCase() === key)?.id ?? 0;
+  if (!id) {
+    // Bestaat nog niet globaal -> nu aanmaken als globaal attribuut, zodat elk product hetzelfde
+    // (globale) attribuut deelt. Nodig voor kleur-swatches, filters en consistente varianten, en
+    // het voorkomt dat producten een los lokaal attribuut met dezelfde naam krijgen.
+    try {
+      const created: any = await wc(`/products/attributes`, {
+        method: "POST",
+        body: JSON.stringify({ name, type: "select", order_by: "menu_order", has_archives: false }),
+      });
+      id = created?.id ?? 0;
+    } catch {
+      // Kon niet aanmaken (bv. bestond intussen toch al door een parallelle run) -> opnieuw opzoeken.
+      const again: any[] = await wc(`/products/attributes?per_page=100&search=${encodeURIComponent(name)}`);
+      id = again.find((a) => String(a.name).toLowerCase() === key)?.id ?? 0;
+    }
+  }
   cache.set(key, id);
   return id;
 }
 
 /**
- * Bouwt de attributenlijst van een product op. Een attribuut dat al globaal bestaat in WooCommerce wordt
- * gekoppeld via zijn id -- een nieuwe waarde ervoor wordt door WooCommerce automatisch als term aangemaakt
- * en is dan zichtbaar in de waardenlijst van dat attribuut. Een attribuut dat nog niet globaal bestaat,
- * blijft lokaal (per product), net als voorheen. Attributen zonder ingevulde waarden worden overgeslagen.
+ * Bouwt de attributenlijst van een product op. Elk attribuut wordt gekoppeld aan het globale attribuut
+ * (dat zo nodig wordt aangemaakt, zie resolveGlobalAttribute) via zijn id -- een nieuwe waarde wordt door
+ * WooCommerce automatisch als term aangemaakt. Attributen zonder ingevulde waarden worden overgeslagen.
  */
 async function buildProductAttributes(
   wc: WcFn,
