@@ -41,6 +41,8 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const dryRun = body.dryRun === true;
   const limit = Number.isFinite(body.limit) && body.limit > 0 ? Math.floor(body.limit) : 10;
+  // Optioneel beperken tot één techniek (het actieve tabblad). De techniek wordt geraden uit de categorie.
+  const type: string | undefined = typeof body.type === "string" && body.type !== "all" ? body.type : undefined;
 
   const auth = "Basic " + Buffer.from(`${key}:${secret}`).toString("base64");
   const wcGet = async (path: string) => {
@@ -82,7 +84,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `Producten ophalen mislukt: ${e.message}` }, { status: 500 });
   }
 
-  const missing = wcProducts.filter((p) => p.sku && !localSkus.has(p.sku));
+  const catPath = (wp: any): string =>
+    (wp.categories || []).map((c: any) => categoryMap.get(c.id)).filter((x: any): x is string => !!x).join(", ");
+  let missing = wcProducts.filter((p) => p.sku && !localSkus.has(p.sku));
+  if (type) missing = missing.filter((p) => guessProcessType(catPath(p)) === type);
   const report = { created: [] as string[], errors: [] as string[] };
 
   if (dryRun) {
@@ -92,7 +97,7 @@ export async function POST(request: Request) {
   const batch = missing.slice(0, limit);
   for (const wp of batch) {
     try {
-      const categories = (wp.categories || []).map((c: any) => categoryMap.get(c.id)).filter((x: any): x is string => !!x).join(", ");
+      const categories = catPath(wp);
       const attrNames = (wp.attributes || []).filter((a: any) => a.variation).map((a: any) => a.name);
       const defaults: Record<string, string> = {};
       for (const da of wp.default_attributes || []) {

@@ -526,7 +526,7 @@ export default function ProductsPage() {
       const authHeader = { "Content-Type": "application/json", Authorization: `Bearer ${sess.session?.access_token}` };
 
       setImportProgress({ current: 0, total: 0, product: "Ontbrekende producten zoeken..." });
-      const planRes = await fetch("/api/woocommerce/import-new", { method: "POST", headers: authHeader, body: JSON.stringify({ dryRun: true }) });
+      const planRes = await fetch("/api/woocommerce/import-new", { method: "POST", headers: authHeader, body: JSON.stringify({ dryRun: true, ...(activeTab !== "all" ? { type: activeTab } : {}) }) });
       const plan = await planRes.json();
       setImportProgress(null);
       if (!planRes.ok) throw new Error(plan.error ?? `Import mislukt (${planRes.status})`);
@@ -541,7 +541,7 @@ export default function ProductsPage() {
       const created: string[] = [];
       const errors: string[] = [];
       for (let guard = 0; guard < 10000; guard++) {
-        const res = await fetch("/api/woocommerce/import-new", { method: "POST", headers: authHeader, body: JSON.stringify({ limit: 10 }) });
+        const res = await fetch("/api/woocommerce/import-new", { method: "POST", headers: authHeader, body: JSON.stringify({ limit: 10, ...(activeTab !== "all" ? { type: activeTab } : {}) }) });
         const body = await res.json();
         if (!res.ok) throw new Error(body.error ?? `Import mislukt (${res.status})`);
         created.push(...(body.created ?? []));
@@ -690,7 +690,7 @@ export default function ProductsPage() {
                   ➕ Ontbrekende producten importeren uit WooCommerce
                 </button>
                 <p className="muted" style={{ marginTop: 8, marginBottom: 0, fontSize: 12 }}>
-                  Maakt producten die wél in WooCommerce staan maar nog niet lokaal (op SKU) hier aan, inclusief hun varianten. Prijs en techniek worden als startwaarde overgenomen -- verfijn ze daarna in de app en synchroniseer terug.
+                  Maakt producten die wél in WooCommerce staan maar nog niet lokaal (op SKU) hier aan, inclusief hun varianten. Op een techniek-tabblad importeert hij enkel die techniek (geraden uit de categorie); op "Alle" alles. Prijs en techniek worden als startwaarde overgenomen -- verfijn ze daarna in de app en synchroniseer terug.
                 </p>
               </div>
             </div>
