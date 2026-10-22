@@ -267,16 +267,48 @@ export default function ProductsPage() {
     setBusy(false);
   }
 
-  async function callSync(options: { createMissing: boolean; dryRun: boolean }, productIds?: string[]) {
+  async function callSync(options: { createMissing: boolean; dryRun: boolean }, productIds?: string[], batch?: { offset: number; limit: number }) {
     const { data } = await supabase.auth.getSession();
     const res = await fetch("/api/sync", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token}` },
-      body: JSON.stringify({ ...options, ...(activeTab !== "all" ? { type: activeTab } : {}), ...(productIds ? { productIds } : {}) }),
+      body: JSON.stringify({ ...options, ...(activeTab !== "all" ? { type: activeTab } : {}), ...(productIds ? { productIds } : {}), ...(batch ? batch : {}) }),
     });
     const body = await res.json();
     if (!res.ok) throw new Error(body.error ?? `Synchronisatie mislukt (${res.status})`);
     return body;
+  }
+
+  // Roept de sync herhaald aan in kleine batches (ruim <100s elk) zodat Cloudflare de aanvraag niet
+  // afkapt, en voegt de deelrapporten samen. onProgress krijgt (verwerkt, totaal).
+  async function syncBatched(
+    options: { createMissing: boolean; dryRun: boolean },
+    productIds: string[] | undefined,
+    onProgress?: (processed: number, total: number) => void
+  ) {
+    const BATCH = 12;
+    const agg = {
+      updated: 0, unchanged: 0,
+      created: [] as string[], missingProducts: [] as string[], missingVariations: [] as string[],
+      notes: [] as string[], errors: [] as string[], total: 0,
+    };
+    let offset = 0;
+    for (let guard = 0; guard < 10000; guard++) {
+      const body = await callSync(options, productIds, { offset, limit: BATCH });
+      agg.updated += body.updated ?? 0;
+      agg.unchanged += body.unchanged ?? 0;
+      agg.created.push(...(body.created ?? []));
+      agg.missingProducts.push(...(body.missingProducts ?? []));
+      agg.missingVariations.push(...(body.missingVariations ?? []));
+      agg.notes.push(...(body.notes ?? []));
+      agg.errors.push(...(body.errors ?? []));
+      agg.total = body.total ?? agg.total;
+      const processed = (body.offset ?? offset) + (body.processed ?? 0);
+      onProgress?.(processed, agg.total);
+      if (body.done || body.nextOffset == null) break;
+      offset = body.nextOffset;
+    }
+    return agg;
   }
 
   // createMissing false: enkel prijzen van bestaande producten. true: ook nieuwe producten aanmaken,
@@ -291,7 +323,9 @@ export default function ProductsPage() {
       setSyncProgress({ current: 0, total: 0, product: "Voorbereiden..." });
 
       if (createMissing) {
-        const plan = await callSync({ createMissing: true, dryRun: true }, productIds);
+        const plan = await syncBatched({ createMissing: true, dryRun: true }, productIds, (processed, t) =>
+          setSyncProgress({ current: processed, total: t, product: `Analyseren... (${processed}/${t || "?"})` })
+        );
         setSyncProgress(null);
         const names = plan.created.length ? plan.created.join(", ") : "geen";
         const proceed = await confirmDialog(
@@ -332,40 +366,24 @@ export default function ProductsPage() {
       // Toon initiële voortgang
       setSyncProgress({ current: 0, total, product: "Verbinding maken met WooCommerce..." });
 
-      // Simuleer voortgang tijdens het synchroniseren (elke 800ms een product verder)
-      let estimatedProgress = 0;
-      const progressInterval = setInterval(() => {
-        if (estimatedProgress < total - 1) {
-          estimatedProgress++;
-          const currentProduct = (productsToSync ?? [])[estimatedProgress] as any;
-          setSyncProgress({
-            current: estimatedProgress,
-            total,
-            product: `${currentProduct?.name ?? "..."}`
-          });
-        }
-      }, 800);
+      // Sync in batches (<100s elk) zodat Cloudflare de aanvraag niet afkapt; echte voortgang per batch.
+      const body = await syncBatched({ createMissing, dryRun: false }, productIds, (processed, t) => {
+        const tot = t || total;
+        setSyncProgress({ current: Math.min(processed, tot), total: tot, product: `Synchroniseren... (${Math.min(processed, tot)}/${tot})` });
+      });
 
-      try {
-        const body = await callSync({ createMissing, dryRun: false }, productIds);
-        clearInterval(progressInterval);
+      // Toon 100% voltooid
+      setSyncProgress({ current: total, total, product: "Synchronisatie voltooid!" });
+      setTimeout(() => setSyncProgress(null), 1500);
 
-        // Toon 100% voltooid
-        setSyncProgress({ current: total, total, product: "Synchronisatie voltooid!" });
-        setTimeout(() => setSyncProgress(null), 1500);
-
-        const parts = [`${body.updated} prijs/prijzen bijgewerkt`, `${body.unchanged} ongewijzigd`];
-        if (body.created.length) parts.push(`aangemaakt: ${body.created.join(", ")}`);
-        if (body.missingProducts.length) parts.push(`nog niet in de shop: ${body.missingProducts.join(", ")}`);
-        if (body.missingVariations.length) parts.push(`varianten niet in de shop: ${body.missingVariations.join(", ")}`);
-        if (body.notes.length) parts.push(`opmerkingen: ${body.notes.join("; ")}`);
-        if (body.errors.length) parts.push(`fouten: ${body.errors.join("; ")}`);
-        setMessage(`Synchronisatie: ${parts.join(" -- ")}`);
-        load();
-      } catch (error) {
-        clearInterval(progressInterval);
-        throw error;
-      }
+      const parts = [`${body.updated} prijs/prijzen bijgewerkt`, `${body.unchanged} ongewijzigd`];
+      if (body.created.length) parts.push(`aangemaakt: ${body.created.join(", ")}`);
+      if (body.missingProducts.length) parts.push(`nog niet in de shop: ${body.missingProducts.join(", ")}`);
+      if (body.missingVariations.length) parts.push(`varianten niet in de shop: ${body.missingVariations.join(", ")}`);
+      if (body.notes.length) parts.push(`opmerkingen: ${body.notes.join("; ")}`);
+      if (body.errors.length) parts.push(`fouten: ${body.errors.join("; ")}`);
+      setMessage(`Synchronisatie: ${parts.join(" -- ")}`);
+      load();
     } catch (e: any) {
       setMessage(e.message);
       setSyncProgress(null);

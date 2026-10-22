@@ -101,6 +101,9 @@ export async function POST(request: Request) {
   const productIds: string[] | undefined = Array.isArray(body.productIds) && body.productIds.length > 0 ? body.productIds : undefined;
   const dryRun = body.dryRun === true;
   const createMissing = body.createMissing === true;
+  // Batching: verwerk slechts een deel (offset..offset+limit) zodat één aanvraag kort blijft (Cloudflare kapt na 100s af).
+  const offset = Number.isFinite(body.offset) && body.offset > 0 ? Math.floor(body.offset) : 0;
+  const limit = Number.isFinite(body.limit) && body.limit > 0 ? Math.floor(body.limit) : null;
 
   let query = supabase
     .from("products")
@@ -127,12 +130,13 @@ export async function POST(request: Request) {
   const mediaCache = new Map<string, number | null>(); // url -> bestaand media-id (of null = geen match gevonden)
   const allProducts = (products ?? []) as any[];
   const total = allProducts.length;
+  const batch = limit != null ? allProducts.slice(offset, offset + limit) : allProducts.slice(offset);
 
-  console.log(`[WooCommerce Sync] Start: ${total} producten te synchroniseren`);
+  console.log(`[WooCommerce Sync] Start: ${batch.length}/${total} producten (offset ${offset})`);
 
-  for (let i = 0; i < allProducts.length; i++) {
-    const p = allProducts[i];
-    console.log(`[WooCommerce Sync] ${i + 1}/${total}: ${p.name} (${p.sku})`);
+  for (let i = 0; i < batch.length; i++) {
+    const p = batch[i];
+    console.log(`[WooCommerce Sync] ${offset + i + 1}/${total}: ${p.name} (${p.sku})`);
     try {
       const found = await wc(`/products?sku=${encodeURIComponent(p.sku)}`);
       const parent = found?.[0];
@@ -278,7 +282,8 @@ export async function POST(request: Request) {
 
   console.log(`[WooCommerce Sync] Voltooid: ${report.updated} bijgewerkt, ${report.created.length} aangemaakt, ${report.errors.length} fouten`);
 
-  return NextResponse.json({ dryRun, ...report });
+  const done = offset + batch.length >= total;
+  return NextResponse.json({ dryRun, total, offset, processed: batch.length, nextOffset: done ? null : offset + batch.length, done, ...report });
 }
 
 /** Een product zonder attributen is een simpel product (WooCommerce type "simple"). */
