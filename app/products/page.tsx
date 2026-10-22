@@ -581,6 +581,55 @@ export default function ProductsPage() {
     setBusy(false);
   }
 
+  // Maakt variabele producten simpel (varianten verwijderen) -- lokaal én in WooCommerce -- voor het
+  // actieve tabblad. DESTRUCTIEF: eerst een dry-run-preview met bevestiging.
+  async function runMakeSimple() {
+    setBusy(true);
+    setMessage(null);
+    setImportProgress(null);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const authHeader = { "Content-Type": "application/json", Authorization: `Bearer ${sess.session?.access_token}` };
+      const scope = activeTab !== "all" ? { type: activeTab } : {};
+
+      setImportProgress({ current: 0, total: 0, product: "Variabele producten zoeken..." });
+      const planRes = await fetch("/api/products/make-simple", { method: "POST", headers: authHeader, body: JSON.stringify({ dryRun: true, ...scope }) });
+      const plan = await planRes.json();
+      setImportProgress(null);
+      if (!planRes.ok) throw new Error(plan.error ?? `Mislukt (${planRes.status})`);
+      if (!plan.count) { setMessage("Geen variabele producten gevonden in deze selectie."); setBusy(false); return; }
+
+      const names = (plan.toConvert ?? []).slice(0, 30).join(", ") + ((plan.toConvert?.length ?? 0) > 30 ? ", ..." : "");
+      if (!(await confirmDialog(`${plan.count} product(en) simpel maken (varianten VERWIJDEREN) in zowel de app als WooCommerce?\n\n${names}\n\nLet op: dit verwijdert de varianten. De prijs van de eerste variant blijft als productprijs behouden.`))) {
+        setBusy(false);
+        return;
+      }
+
+      const converted: string[] = [];
+      const errors: string[] = [];
+      for (let guard = 0; guard < 10000; guard++) {
+        const res = await fetch("/api/products/make-simple", { method: "POST", headers: authHeader, body: JSON.stringify({ limit: 10, ...scope }) });
+        const b = await res.json();
+        if (!res.ok) throw new Error(b.error ?? `Mislukt (${res.status})`);
+        converted.push(...(b.converted ?? []));
+        errors.push(...(b.errors ?? []));
+        setImportProgress({ current: converted.length, total: plan.count, product: `Omzetten... (${converted.length}/${plan.count})` });
+        if (b.done || (b.converted?.length ?? 0) === 0) break;
+      }
+
+      setImportProgress({ current: plan.count, total: plan.count, product: "Klaar!" });
+      setTimeout(() => setImportProgress(null), 1500);
+      const parts = [`${converted.length} simpel gemaakt`];
+      if (errors.length) parts.push(`fouten: ${errors.join("; ")}`);
+      setMessage(`Simpel maken: ${parts.join(" -- ")}`);
+      load();
+    } catch (e: any) {
+      setMessage(e.message);
+      setImportProgress(null);
+    }
+    setBusy(false);
+  }
+
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: products.length };
     for (const p of products) c[p.process_type] = (c[p.process_type] ?? 0) + 1;
@@ -709,6 +758,14 @@ export default function ProductsPage() {
                 </button>
                 <p className="muted" style={{ marginTop: 8, marginBottom: 0, fontSize: 12 }}>
                   Maakt producten die wél in WooCommerce staan maar nog niet lokaal (op SKU) hier aan, inclusief hun varianten. Op een techniek-tabblad importeert hij enkel die techniek (geraden uit de categorie); op "Alle" alles. Prijs en techniek worden als startwaarde overgenomen -- verfijn ze daarna in de app en synchroniseer terug.
+                </p>
+              </div>
+              <div style={{ marginTop: 12 }}>
+                <button className="btn secondary" disabled={busy} onClick={runMakeSimple}>
+                  🧹 Variabele producten simpel maken
+                </button>
+                <p className="muted" style={{ marginTop: 8, marginBottom: 0, fontSize: 12 }}>
+                  Verwijdert de varianten en maakt de producten van het actieve tabblad simpel -- lokaal én in WooCommerce. Handig voor bv. laser cutting dat per vergissing varianten heeft. Toont eerst een preview ter bevestiging.
                 </p>
               </div>
             </div>
