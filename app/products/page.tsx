@@ -999,7 +999,7 @@ export default function ProductsPage() {
                     <div className="prod-meta">
                       <span title={p.attribute_names.length > 0 ? `Attributen: ${p.attribute_names.join(", ")}` : "Simpel product"}>
                         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8" /><rect x="13" y="3" width="8" height="8" /><rect x="3" y="13" width="8" height="8" /><rect x="13" y="13" width="8" height="8" /></svg>
-                        {p.product_variations.length} var.
+                        {p.attribute_names.length === 0 ? "simpel" : `${p.product_variations.length} var.`}
                       </span>
                       {p.attribute_names.length > 0 && <span className="prod-attrs">{p.attribute_names.join(" · ")}</span>}
                     </div>
@@ -1068,7 +1068,7 @@ export default function ProductsPage() {
                   </td>
                   <td className="mono">{p.sku}</td>
                   <td>{p.attribute_names.length > 0 ? p.attribute_names.join(", ") : <span className="muted">Simpel product</span>}</td>
-                  <td className="mono">{p.product_variations.length}</td>
+                  <td className="mono">{p.attribute_names.length === 0 ? "–" : p.product_variations.length}</td>
                   <td className="mono">{priceLabel}</td>
                   <td>{p.published ? "Ja" : "Nee"}</td>
                   <td>{isChanged(p) ? <span className="pill">{p.last_exported_at ? "Gewijzigd" : "Nieuw"}</span> : <span className="muted">Up-to-date</span>}</td>
