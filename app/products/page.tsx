@@ -516,6 +516,53 @@ export default function ProductsPage() {
     setBusy(false);
   }
 
+  // Maakt WooCommerce-producten die nog niet lokaal bestaan (op SKU) hier aan, in batches (<100s elk).
+  async function runImportNew() {
+    setBusy(true);
+    setMessage(null);
+    setImportProgress(null);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const authHeader = { "Content-Type": "application/json", Authorization: `Bearer ${sess.session?.access_token}` };
+
+      setImportProgress({ current: 0, total: 0, product: "Ontbrekende producten zoeken..." });
+      const planRes = await fetch("/api/woocommerce/import-new", { method: "POST", headers: authHeader, body: JSON.stringify({ dryRun: true }) });
+      const plan = await planRes.json();
+      setImportProgress(null);
+      if (!planRes.ok) throw new Error(plan.error ?? `Import mislukt (${planRes.status})`);
+      if (!plan.count) { setMessage("Geen ontbrekende producten: alles staat al lokaal."); setBusy(false); return; }
+
+      const names = (plan.toCreate ?? []).slice(0, 30).join(", ") + ((plan.toCreate?.length ?? 0) > 30 ? ", ..." : "");
+      if (!(await confirmDialog(`${plan.count} product(en) uit WooCommerce lokaal aanmaken?\n\n${names}\n\nPrijs en techniek worden als startwaarde overgenomen; verfijn ze daarna in de app en synchroniseer terug.`))) {
+        setBusy(false);
+        return;
+      }
+
+      const created: string[] = [];
+      const errors: string[] = [];
+      for (let guard = 0; guard < 10000; guard++) {
+        const res = await fetch("/api/woocommerce/import-new", { method: "POST", headers: authHeader, body: JSON.stringify({ limit: 10 }) });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error ?? `Import mislukt (${res.status})`);
+        created.push(...(body.created ?? []));
+        errors.push(...(body.errors ?? []));
+        setImportProgress({ current: created.length, total: plan.count, product: `Aanmaken... (${created.length}/${plan.count})` });
+        if (body.done || (body.created?.length ?? 0) === 0) break;
+      }
+
+      setImportProgress({ current: plan.count, total: plan.count, product: "Import voltooid!" });
+      setTimeout(() => setImportProgress(null), 1500);
+      const parts = [`${created.length} aangemaakt`];
+      if (errors.length) parts.push(`fouten: ${errors.join("; ")}`);
+      setMessage(`Nieuwe producten geïmporteerd: ${parts.join(" -- ")}`);
+      load();
+    } catch (e: any) {
+      setMessage(e.message);
+      setImportProgress(null);
+    }
+    setBusy(false);
+  }
+
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: products.length };
     for (const p of products) c[p.process_type] = (c[p.process_type] ?? 0) + 1;
@@ -638,6 +685,14 @@ export default function ProductsPage() {
               <p className="muted" style={{ marginTop: 8, marginBottom: 0, fontSize: 12 }}>
                 Haalt naam, beschrijving, categorieën, afbeeldingen, gewicht en verzendklasse op uit WooCommerce en werkt de lokale database bij -- handig als je die rechtstreeks in WooCommerce hebt aangepast. Gebruik dit vóór je synchroniseert, anders overschrijft de sync die wijzigingen weer. De prijs komt altijd vanuit de app; die wordt hier nooit teruggehaald.
               </p>
+              <div style={{ marginTop: 12 }}>
+                <button className="btn secondary" disabled={busy} onClick={runImportNew}>
+                  ➕ Ontbrekende producten importeren uit WooCommerce
+                </button>
+                <p className="muted" style={{ marginTop: 8, marginBottom: 0, fontSize: 12 }}>
+                  Maakt producten die wél in WooCommerce staan maar nog niet lokaal (op SKU) hier aan, inclusief hun varianten. Prijs en techniek worden als startwaarde overgenomen -- verfijn ze daarna in de app en synchroniseer terug.
+                </p>
+              </div>
             </div>
           </>
         )}
