@@ -56,20 +56,30 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Ongeldige sessie." }, { status: 401 });
   }
 
+  // Optioneel beperken tot één techniek (type) en in batches (offset/limit) zodat één aanvraag kort blijft.
+  const body = await request.json().catch(() => ({}));
+  const type: string | undefined = typeof body.type === "string" && body.type !== "all" ? body.type : undefined;
+  const offset = Number.isFinite(body.offset) && body.offset > 0 ? Math.floor(body.offset) : 0;
+  const limit = Number.isFinite(body.limit) && body.limit > 0 ? Math.floor(body.limit) : null;
+
   const auth = "Basic " + Buffer.from(`${key}:${secret}`).toString("base64");
 
   // Haal alle lokale producten op
-  const { data: products, error } = await supabase
+  let pq = supabase
     .from("products")
     .select("id, sku, name, description, categories, image_url, weight_kg, shipping_class, personalization, product_variations(id, sku, image_url)")
     .order("name");
+  if (type) pq = pq.eq("process_type", type);
+  const { data: products, error } = await pq;
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const report: ImportReport = { updated: 0, unchanged: 0, notFound: 0, errors: [], changes: [] };
   const allProducts = (products ?? []) as any[];
+  const total = allProducts.length;
+  const batch = limit != null ? allProducts.slice(offset, offset + limit) : allProducts.slice(offset);
 
-  console.log(`[WooCommerce Import Meta] Start: ${allProducts.length} producten te controleren`);
+  console.log(`[WooCommerce Import Meta] Start: ${batch.length}/${total} producten (offset ${offset})`);
 
   // Haal alle WooCommerce categorieën op en bouw een map van id -> hiërarchisch pad
   const categoryMap = new Map<number, string>();
@@ -106,9 +116,9 @@ export async function POST(request: Request) {
   }
 
   // Loop door alle producten en haal metadata op uit WooCommerce
-  for (let i = 0; i < allProducts.length; i++) {
-    const p = allProducts[i];
-    console.log(`[WooCommerce Import Meta] ${i + 1}/${allProducts.length}: ${p.name} (${p.sku})`);
+  for (let i = 0; i < batch.length; i++) {
+    const p = batch[i];
+    console.log(`[WooCommerce Import Meta] ${offset + i + 1}/${total}: ${p.name} (${p.sku})`);
 
     try {
       // Zoek product in WooCommerce op basis van SKU
@@ -218,5 +228,6 @@ export async function POST(request: Request) {
 
   console.log(`[WooCommerce Import Meta] Voltooid: ${report.updated} bijgewerkt, ${report.unchanged} ongewijzigd, ${report.notFound} niet gevonden`);
 
-  return NextResponse.json(report);
+  const done = offset + batch.length >= total;
+  return NextResponse.json({ ...report, total, offset, processed: batch.length, nextOffset: done ? null : offset + batch.length, done });
 }
