@@ -462,117 +462,68 @@ export default function ProductsPage() {
     load();
   }
 
-  async function runImportMeta() {
-    if (!(await confirmDialog("Naam, beschrijving, categorieën, afbeeldingen, gewicht en verzendklasse van alle producten uit WooCommerce importeren en lokaal bijwerken? (De prijs blijft altijd vanuit de app komen.)"))) return;
-    setBusy(true);
-    setMessage(null);
-    setImportProgress(null);
-
-    try {
-      // Haal de producten op die geïmporteerd gaan worden
-      setImportProgress({ current: 0, total: 0, product: "Producten ophalen..." });
-      let query = supabase.from("products").select("id, sku, name").order("name");
-      if (activeTab !== "all") query = query.eq("process_type", activeTab);
-      const { data: productsToImport } = await query;
-      const total = productsToImport?.length ?? 0;
-
-      if (total === 0) {
-        setImportProgress(null);
-        setMessage("Geen producten om te importeren.");
-        setBusy(false);
-        return;
-      }
-
-      // Toon initiële voortgang
-      setImportProgress({ current: 0, total, product: "Verbinding maken met WooCommerce..." });
-
-      // Simuleer voortgang tijdens het importeren (elke 500ms een product verder)
-      let estimatedProgress = 0;
-      const progressInterval = setInterval(() => {
-        if (estimatedProgress < total - 1) {
-          estimatedProgress++;
-          const currentProduct = (productsToImport ?? [])[estimatedProgress] as any;
-          setImportProgress({
-            current: estimatedProgress,
-            total,
-            product: `${currentProduct?.name ?? "..."}`
-          });
-        }
-      }, 500);
-
-      try {
-        const { data } = await supabase.auth.getSession();
-        const res = await fetch("/api/woocommerce/import-meta", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token}` },
-        });
-
-        const body = await res.json();
-        clearInterval(progressInterval);
-
-        if (!res.ok) {
-          throw new Error(body.error ?? `Import mislukt (${res.status})`);
-        }
-
-        // Toon 100% voltooid
-        setImportProgress({ current: total, total, product: "Import voltooid!" });
-        setTimeout(() => setImportProgress(null), 1500);
-
-        const parts = [`${body.updated} bijgewerkt`, `${body.unchanged} ongewijzigd`, `${body.notFound} niet gevonden in WooCommerce`];
-        if (body.errors.length) parts.push(`fouten: ${body.errors.join("; ")}`);
-        if (body.changes?.length) parts.push(`details: ${body.changes.join(" | ")}`);
-        setMessage(`Import: ${parts.join(" -- ")}`);
-        load();
-      } catch (error) {
-        clearInterval(progressInterval);
-        throw error;
-      }
-    } catch (e: any) {
-      setMessage(e.message);
-      setImportProgress(null);
-    }
-    setBusy(false);
-  }
-
-  // Maakt WooCommerce-producten die nog niet lokaal bestaan (op SKU) hier aan, in batches (<100s elk).
-  async function runImportNew() {
+  // Importeren uit WooCommerce (gecombineerd): werkt bestaande producten bij (import-meta) én maakt
+  // ontbrekende producten lokaal aan (import-new). Beide in batches en gescoped op het actieve tabblad.
+  async function runImport() {
     setBusy(true);
     setMessage(null);
     setImportProgress(null);
     try {
       const { data: sess } = await supabase.auth.getSession();
       const authHeader = { "Content-Type": "application/json", Authorization: `Bearer ${sess.session?.access_token}` };
+      const scope = activeTab !== "all" ? { type: activeTab } : {};
 
-      setImportProgress({ current: 0, total: 0, product: "Ontbrekende producten zoeken..." });
-      const planRes = await fetch("/api/woocommerce/import-new", { method: "POST", headers: authHeader, body: JSON.stringify({ dryRun: true, ...(activeTab !== "all" ? { type: activeTab } : {}) }) });
+      // Preview: hoeveel ontbrekende producten zouden aangemaakt worden
+      setImportProgress({ current: 0, total: 0, product: "Analyseren..." });
+      const planRes = await fetch("/api/woocommerce/import-new", { method: "POST", headers: authHeader, body: JSON.stringify({ dryRun: true, ...scope }) });
       const plan = await planRes.json();
-      setImportProgress(null);
       if (!planRes.ok) throw new Error(plan.error ?? `Import mislukt (${planRes.status})`);
-      if (!plan.count) { setMessage("Geen ontbrekende producten: alles staat al lokaal."); setBusy(false); return; }
+      setImportProgress(null);
+      const newCount = plan.count ?? 0;
 
-      const names = (plan.toCreate ?? []).slice(0, 30).join(", ") + ((plan.toCreate?.length ?? 0) > 30 ? ", ..." : "");
-      if (!(await confirmDialog(`${plan.count} product(en) uit WooCommerce lokaal aanmaken?\n\n${names}\n\nPrijs en techniek worden als startwaarde overgenomen; verfijn ze daarna in de app en synchroniseer terug.`))) {
+      if (!(await confirmDialog(`Importeren uit WooCommerce${activeTab !== "all" ? " (actief tabblad)" : " (alle producten)"}?\n\n- Bestaande producten lokaal bijwerken (naam, beschrijving, categorieën, afbeeldingen, gewicht, verzendklasse)\n- ${newCount} nieuw(e) product(en) lokaal aanmaken\n\nDe prijs van bestaande producten blijft vanuit de app.`))) {
         setBusy(false);
         return;
       }
 
-      const created: string[] = [];
-      const errors: string[] = [];
+      // 1) Bestaande producten bijwerken (import-meta, offset-batched)
+      const meta = { updated: 0, unchanged: 0, notFound: 0, changes: [] as string[], errors: [] as string[] };
+      let offset = 0;
       for (let guard = 0; guard < 10000; guard++) {
-        const res = await fetch("/api/woocommerce/import-new", { method: "POST", headers: authHeader, body: JSON.stringify({ limit: 10, ...(activeTab !== "all" ? { type: activeTab } : {}) }) });
-        const body = await res.json();
-        if (!res.ok) throw new Error(body.error ?? `Import mislukt (${res.status})`);
-        created.push(...(body.created ?? []));
-        errors.push(...(body.errors ?? []));
-        setImportProgress({ current: created.length, total: plan.count, product: `Aanmaken... (${created.length}/${plan.count})` });
-        if (body.done || (body.created?.length ?? 0) === 0) break;
+        const res = await fetch("/api/woocommerce/import-meta", { method: "POST", headers: authHeader, body: JSON.stringify({ offset, limit: 12, ...scope }) });
+        const b = await res.json();
+        if (!res.ok) throw new Error(b.error ?? `Import mislukt (${res.status})`);
+        meta.updated += b.updated ?? 0;
+        meta.unchanged += b.unchanged ?? 0;
+        meta.notFound += b.notFound ?? 0;
+        meta.changes.push(...(b.changes ?? []));
+        meta.errors.push(...(b.errors ?? []));
+        const processed = (b.offset ?? offset) + (b.processed ?? 0);
+        setImportProgress({ current: processed, total: b.total ?? processed, product: `Bestaande bijwerken... (${processed}/${b.total ?? "?"})` });
+        if (b.done || b.nextOffset == null) break;
+        offset = b.nextOffset;
       }
 
-      setImportProgress({ current: plan.count, total: plan.count, product: "Import voltooid!" });
+      // 2) Ontbrekende producten aanmaken (import-new, done-based)
+      const created: string[] = [];
+      const newErrors: string[] = [];
+      for (let guard = 0; guard < 10000; guard++) {
+        const res = await fetch("/api/woocommerce/import-new", { method: "POST", headers: authHeader, body: JSON.stringify({ limit: 10, ...scope }) });
+        const b = await res.json();
+        if (!res.ok) throw new Error(b.error ?? `Import mislukt (${res.status})`);
+        created.push(...(b.created ?? []));
+        newErrors.push(...(b.errors ?? []));
+        setImportProgress({ current: created.length, total: newCount || created.length, product: `Nieuwe aanmaken... (${created.length}/${newCount})` });
+        if (b.done || (b.created?.length ?? 0) === 0) break;
+      }
+
+      setImportProgress({ current: 1, total: 1, product: "Import voltooid!" });
       setTimeout(() => setImportProgress(null), 1500);
-      const parts = [`${created.length} aangemaakt`];
-      if (errors.length) parts.push(`fouten: ${errors.join("; ")}`);
-      setMessage(`Nieuwe producten geïmporteerd: ${parts.join(" -- ")}`);
+      const parts = [`${meta.updated} bijgewerkt`, `${meta.unchanged} ongewijzigd`, `${created.length} nieuw aangemaakt`];
+      if (meta.notFound) parts.push(`${meta.notFound} niet in WooCommerce`);
+      const allErr = [...meta.errors, ...newErrors];
+      if (allErr.length) parts.push(`fouten: ${allErr.join("; ")}`);
+      setMessage(`Import uit WooCommerce: ${parts.join(" -- ")}`);
       load();
     } catch (e: any) {
       setMessage(e.message);
@@ -746,28 +697,23 @@ export default function ProductsPage() {
               <p className="muted" style={{ marginTop: 0, marginBottom: 8, fontSize: 12 }}>
                 WooCommerce → Lokale database
               </p>
-              <button className="btn secondary" disabled={busy} onClick={runImportMeta}>
-                📥 Productgegevens importeren uit WooCommerce
+              <button className="btn secondary" disabled={busy} onClick={runImport}>
+                📥 Importeren uit WooCommerce
               </button>
               <p className="muted" style={{ marginTop: 8, marginBottom: 0, fontSize: 12 }}>
-                Haalt naam, beschrijving, categorieën, afbeeldingen, gewicht en verzendklasse op uit WooCommerce en werkt de lokale database bij -- handig als je die rechtstreeks in WooCommerce hebt aangepast. Gebruik dit vóór je synchroniseert, anders overschrijft de sync die wijzigingen weer. De prijs komt altijd vanuit de app; die wordt hier nooit teruggehaald.
+                Werkt bestaande producten bij (naam, beschrijving, categorieën, afbeeldingen, gewicht, verzendklasse) én maakt producten die nog niet lokaal bestaan (op SKU) aan, inclusief varianten. Op een techniek-tabblad enkel die techniek; op "Alle" alles. De prijs van bestaande producten blijft vanuit de app; voor nieuwe producten wordt de WooCommerce-prijs als startwaarde overgenomen. Toont eerst een preview.
               </p>
-              <div style={{ marginTop: 12 }}>
-                <button className="btn secondary" disabled={busy} onClick={runImportNew}>
-                  ➕ Ontbrekende producten importeren uit WooCommerce
-                </button>
-                <p className="muted" style={{ marginTop: 8, marginBottom: 0, fontSize: 12 }}>
-                  Maakt producten die wél in WooCommerce staan maar nog niet lokaal (op SKU) hier aan, inclusief hun varianten. Op een techniek-tabblad importeert hij enkel die techniek (geraden uit de categorie); op "Alle" alles. Prijs en techniek worden als startwaarde overgenomen -- verfijn ze daarna in de app en synchroniseer terug.
-                </p>
-              </div>
-              <div style={{ marginTop: 12 }}>
-                <button className="btn secondary" disabled={busy} onClick={runMakeSimple}>
-                  🧹 Variabele producten simpel maken
-                </button>
-                <p className="muted" style={{ marginTop: 8, marginBottom: 0, fontSize: 12 }}>
-                  Verwijdert de varianten en maakt de producten van het actieve tabblad simpel -- lokaal én in WooCommerce. Handig voor bv. laser cutting dat per vergissing varianten heeft. Toont eerst een preview ter bevestiging.
-                </p>
-              </div>
+            </div>
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
+              <p className="muted" style={{ marginTop: 0, marginBottom: 8, fontSize: 12 }}>
+                Onderhoud
+              </p>
+              <button className="btn secondary" disabled={busy} onClick={runMakeSimple}>
+                🧹 Variabele producten simpel maken
+              </button>
+              <p className="muted" style={{ marginTop: 8, marginBottom: 0, fontSize: 12 }}>
+                Verwijdert de varianten en maakt de producten van het actieve tabblad simpel -- lokaal én in WooCommerce. Handig voor bv. laser cutting dat per vergissing varianten heeft. Toont eerst een preview ter bevestiging.
+              </p>
             </div>
           </>
         )}
