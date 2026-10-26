@@ -41,6 +41,8 @@ A **model is one folder** holding its files (sources, images, README/licence). T
 3. Give each model folder a clear English name (keep the designer's name for the model when it has one; no
    "files_v2_final"). If the target folder already exists, choose another name: never write into an existing model.
 4. Copy the files into the library. Keep licence/README/attribution files and preview images with the model.
+   Resin models: keep the pre-supported files and slicer projects (`.lys`, `.chitubox`, `.ctb`, ...) next to the
+   unsupported STLs in the same model folder; mention "resin" in the result note.
 5. When all items are done: rebuild the catalog (`python3 /volume1/MakerProducts/_catalog/tools/build_catalog.py`; it
    renders thumbnails for models without an image via render_thumbs.py), then `python3 /src/tools/maker/sync_catalog.py`.
 6. Report `ok` per item with where its models went (number of models + category).

@@ -63,11 +63,29 @@ Every model in the job must end with exactly one `result`. Notes are short and i
 2. **Every model without a document** (`has_doc` false): write `_catalog/products/<id>.json` following the runbook
    rules (English shop texts in the live templates, all laser products are DIY kits, variants, existing WooCommerce
    categories only, trademark flag, check the shop export for an existing product when one is available).
-   For 3D prints: Size S/M/L = 5/8/12 cm on the largest dimension; take dimensions from the STL bounding box.
+   For FDM 3D prints: Size S/M/L = 5/8/12 cm on the largest dimension; take dimensions from the STL bounding box.
+   For **resin** models see "Resin figures" below.
    **Already in the shop?** `/volume1/MakerProducts/_catalog/woo_products.json` is refreshed from WooCommerce right
    before every job (see `shop_export` in the job below; if it says the export failed, the file may be old or
    missing -- say so in the result note). Match on product name, image file names and SKU. When a model is already
    sold, fill `woo_existing` ({id, name, permalink}) and keep the shop text, as the runbook describes.
 3. Report the `result` for the model before moving on.
+
+## Resin figures (user decision 2026-10-26)
+- **Resin model** = the designer made it for resin: pre-supported files (`*supported*`, `*presupported*`), resin slicer
+  projects (`.lys`, `.chitubox`, `.ctb`, `.cbddlp`, `.pwmx`, `.goo`, `.prz`), or it is a detailed miniature/bust sold
+  for resin printing (e.g. the Chibi collection). When unsure, look at the README/description and the part sizes.
+- Sold **separately**, **unpainted**: its own product, name `<Name> Resin Figure (Unpainted)`, category
+  **3D Printing > Resin Figures** (new category, approved by the user; the WooCommerce sync creates it).
+  Product type **simple**: no size variants. The size is **the size the file is delivered in** (do not scale): measure
+  the STL bounding boxes and state the assembled height (or largest dimension) in the text, e.g. "approx. 75 mm tall".
+  Mention it is delivered unpainted (ready to prime and paint) and, when it has several parts, that it needs gluing.
+- Printers (build volume X x Y x Z mm), pick the **smallest that fits** every part (parts may be rotated):
+  Elegoo Saturn 3 Ultra 218 x 122 x 260 · Anycubic Photon M3 Max 298 x 164 x 300 · UniFormation GK3 Ultra 300 x 160 x 300.
+  If a part fits none of them, report the model `failed` with the dimensions.
+- `variations[0].production` for resin: `{"technology": "resin", "printer": "...", "presupported": true|false,
+  "files": ["<path of each file to print, prefer the pre-supported STL or the slicer project>"],
+  "size_mm": [x, y, z], "parts": n}`.
+- An FDM version of the same model stays a separate product (only make it when the job note asks for it).
 
 Finish with build/sync/publish, a final `progress` line in Dutch summarising the job, and stop.
