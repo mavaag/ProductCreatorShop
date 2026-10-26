@@ -41,7 +41,7 @@ export default function ProductFilesCard({ productId }: { productId: string }) {
     <div className="card" style={{ marginTop: 16 }}>
       <h2>Productiebestanden</h2>
       {folders === null ? <p className="muted">Laden...</p> : folders.length === 0 ? (
-        <p className="muted">Nog geen map gekoppeld. Plak hieronder het pad van de map op de NAS.</p>
+        <p className="muted">Nog geen map gekoppeld. Plak hieronder het pad van de map (of van één bestand) op de NAS.</p>
       ) : folders.map((f) => (
         <div key={f.path} style={{ marginBottom: 10 }}>
           <div className="muted" style={{ fontSize: 12 }}>
@@ -54,7 +54,7 @@ export default function ProductFilesCard({ productId }: { productId: string }) {
               </>
             )}
             {f.confirmed && f.source !== "catalog" && (
-              <> {" "}<button type="button" className="maker-name-btn" style={{ textDecoration: "underline" }} onClick={() => remove(f.path)}>ontkoppelen</button></>
+              <> {" "}<button type="button" className="link-btn" onClick={() => remove(f.path)}>ontkoppelen</button></>
             )}
           </div>
           <FolderBrowser path={f.path} title={f.path} />

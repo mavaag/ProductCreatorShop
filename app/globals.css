@@ -711,9 +711,12 @@ input[type="checkbox"] { accent-color: var(--magenta); }
 .production-check { margin: 2px 0 0; }
 .folder-browser { margin: 4px 0; }
 .folder-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: space-between; }
-.folder-row .maker-name-btn { font-family: var(--font-mono), monospace; font-size: 12.5px; text-align: left; word-break: break-all; }
+.folder-link { background: none; border: 0; padding: 0; cursor: pointer; color: var(--ink); font-family: var(--font-mono), monospace; font-size: 13px; text-align: left; word-break: break-all; }
+button.folder-link:hover { color: var(--cyan); }
+.link-btn { background: none; border: 0; padding: 0; cursor: pointer; font: inherit; color: var(--cyan); text-decoration: underline; }
+.link-btn:hover { color: var(--ink); }
 .folder-actions { display: flex; gap: 6px; }
 .folder-actions .btn, .folder-file .btn { padding: 3px 10px; font-size: 12px; }
 .folder-children { margin-left: 16px; padding-left: 10px; border-left: 1px dashed var(--line); }
-.folder-file { display: flex; align-items: center; gap: 10px; padding: 2px 0; font-size: 12.5px; }
+.folder-file { display: flex; align-items: center; gap: 10px; padding: 2px 0; font-size: 12.5px; color: var(--ink); }
 .folder-file .mono { flex: 1; min-width: 0; word-break: break-all; }
