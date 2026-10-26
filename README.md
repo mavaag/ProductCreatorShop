@@ -121,6 +121,8 @@ als kaartjes, met filters op techniek, categorie en "enkel snijklaar". Werkwijze
 1. **Selecteren** -- vink aan welke modellen je wil verkopen (bewaard in `maker_picks`).
 2. **Document** -- per geselecteerd model wordt een productdocument gemaakt (`_catalog/products/<id>.json` op de NAS:
    Engelse shoptekst, categorie, varianten zoals 3/6 mm en M/L of S/M/L, foto's, productiegegevens) en gepubliceerd.
+   Met de knop **"Laat de agent dit verwerken"** doet de MakerProducts-agent dat automatisch, inclusief 3 mm-platen
+   voor lasermodellen die nog niet snijklaar zijn (zie `maker-agent/README.md`; migratie `migration_019_maker_agent.sql`).
 3. **Maak product** -- maakt het product + alle varianten aan in de beheertool (als concept, niet gepubliceerd).
    Daarna vul je de prijsberekening in en synchroniseer je zoals altijd met WooCommerce.
 

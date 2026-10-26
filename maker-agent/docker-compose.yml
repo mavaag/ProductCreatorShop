@@ -1,0 +1,21 @@
+# Starten (eenmalig, op de NAS):
+#   sudo docker compose -f /volume1/Docker/product-app/src/maker-agent/docker-compose.yml up -d --build
+# Zie maker-agent/README.md.
+name: maker-agent
+services:
+  maker-agent:
+    build:
+      context: .
+      network: host
+    image: maker-agent:latest
+    container_name: maker-agent
+    restart: unless-stopped
+    network_mode: host  # Supabase (Kong) op localhost:8100
+    env_file: /volume1/Docker/maker-agent/agent.env  # CLAUDE_CODE_OAUTH_TOKEN (claude setup-token)
+    environment:
+      TZ: Europe/Brussels
+    volumes:
+      - /volume1/MakerProducts:/volume1/MakerProducts  # modellen + _catalog (lezen en schrijven)
+      - /volume1/Docker/supabase/.env:/volume1/Docker/supabase/.env:ro  # service-key voor tools/maker/supa.py
+      - /volume1/Docker/product-app/src:/src:ro  # de repo (agent-code, tools/maker), bijgehouden door auto-deploy
+      - /volume1/Docker/maker-agent/home:/home/agent  # Claude-instellingen, werkmap, logboeken

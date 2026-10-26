@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "defaultMode": "dontAsk",
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Write(//volume1/MakerProducts/**)",
+      "Edit(//volume1/MakerProducts/**)",
+      "Write(//home/agent/work/**)",
+      "Edit(//home/agent/work/**)",
+      "Bash(python3:*)",
+      "Bash(ls:*)",
+      "Bash(mkdir:*)",
+      "Bash(cp -n:*)",
+      "Bash(md5sum:*)",
+      "Bash(inkscape:*)",
+      "Bash(unzip -n:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(file:*)",
+      "Bash(du:*)"
+    ],
+    "deny": [
+      "Read(//volume1/Docker/**)",
+      "Bash(rm:*)",
+      "Bash(rmdir:*)",
+      "Bash(mv:*)",
+      "Bash(shred:*)",
+      "Bash(curl:*)",
+      "Bash(wget:*)",
+      "Bash(git:*)",
+      "Bash(docker:*)",
+      "Bash(sudo:*)",
+      "WebFetch",
+      "WebSearch"
+    ]
+  }
+}

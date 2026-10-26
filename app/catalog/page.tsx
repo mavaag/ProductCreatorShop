@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { Fragment, useEffect, useMemo, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
 import { PROCESS_TYPE_LABELS } from "@/lib/types";
 import { alertDialog, confirmDialog } from "@/components/DialogHost";
-import { MAKER_MODEL_COLUMNS, MakerDoc, MakerModel, MakerPick, createProductFromDoc } from "@/lib/maker";
+import { AGENT_ONLINE_MS, MAKER_MODEL_COLUMNS, MakerAgent, MakerDoc, MakerJob, MakerModel, MakerPick, createProductFromDoc } from "@/lib/maker";
 
 /** Stappen van een model: kiezen -> document (beschrijving, foto's, varianten) -> product in de beheertool. */
 type Stage = "all" | "picked" | "doc" | "ready" | "created" | "shop";
@@ -162,6 +162,7 @@ export default function CatalogPage() {
   if (!ready) return null;
 
   const readyIds = models.filter((m) => stageOf(m) === "ready").map((m) => m.id);
+  const titles = useMemo(() => new Map(models.map((m) => [m.id, m.title])), [models]);
 
   return (
     <div>
@@ -205,22 +206,24 @@ export default function CatalogPage() {
         </label>
       </div>
 
-      {(counts.doc > 0 || readyIds.length > 0) && (
+      {readyIds.length > 0 && (
         <div className="card" style={{ marginBottom: 16, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-          {counts.doc > 0 && (
-            <span className="muted" style={{ flex: 1, minWidth: 240 }}>
-              <b style={{ color: "var(--yellow)" }}>{counts.doc}</b> geselecteerd zonder productdocument -- vraag Claude om de
-              documenten te maken (beschrijving, foto&apos;s, varianten); ze verschijnen daarna hier vanzelf.
-            </span>
-          )}
-          {readyIds.length > 0 && (
-            <button className="btn" disabled={!!busy} onClick={() => makeProducts(readyIds)}>
-              Maak {readyIds.length} product{readyIds.length === 1 ? "" : "en"}
-            </button>
-          )}
+          <span className="muted" style={{ flex: 1, minWidth: 240 }}>
+            <b style={{ color: "var(--moss)" }}>{readyIds.length}</b> geselecteerd{readyIds.length === 1 ? " model" : "e modellen"} met een
+            productdocument -- klaar om als concept aan te maken in de beheertool.
+          </span>
+          <button className="btn" disabled={!!busy} onClick={() => makeProducts(readyIds)}>
+            Maak {readyIds.length} product{readyIds.length === 1 ? "" : "en"}
+          </button>
           {busy && <span className="muted">{busy}</span>}
         </div>
       )}
+
+      <AgentPanel
+        waiting={models.filter((m) => stageOf(m) === "doc")}
+        titles={titles}
+        onJobFinished={load}
+      />
 
       {error && <p className="warning">{error}</p>}
 
@@ -301,6 +304,185 @@ export default function CatalogPage() {
   );
 }
 
+const JOB_STATUS_LABELS: Record<MakerJob["status"], string> = {
+  queued: "In de wachtrij",
+  running: "Bezig",
+  done: "Klaar",
+  failed: "Mislukt",
+  cancelled: "Geannuleerd",
+};
+
+/**
+ * Opdrachten voor de MakerProducts-agent (Docker-container op de NAS, zie maker-agent/): geselecteerde modellen
+ * zonder document laten verwerken -- lasermodellen eerst 3 mm-platen voor de xTool M2 + LaserPecker LX2, dan het
+ * productdocument. De agent pikt de opdracht op, schrijft zijn voortgang terug in maker_jobs en publiceert zelf.
+ */
+function AgentPanel({ waiting, titles, onJobFinished }: {
+  waiting: MakerModel[];
+  titles: Map<string, string>;
+  onJobFinished: () => void;
+}) {
+  const [jobs, setJobs] = useState<MakerJob[]>([]);
+  const [agent, setAgent] = useState<MakerAgent | null>(null);
+  const [note, setNote] = useState("");
+  const [open, setOpen] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [, setTick] = useState(0); // herteken "x min geleden"
+
+  async function loadJobs() {
+    const [{ data: j, error: e1 }, { data: a }] = await Promise.all([
+      supabase.from("maker_jobs").select("*").order("created_at", { ascending: false }).limit(5),
+      supabase.from("maker_agent").select("seen_at, status, version").eq("id", 1).maybeSingle(),
+    ]);
+    if (e1) { setError(e1.message); return; }
+    const next = (j ?? []) as MakerJob[];
+    setJobs((prev) => {
+      // een opdracht die net afgerond is -> modellen opnieuw laden zodat de nieuwe documenten verschijnen
+      const finished = next.some((x) => (x.status === "done" || x.status === "failed") &&
+        prev.some((p) => p.id === x.id && (p.status === "running" || p.status === "queued")));
+      if (finished) setTimeout(onJobFinished, 0);
+      return next;
+    });
+    setAgent((a as MakerAgent | null) ?? null);
+    setError(null);
+  }
+
+  const active = jobs.some((j) => j.status === "queued" || j.status === "running");
+  useEffect(() => {
+    loadJobs();
+    const t = setInterval(() => { loadJobs(); setTick((x) => x + 1); }, active ? 15000 : 60000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
+
+  const inJob = new Set(jobs.filter((j) => j.status === "queued" || j.status === "running").flatMap((j) => j.model_ids));
+  const todo = waiting.filter((m) => !inJob.has(m.id));
+  const needPlates = todo.filter((m) => m.kind === "Lasercut" && (m.laser_ready ?? []).length === 0).length;
+  const online = !!agent?.seen_at && Date.now() - new Date(agent.seen_at).getTime() < AGENT_ONLINE_MS;
+
+  async function queue() {
+    const msg = `${todo.length} model${todo.length === 1 ? "" : "len"} door de agent laten verwerken?` +
+      (needPlates > 0 ? ` Voor ${needPlates} lasermodel${needPlates === 1 ? "" : "len"} worden eerst 3 mm-platen gemaakt (xTool M2 + LaserPecker LX2).` : "") +
+      " Dit kan een tijd duren en gebruikt je Claude-abonnement.";
+    if (!(await confirmDialog(msg, { confirmLabel: "Verwerken" }))) return;
+    const { error } = await supabase.from("maker_jobs").insert({ model_ids: todo.map((m) => m.id), note: note.trim() });
+    if (error) { setError(error.message); return; }
+    setNote("");
+    loadJobs();
+  }
+
+  async function cancel(job: MakerJob) {
+    const { error } = await supabase.from("maker_jobs")
+      .update({ status: "cancelled", finished_at: new Date().toISOString() })
+      .eq("id", job.id).eq("status", "queued");
+    if (error) setError(error.message);
+    loadJobs();
+  }
+
+  if (todo.length === 0 && jobs.length === 0) return null;
+
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <h2 style={{ margin: 0 }}>Agent</h2>
+        <span className={`prod-status${online ? " on" : ""}`}>
+          <i />
+          {online
+            ? `Agent actief${agent?.status ? ` -- ${agent.status}` : ""}`
+            : agent?.seen_at
+              ? `Agent niet actief (laatst gezien ${timeAgo(agent.seen_at)})`
+              : "Agent nog nooit gezien -- start de maker-agent container op de NAS"}
+        </span>
+      </div>
+
+      {todo.length > 0 && (
+        <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap", marginTop: 12 }}>
+          <p className="muted" style={{ flex: "1 1 100%", margin: 0 }}>
+            <b style={{ color: "var(--yellow)" }}>{todo.length}</b> geselecteerd zonder productdocument
+            {needPlates > 0 && <> (waarvan <b style={{ color: "var(--yellow)" }}>{needPlates}</b> lasermodellen zonder snijklare platen)</>}.
+            De agent maakt de platen (3 mm, xTool M2 + LaserPecker LX2), de shoptekst, de varianten en de foto&apos;s.
+          </p>
+          <div style={{ flex: 1, minWidth: 240 }}>
+            <label>Extra instructies voor de agent (optioneel)</label>
+            <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="bv. ook een 6 mm-versie maken van de lampen" />
+          </div>
+          <button className="btn" onClick={queue}>Laat de agent dit verwerken ({todo.length})</button>
+        </div>
+      )}
+
+      {error && <p className="warning">{error}</p>}
+
+      {jobs.length > 0 && (
+        <table style={{ marginTop: 12 }}>
+          <thead><tr><th>Opdracht</th><th>Status</th><th>Voortgang</th><th></th></tr></thead>
+          <tbody>
+            {jobs.map((j) => {
+              const res = Object.values(j.results ?? {});
+              const ok = res.filter((r) => r.status === "ok").length;
+              const bad = res.length - ok;
+              return (
+                <Fragment key={j.id}>
+                  <tr>
+                    <td className="mono">
+                      {new Date(j.created_at).toLocaleString("nl-BE", { dateStyle: "short", timeStyle: "short" })} · {j.model_ids.length} model{j.model_ids.length === 1 ? "" : "len"}
+                    </td>
+                    <td style={{ color: j.status === "failed" ? "var(--rust)" : j.status === "done" ? "var(--moss)" : j.status === "running" ? "var(--cyan)" : undefined }}>
+                      {JOB_STATUS_LABELS[j.status]}
+                    </td>
+                    <td className="muted">
+                      {res.length > 0 && <>{ok} gelukt{bad > 0 && <>, <span style={{ color: "var(--rust)" }}>{bad} niet</span></>} · </>}
+                      {j.progress}
+                    </td>
+                    <td style={{ whiteSpace: "nowrap" }}>
+                      <button className="btn secondary" onClick={() => setOpen(open === j.id ? null : j.id)}>{open === j.id ? "Verberg" : "Details"}</button>
+                      {j.status === "queued" && <button className="btn danger" style={{ marginLeft: 6 }} onClick={() => cancel(j)}>Annuleren</button>}
+                    </td>
+                  </tr>
+                  {open === j.id && (
+                    <tr>
+                      <td colSpan={4}>
+                        {j.note && <p className="muted" style={{ marginTop: 0 }}>Instructies: {j.note}</p>}
+                        <ul style={{ margin: 0, paddingLeft: 18 }}>
+                          {j.model_ids.map((id) => {
+                            const r = j.results?.[id];
+                            return (
+                              <li key={id}>
+                                {titles.get(id) ?? id}{" "}
+                                <span style={{ color: !r ? "var(--ink-faint)" : r.status === "ok" ? "var(--moss)" : "var(--rust)" }}>
+                                  {!r ? "-- nog niet verwerkt" : r.status === "ok" ? "-- gelukt" : r.status === "skipped" ? "-- overgeslagen" : "-- mislukt"}
+                                </span>
+                                {r?.note && <span className="muted"> ({r.note})</span>}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                        {j.log_tail && (
+                          <details>
+                            <summary className="muted">Logboek van de agent</summary>
+                            <pre className="mono" style={{ whiteSpace: "pre-wrap", fontSize: 12, maxHeight: 280, overflow: "auto" }}>{j.log_tail}</pre>
+                          </details>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+function timeAgo(iso: string): string {
+  const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (min < 1) return "zonet";
+  if (min < 60) return `${min} min geleden`;
+  const h = Math.round(min / 60);
+  return h < 48 ? `${h} u geleden` : `${Math.round(h / 24)} dagen geleden`;
+}
+
 function ModelDetail({ model, pick, busy, onClose, onToggle, onMake }: {
   model: MakerModel;
   pick: MakerPick | null;
@@ -363,7 +545,7 @@ function ModelDetail({ model, pick, busy, onClose, onToggle, onMake }: {
               <p className="muted">Document laden...</p>
             ) : !doc ? (
               <p className="muted">
-                Nog geen productdocument. {pick ? "Dit model is geselecteerd -- Claude maakt het document (beschrijving, foto's, varianten)." : "Selecteer dit model om er een document voor te laten maken."}
+                Nog geen productdocument. {pick ? "Dit model is geselecteerd -- laat het door de agent verwerken (knop bovenaan de pagina)." : "Selecteer dit model om er een document voor te laten maken."}
               </p>
             ) : (
               <>
