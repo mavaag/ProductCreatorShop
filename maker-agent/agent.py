@@ -6,7 +6,10 @@ en laat Claude Code die afwerken:
     eerst 3 mm-platen geven, dan per model een productdocument schrijven en publiceren;
   - soort 'inbox' (knop "Inbox verwerken"): volgens INBOX_PROMPT.md nieuwe bestanden uit _Inbox in de bibliotheek
     zetten. Wat lukte, verplaatst dit script daarna naar _Inbox/_verwerkt; dat wordt na INBOX_RETENTION_DAYS dagen
-    automatisch leeggemaakt (Claude zelf mag niets verplaatsen of verwijderen).
+    automatisch leeggemaakt (Claude zelf mag niets verplaatsen of verwijderen);
+  - soort 'split' (knop "Bundel opsplitsen"): volgens SPLIT_PROMPT.md een model dat eigenlijk een map met veel losse
+    modellen is, opsplitsen in submappen (Claude kopieert enkel). Lukte dat, dan zet dit script de bundel als
+    verzamelmap in _catalog/sources.json (met backup), bouwt de catalogus opnieuw en haalt het bundelkaartje weg.
 Claude draait in de modus "dontAsk": alleen wat in claude-settings.json toegelaten is mag, de rest wordt geweigerd.
 Na één opdracht (of na een uur zonder opdracht) stopt het script; de container start het opnieuw, zodat een
 nieuwe versie uit de repo (/src, bijgehouden door auto-deploy) vanzelf gebruikt wordt."""
@@ -27,7 +30,8 @@ POLL_S = 30
 IDLE_EXIT_S = 3600
 JOB_TIMEOUT_S = 6 * 3600
 TAIL_LINES = 60
-VERSION = '6'
+VERSION = '7'
+CATALOG = os.path.join(supa.MAKER_ROOT, '_catalog')
 
 status = {'text': 'wacht op opdrachten'}
 
@@ -158,23 +162,54 @@ def build_prompt(job, shop_note):
         data = {'job_id': jid, 'note': job['note'], 'then_process': job.get('then_process', False), 'inbox': INBOX,
                 'shop_export': shop_note, 'items': items, 'missing_items': missing}
         return prompt + '\n\n## This job\n```json\n' + json.dumps(data, indent=2, ensure_ascii=False) + '\n```\n', len(items), 'item'
-    rows = supa.rest('GET', 'maker_models?select=id,title,kind,path,laser_ready,has_doc&id=in.('
+    rows = supa.rest('GET', 'maker_models?select=id,title,kind,collection,category,path,laser_ready,has_doc&id=in.('
                      + ','.join(f'"{m}"' for m in job['model_ids']) + ')') or []
     info = {r['id']: r for r in rows}
     models = [info.get(m, {'id': m}) for m in job['model_ids']]
+    if job.get('kind') == 'split':
+        prompt = open(os.path.join(HERE, 'SPLIT_PROMPT.md'), encoding='utf-8').read()
+        data = {'job_id': jid, 'note': job['note'], 'root': supa.MAKER_ROOT, 'bundles': models}
+        return prompt + '\n\n## This job\n```json\n' + json.dumps(data, indent=2, ensure_ascii=False) + '\n```\n', len(models), 'bundel'
     prompt = open(os.path.join(HERE, 'AGENT_PROMPT.md'), encoding='utf-8').read()
     data = {'job_id': jid, 'note': job['note'], 'shop_export': shop_note, 'models': models}
     return prompt + '\n\n## This job\n```json\n' + json.dumps(data, indent=2, ensure_ascii=False) + '\n```\n', len(models), 'model'
 
 
+def register_bundle(model):
+    """Bundel als verzamelmap in sources.json zetten (de submappen worden de modellen) en het bundelkaartje weghalen.
+    Geeft een korte melding terug. Raakt geen bestanden in de bibliotheek aan, enkel sources.json (met backup)."""
+    rel = model['path']; base = os.path.join(supa.MAKER_ROOT, rel)
+    subs = sorted(d for d in os.listdir(base) if os.path.isdir(os.path.join(base, d)) and not d.startswith(('_', '.')))
+    if len(subs) < 2: return f'{rel}: maar {len(subs)} submap(pen), niet als bundel ingesteld'
+    src = os.path.join(CATALOG, 'sources.json')
+    sources = json.load(open(src, encoding='utf-8'))
+    backup = f'{src}.bak-{datetime.date.today():%Y%m%d}'
+    if not os.path.exists(backup): shutil.copy2(src, backup)
+    if rel not in sources.setdefault('_containers', []): sources['_containers'].append(rel)
+    category = model.get('category') or ''
+    for d in subs:
+        sources.setdefault(f'{rel}/{d}', {'collection': model.get('collection') or 'Vectors', 'category': category,
+                                          'bundle': model.get('title') or os.path.basename(rel)})
+    tmp = src + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f: json.dump(sources, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, src)
+    # het bundelkaartje zelf verdwijnt uit de catalogus; ook uit Supabase halen als er niets aan hangt
+    mid = model['id']
+    pick = supa.rest('GET', f'maker_picks?model_id=eq.{mid}&select=product_id') or []
+    if not model.get('has_doc') and not any(p.get('product_id') for p in pick):
+        supa.rest('DELETE', f'maker_picks?model_id=eq.{mid}', prefer='return=minimal')
+        supa.rest('DELETE', f'maker_models?id=eq.{mid}', prefer='return=minimal')
+    return f'{rel}: {len(subs)} modellen als aparte kaartjes in de catalogus'
+
+
 def run_job(job):
-    jid = job['id']; inbox_job = job.get('kind') == 'inbox'
+    jid = job['id']; inbox_job = job.get('kind') == 'inbox'; split_job = job.get('kind') == 'split'
     os.makedirs(WORK, exist_ok=True); os.makedirs(LOGS, exist_ok=True)
     # actuele shoplijst, zodat de agent kan nakijken of een model al in de shop staat
     r = subprocess.run(['python3', os.path.join(HERE, 'woo_export.py')], capture_output=True, text=True)
     shop_note = ((r.stdout + r.stderr).strip().splitlines()[-1:] or ['woo_export: geen uitvoer'])[0]
     prompt, n, what = build_prompt(job, shop_note)
-    status['text'] = f'bezig met {"inbox-" if inbox_job else ""}opdracht ({n} {what}{"" if n == 1 else "s"})'
+    status['text'] = f'bezig met {"inbox-" if inbox_job else "opsplits-" if split_job else ""}opdracht ({n} {what}{"" if n == 1 else "s"})'
     tail = []
     cmd = ['claude', '-p', prompt, '--output-format', 'stream-json', '--verbose',
            '--model', os.environ.get('MAKER_AGENT_MODEL', 'opus'), '--permission-mode', 'dontAsk',
@@ -196,6 +231,18 @@ def run_job(job):
                 except Exception: pass
         code = p.wait(); timer.cancel()
     if time.time() - started >= JOB_TIMEOUT_S: tail.append('== afgebroken: opdracht duurde langer dan 6 uur')
+
+    if split_job:   # gelukte bundels als verzamelmap instellen en de catalogus opnieuw bouwen
+        res = (supa.rest('GET', f'maker_jobs?id=eq.{jid}&select=results')[0]['results']) or {}
+        bundles = supa.rest('GET', 'maker_models?select=id,title,collection,category,path,has_doc&id=in.('
+                            + ','.join(f'"{m}"' for m in job['model_ids']) + ')') or []
+        done = [b for b in bundles if res.get(b['id'], {}).get('status') == 'ok']
+        for b in done:
+            try: tail.append(register_bundle(b))
+            except Exception as e: tail.append(f'bundel {b["path"]} instellen mislukt: {e}')
+        if done:
+            r = subprocess.run(['python3', os.path.join(CATALOG, 'tools', 'build_catalog.py')], capture_output=True, text=True)
+            tail.extend((r.stdout + r.stderr).strip().splitlines()[-2:])
 
     # vangnet: catalogus + documenten publiceren, ook als Claude dat zelf al deed (beide scripts slaan ongewijzigde over)
     for script in ('sync_catalog.py', 'publish_docs.py'):

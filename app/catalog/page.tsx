@@ -51,6 +51,7 @@ export default function CatalogPage() {
   const [shown, setShown] = useState(PAGE_SIZE);
   const [openId, setOpenId] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [jobsKey, setJobsKey] = useState(0);
   // tab "Klaar om aan te maken": welke modellen je nu als product wil aanmaken (niet bewaard)
   const [toMake, setToMake] = useState<Set<string>>(new Set());
   // per model zelf gekozen WooCommerce-categorie (anders de voorgestelde uit het document); geldt bij "Maak product"
@@ -157,6 +158,17 @@ export default function CatalogPage() {
     const { error } = await supabase.from("maker_picks").insert(add);
     if (error) setError(error.message);
     load();
+  }
+
+  /** Bundel (map met veel losse modellen) door de agent laten opsplitsen in één submap per model. */
+  async function splitBundle(m: MakerModel) {
+    const msg = `"${m.title}" door de agent laten opsplitsen? Hij kopieert de bestanden per model naar een eigen submap ` +
+      "(er wordt niets verplaatst of verwijderd). Daarna verschijnt elk model als apart kaartje en verdwijnt dit kaartje.";
+    if (!(await confirmDialog(msg, { confirmLabel: "Opsplitsen" }))) return;
+    const { error } = await supabase.from("maker_jobs").insert({ kind: "split", model_ids: [m.id], note: "" });
+    if (error) { setError(error.message); return; }
+    setOpenId(null);
+    setJobsKey((k) => k + 1);   // agentpaneel meteen herladen, zodat de opdracht er staat
   }
 
   async function makeProducts(ids: string[]) {
@@ -270,6 +282,7 @@ export default function CatalogPage() {
       )}
 
       <AgentPanel
+        key={jobsKey}
         waiting={models.filter((m) => stageOf(m) === "doc")}
         titles={titles}
         onJobFinished={load}
@@ -353,6 +366,7 @@ export default function CatalogPage() {
           onClose={() => setOpenId(null)}
           onToggle={() => togglePick(models.find((m) => m.id === openId)!)}
           onMake={() => makeProducts([openId])}
+          onSplit={() => splitBundle(models.find((m) => m.id === openId)!)}
           link={links.get(openId)}
           onLinked={load}
           category={categoryChoice.get(openId)}
@@ -542,6 +556,7 @@ function AgentPanel({ waiting, titles, onJobFinished }: {
           <tbody>
             {jobs.map((j) => {
               const isInbox = j.kind === "inbox";
+              const isSplit = j.kind === "split";
               const keys = isInbox ? (j.items ?? []) : j.model_ids;
               // inbox-opdracht: resultaten per inbox-item, plus eventueel per nieuw model (bij "daarna meteen verwerken")
               const extra = isInbox ? Object.keys(j.results ?? {}).filter((k) => !keys.includes(k)) : [];
@@ -553,7 +568,7 @@ function AgentPanel({ waiting, titles, onJobFinished }: {
                   <tr>
                     <td className="mono">
                       {new Date(j.created_at).toLocaleString("nl-BE", { dateStyle: "short", timeStyle: "short" })} ·{" "}
-                      {isInbox ? `Inbox, ${keys.length} item${keys.length === 1 ? "" : "s"}` : `${keys.length} model${keys.length === 1 ? "" : "len"}`}
+                      {isInbox ? `Inbox, ${keys.length} item${keys.length === 1 ? "" : "s"}` : isSplit ? "Bundel opsplitsen" : `${keys.length} model${keys.length === 1 ? "" : "len"}`}
                     </td>
                     <td style={{ color: j.status === "failed" ? "var(--rust)" : j.status === "done" ? "var(--moss)" : j.status === "running" ? "var(--cyan)" : undefined }}>
                       {JOB_STATUS_LABELS[j.status]}
@@ -729,13 +744,14 @@ function timeAgo(iso: string): string {
   return h < 48 ? `${h} u geleden` : `${Math.round(h / 24)} dagen geleden`;
 }
 
-function ModelDetail({ model, pick, busy, onClose, onToggle, onMake, link, onLinked, category, wcCategories, onCategory }: {
+function ModelDetail({ model, pick, busy, onClose, onToggle, onMake, onSplit, link, onLinked, category, wcCategories, onCategory }: {
   model: MakerModel;
   pick: MakerPick | null;
   busy: boolean;
   onClose: () => void;
   onToggle: () => void;
   onMake: () => void;
+  onSplit: () => void;
   link: MakerWooLink | undefined;
   onLinked: () => void;
   /** zelf gekozen categorie; undefined = de voorgestelde uit het document */
@@ -879,6 +895,11 @@ function ModelDetail({ model, pick, busy, onClose, onToggle, onMake, link, onLin
                 <>
                   <button className="btn" disabled={busy || !doc || !!shopId} title={shopId ? "Staat al in de shop -- ontkoppel eerst als je toch een nieuw product wil" : undefined} onClick={onMake}>Maak product</button>
                   {!doc && <button className="btn secondary" onClick={onToggle}>{pick ? "Uit selectie halen" : "Selecteren"}</button>}
+                  {!doc && (
+                    <button className="btn secondary" onClick={onSplit} title="Map met veel verschillende modellen? Laat de agent ze in aparte submappen zetten.">
+                      Bundel opsplitsen
+                    </button>
+                  )}
                 </>
               )}
             </div>
