@@ -52,6 +52,9 @@ export default function CatalogPage() {
   const [busy, setBusy] = useState<string | null>(null);
   // tab "Klaar om aan te maken": welke modellen je nu als product wil aanmaken (niet bewaard)
   const [toMake, setToMake] = useState<Set<string>>(new Set());
+  // per model zelf gekozen WooCommerce-categorie (anders de voorgestelde uit het document); geldt bij "Maak product"
+  const [categoryChoice, setCategoryChoice] = useState<Map<string, string>>(new Map());
+  const [wcCategories, setWcCategories] = useState<string[]>([]);
 
   async function load() {
     setLoading(true);
@@ -70,8 +73,18 @@ export default function CatalogPage() {
   }
 
   useEffect(() => {
-    if (ready) load();
+    if (ready) { load(); loadWooCategories(); }
   }, [ready]);
+
+  async function loadWooCategories() {
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const res = await fetch("/api/woocommerce/categories", { headers: { Authorization: `Bearer ${session.session?.access_token}` } });
+      if (res.ok) setWcCategories((await res.json()).categories ?? []);
+    } catch {
+      // geen lijst: je kan de categorie nog altijd zelf typen
+    }
+  }
 
   useEffect(() => setShown(PAGE_SIZE), [stage, kind, category, search, onlyReady, onlyTrademark]);
 
@@ -159,7 +172,7 @@ export default function CatalogPage() {
     for (const [i, row] of (data ?? []).entries()) {
       setBusy(`Product ${i + 1}/${data!.length} aanmaken...`);
       try {
-        lastId = await createProductFromDoc(supabase, row.doc as MakerDoc);
+        lastId = await createProductFromDoc(supabase, row.doc as MakerDoc, { categories: categoryChoice.get(row.id) });
       } catch (e: any) {
         failed.push(`${(row.doc as MakerDoc)?.product?.name ?? row.id}: ${e.message ?? e}`);
       }
@@ -337,6 +350,13 @@ export default function CatalogPage() {
           onClose={() => setOpenId(null)}
           onToggle={() => togglePick(models.find((m) => m.id === openId)!)}
           onMake={() => makeProducts([openId])}
+          category={categoryChoice.get(openId)}
+          wcCategories={wcCategories}
+          onCategory={(c) => {
+            const next = new Map(categoryChoice);
+            if (c === null) next.delete(openId); else next.set(openId, c);
+            setCategoryChoice(next);
+          }}
         />
       )}
     </div>
@@ -593,13 +613,17 @@ function timeAgo(iso: string): string {
   return h < 48 ? `${h} u geleden` : `${Math.round(h / 24)} dagen geleden`;
 }
 
-function ModelDetail({ model, pick, busy, onClose, onToggle, onMake }: {
+function ModelDetail({ model, pick, busy, onClose, onToggle, onMake, category, wcCategories, onCategory }: {
   model: MakerModel;
   pick: MakerPick | null;
   busy: boolean;
   onClose: () => void;
   onToggle: () => void;
   onMake: () => void;
+  /** zelf gekozen categorie; undefined = de voorgestelde uit het document */
+  category: string | undefined;
+  wcCategories: string[];
+  onCategory: (c: string | null) => void;
 }) {
   const [doc, setDoc] = useState<MakerDoc | null>(null);
   const [loadingDoc, setLoadingDoc] = useState(model.has_doc);
@@ -666,10 +690,33 @@ function ModelDetail({ model, pick, busy, onClose, onToggle, onMake }: {
                 )}
                 <div className="prod-cats" style={{ marginTop: 0 }}>
                   <span className="pill cyan">{PROCESS_TYPE_LABELS[doc.product.process_type]}</span>
-                  <span className="pill">{doc.product.categories}</span>
+                  <span className="pill">{category ?? doc.product.categories}</span>
                   <span className="pill">{doc.product.type === "simple" ? "simpel" : `${doc.variations.length} varianten`}</span>
                   <span className="pill mono">{doc.product.sku_base}</span>
                 </div>
+                {!pick?.product_id && !doc.woo_existing && (
+                  <div style={{ marginBottom: 12 }}>
+                    <label>WooCommerce-categorie</label>
+                    <input
+                      list="maker-wc-categories"
+                      value={category ?? doc.product.categories}
+                      onChange={(e) => onCategory(e.target.value === doc.product.categories ? null : e.target.value)}
+                      placeholder="bv. 3D Printing > Figurines"
+                    />
+                    <datalist id="maker-wc-categories">
+                      {wcCategories.map((c) => <option key={c} value={c} />)}
+                    </datalist>
+                    <span className="muted">
+                      {category === undefined
+                        ? "Voorgesteld door de agent. Pas aan als het product ergens anders moet staan; geldt bij Maak product."
+                        : <>Zelf gekozen (voorgesteld: {doc.product.categories}).{" "}
+                            <button type="button" className="maker-name-btn" style={{ textDecoration: "underline" }} onClick={() => onCategory(null)}>Terugzetten</button>
+                            {category.trim() && !wcCategories.includes(category.trim()) && wcCategories.length > 0 &&
+                              <span style={{ color: "var(--yellow)" }}> Deze categorie bestaat nog niet in WooCommerce; de sync maakt ze aan.</span>}
+                          </>}
+                    </span>
+                  </div>
+                )}
                 {doc.woo_existing && (
                   <p className="warning">
                     Staat al in WooCommerce als #{doc.woo_existing.id} &quot;{doc.woo_existing.name}&quot; ({doc.woo_existing.type}, €{doc.woo_existing.price}).
