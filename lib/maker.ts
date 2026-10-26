@@ -96,3 +96,23 @@ export async function createProductFromDoc(supabase: SupabaseClient, doc: MakerD
   if (pickError) throw pickError;
   return product.id as string;
 }
+
+/** Opdracht voor de MakerProducts-agent op de NAS (tabel maker_jobs, zie maker-agent/). */
+export type MakerJob = {
+  id: string;
+  status: "queued" | "running" | "done" | "failed" | "cancelled";
+  model_ids: string[];
+  note: string;
+  progress: string;
+  results: Record<string, { status: "ok" | "failed" | "skipped"; note: string }>;
+  log_tail: string;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+};
+
+/** Hartslag van de agent (tabel maker_agent, één rij). */
+export type MakerAgent = { seen_at: string | null; status: string; version: string };
+
+/** De agent schrijft elke minuut een hartslag; langer dan 5 minuten stil = waarschijnlijk niet actief. */
+export const AGENT_ONLINE_MS = 5 * 60 * 1000;
