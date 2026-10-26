@@ -121,7 +121,7 @@ export type MakerJob = {
   id: string;
   status: "queued" | "running" | "done" | "failed" | "cancelled";
   /** models = geselecteerde modellen verwerken; inbox = nieuwe bestanden uit _Inbox in de bibliotheek zetten */
-  kind?: "models" | "inbox";
+  kind?: "models" | "inbox" | "split";
   model_ids: string[];
   items?: string[];
   then_process?: boolean;
