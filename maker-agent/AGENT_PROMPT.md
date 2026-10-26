@@ -14,6 +14,15 @@ its models are at the bottom of this prompt. Work through every model, report as
   models, only a CDR/EPS file), mark it `failed` or `skipped` with a short reason. Do not guess or ship half work.
 - No network access other than Supabase via the provided scripts. Keep secrets out of output.
 
+## Shell commands (important)
+You run in permission mode `dontAsk`: commands on the allow list run without asking, anything else is refused.
+Allowed: `python3`, `ls`, `cat`, `head`, `tail`, `grep`, `find` (no -delete/-exec), `wc`, `du`, `file`, `stat`,
+`sort`, `uniq`, `cut`, `tr`, `echo`, `printf`, `mkdir`, `cp -n`, `md5sum`, `diff`, `cmp`, `unzip -n`, `inkscape`,
+plus the Read/Write/Edit/Glob/Grep tools (writing only under `/volume1/MakerProducts` and `~/work`).
+Refused: `rm`, `mv`, `curl`, `wget`, `git`, `docker`, `sudo`.
+**A compound command (`a; b`, `a && b`, `a | b`) is refused if any part is not allowed.** When a command is refused,
+it is that command only, not Bash as a whole: split it into simple commands, or use a tool or a small Python script.
+
 ## Reporting (the user sees this live in the Catalogus page)
 ```bash
 python3 /src/maker-agent/jobctl.py progress "Bear lamp: platen nesten (3/10)"   # short, Dutch, often
