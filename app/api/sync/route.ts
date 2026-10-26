@@ -107,7 +107,7 @@ export async function POST(request: Request) {
 
   let query = supabase
     .from("products")
-    .select("id, sku, name, published, last_exported_published, attribute_names, default_attribute_values, description, categories, image_url, weight_kg, shipping_class, personalization, product_variations(id, sku, attribute_values, suggested_price, image_url)")
+    .select("id, sku, name, published, last_exported_published, attribute_names, default_attribute_values, description, short_description, categories, image_url, weight_kg, shipping_class, personalization, product_variations(id, sku, attribute_values, suggested_price, image_url)")
     .order("name");
   if (type) query = query.eq("process_type", type);
   if (productIds) query = query.in("id", productIds);
@@ -402,6 +402,7 @@ async function createProduct(wc: WcFn, base: string, p: any, report: Report, cat
     description: p.description ?? "",
     categories: categoryIds,
   };
+  if (p.short_description) payload.short_description = p.short_description; // leeg = korte beschrijving in WooCommerce ongemoeid laten
   if (simple) {
     const price = variations[0]?.suggested_price;
     if (price != null) payload.regular_price = Number(price).toFixed(2);
@@ -497,6 +498,7 @@ async function updateProductMetadata(
       description: p.description ?? "",
       categories: categoryIds,
     };
+    if (p.short_description) payload.short_description = p.short_description; // leeg = korte beschrijving in WooCommerce ongemoeid laten
     if (p.weight_kg != null) payload.weight = String(p.weight_kg);
     if (p.shipping_class) payload.shipping_class = p.shipping_class;
     if (images.length > 0) payload.images = images;
