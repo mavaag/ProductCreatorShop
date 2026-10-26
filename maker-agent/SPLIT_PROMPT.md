@@ -7,7 +7,7 @@ subfolder, report, and stop. The bundle is at the bottom of this prompt.
 
 ## Hard rules
 - **Never delete, move, rename or overwrite anything.** You only **create new subfolders directly inside the bundle
-  folder** and **copy** files into them (`cp -n`, or Python `shutil.copy2` to paths that do not exist yet). The loose
+  folder** and **copy** files into them (copy with a small Python script (`shutil.copy2` / `shutil.copytree`) to paths that do not exist yet -- `cp` is refused by the shell sandbox for paths outside the work folder, so do not try it first). The loose
   files stay where they are.
 - Do **not** edit `_catalog/sources.json` or run `build_catalog.py`: after you finish, the agent script registers
   the bundle as a container (its subfolders become the catalog models), rebuilds the catalog and syncs it. It only

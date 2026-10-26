@@ -7,12 +7,12 @@ that it shows up in the catalog, report per item, then stop.
 
 ## Hard rules
 - **Never delete, move, rename or overwrite anything.** Not in the library and not in the Inbox: you only **copy**
-  (`cp -n -r`, or Python `shutil.copy2`/`copytree` to paths that do not exist yet). The agent script moves the items you
+  (copy with a small Python script (`shutil.copy2` / `shutil.copytree`) to paths that do not exist yet -- `cp` is refused by the shell sandbox for paths outside the work folder, so do not try it first). The agent script moves the items you
   report as `ok` to `_Inbox/_verwerkt` after you finish; items you report `failed`/`skipped` stay in the Inbox.
 - Shell commands that are not on the allow list are refused; do not try to get around that. A refused command is
   only that command: split compound commands, or use a small Python script.
   Allowed: `python3`, `ls`, `cat`, `head`, `tail`, `grep`, `find` (no -delete/-exec), `wc`, `du`, `file`, `stat`, `sort`,
-  `uniq`, `cut`, `tr`, `echo`, `printf`, `mkdir`, `cp -n`, `cp -n -r`, `md5sum`, `diff`, `cmp`, `unzip -n`, `7zz x`, `unrar x`,
+  `uniq`, `cut`, `tr`, `echo`, `printf`, `mkdir`, `md5sum`, `diff`, `cmp`, `unzip -n`, `7zz x`, `unrar x`,
   `inkscape`, plus Read/Write/Edit (writing only under `/volume1/MakerProducts` and `~/work`).
 - Do not process adult/NSFW content: report it `skipped`. Items that are not models (installers, random documents):
   `skipped` with the reason.
