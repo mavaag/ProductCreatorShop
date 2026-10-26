@@ -357,6 +357,8 @@ function AgentPanel({ waiting, titles, onJobFinished }: {
   const [jobs, setJobs] = useState<MakerJob[]>([]);
   const [agent, setAgent] = useState<MakerAgent | null>(null);
   const [note, setNote] = useState("");
+  const [inboxNote, setInboxNote] = useState("");
+  const [thenProcess, setThenProcess] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [, setTick] = useState(0); // herteken "x min geleden"
@@ -364,7 +366,7 @@ function AgentPanel({ waiting, titles, onJobFinished }: {
   async function loadJobs() {
     const [{ data: j, error: e1 }, { data: a }] = await Promise.all([
       supabase.from("maker_jobs").select("*").order("created_at", { ascending: false }).limit(5),
-      supabase.from("maker_agent").select("seen_at, status, version").eq("id", 1).maybeSingle(),
+      supabase.from("maker_agent").select("*").eq("id", 1).maybeSingle(),
     ]);
     if (e1) { setError(e1.message); return; }
     const next = (j ?? []) as MakerJob[];
@@ -391,6 +393,22 @@ function AgentPanel({ waiting, titles, onJobFinished }: {
   const todo = waiting.filter((m) => !inJob.has(m.id));
   const needPlates = todo.filter((m) => m.kind === "Lasercut" && (m.laser_ready ?? []).length === 0).length;
   const online = !!agent?.seen_at && Date.now() - new Date(agent.seen_at).getTime() < AGENT_ONLINE_MS;
+  const inInboxJob = new Set(jobs.filter((j) => j.status === "queued" || j.status === "running").flatMap((j) => j.items ?? []));
+  const inbox = (agent?.inbox ?? []).filter((i) => !inInboxJob.has(i.name));
+  const inboxReady = inbox.filter((i) => i.ready);
+
+  async function queueInbox() {
+    const msg = `${inboxReady.length} item${inboxReady.length === 1 ? "" : "s"} uit de Inbox in de bibliotheek laten zetten?` +
+      (thenProcess ? " Daarna maakt de agent meteen platen en productdocumenten voor de nieuwe modellen." : "") +
+      " Wat lukt, gaat daarna naar _Inbox/_verwerkt.";
+    if (!(await confirmDialog(msg, { confirmLabel: "Verwerken" }))) return;
+    const { error } = await supabase.from("maker_jobs").insert({
+      kind: "inbox", model_ids: [], items: inboxReady.map((i) => i.name), note: inboxNote.trim(), then_process: thenProcess,
+    });
+    if (error) { setError(error.message); return; }
+    setInboxNote("");
+    loadJobs();
+  }
 
   async function queue() {
     const msg = `${todo.length} model${todo.length === 1 ? "" : "len"} door de agent laten verwerken?` +
@@ -447,6 +465,43 @@ function AgentPanel({ waiting, titles, onJobFinished }: {
         </div>
       )}
 
+      <div style={{ borderTop: "1px solid var(--line, #2a2f55)", marginTop: 14, paddingTop: 12 }}>
+        <h3 style={{ margin: "0 0 6px" }}>Inbox</h3>
+        <p className="muted" style={{ margin: 0 }}>
+          Nieuwe modellen (bestanden, mappen, zip/rar) zet je in <span className="mono">\\NASMAT\MakerProducts\_Inbox</span>.
+          De agent zet ze op de juiste plek in de bibliotheek; wat lukt, gaat naar <span className="mono">_Inbox\_verwerkt</span>.
+          {agent?.inbox_info && <> {agent.inbox_info}.</>}
+        </p>
+        {inbox.length === 0 ? (
+          <p className="muted" style={{ margin: "8px 0 0" }}>{agent?.inbox ? "De Inbox is leeg." : "Nog geen gegevens van de agent over de Inbox."}</p>
+        ) : (
+          <>
+            <ul style={{ margin: "8px 0", paddingLeft: 18 }}>
+              {inbox.map((i) => (
+                <li key={i.name}>
+                  <span className="mono">{i.name}</span>{" "}
+                  <span className="muted">
+                    ({i.kind === "folder" ? `map, ${i.files} bestand${i.files === 1 ? "" : "en"}` : "bestand"}, {formatSize(i.size)})
+                    {!i.ready && " -- wordt nog gekopieerd..."}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+              <div style={{ flex: 1, minWidth: 240 }}>
+                <label>Instructies voor de agent (optioneel)</label>
+                <input value={inboxNote} onChange={(e) => setInboxNote(e.target.value)} placeholder="bv. dit zijn allemaal lampen van één ontwerper" />
+              </div>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 0 10px" }}>
+                <input type="checkbox" style={{ width: "auto" }} checked={thenProcess} onChange={(e) => setThenProcess(e.target.checked)} />
+                Daarna meteen platen + documenten maken
+              </label>
+              <button className="btn" disabled={inboxReady.length === 0} onClick={queueInbox}>Inbox verwerken ({inboxReady.length})</button>
+            </div>
+          </>
+        )}
+      </div>
+
       {error && <p className="warning">{error}</p>}
 
       {jobs.length > 0 && (
@@ -454,14 +509,19 @@ function AgentPanel({ waiting, titles, onJobFinished }: {
           <thead><tr><th>Opdracht</th><th>Status</th><th>Voortgang</th><th></th></tr></thead>
           <tbody>
             {jobs.map((j) => {
-              const res = Object.values(j.results ?? {});
+              const isInbox = j.kind === "inbox";
+              const keys = isInbox ? (j.items ?? []) : j.model_ids;
+              // inbox-opdracht: resultaten per inbox-item, plus eventueel per nieuw model (bij "daarna meteen verwerken")
+              const extra = isInbox ? Object.keys(j.results ?? {}).filter((k) => !keys.includes(k)) : [];
+              const res = keys.map((k) => j.results?.[k]).filter(Boolean) as { status: string }[];
               const ok = res.filter((r) => r.status === "ok").length;
               const bad = res.length - ok;
               return (
                 <Fragment key={j.id}>
                   <tr>
                     <td className="mono">
-                      {new Date(j.created_at).toLocaleString("nl-BE", { dateStyle: "short", timeStyle: "short" })} · {j.model_ids.length} model{j.model_ids.length === 1 ? "" : "len"}
+                      {new Date(j.created_at).toLocaleString("nl-BE", { dateStyle: "short", timeStyle: "short" })} ·{" "}
+                      {isInbox ? `Inbox, ${keys.length} item${keys.length === 1 ? "" : "s"}` : `${keys.length} model${keys.length === 1 ? "" : "len"}`}
                     </td>
                     <td style={{ color: j.status === "failed" ? "var(--rust)" : j.status === "done" ? "var(--moss)" : j.status === "running" ? "var(--cyan)" : undefined }}>
                       {JOB_STATUS_LABELS[j.status]}
@@ -480,7 +540,7 @@ function AgentPanel({ waiting, titles, onJobFinished }: {
                       <td colSpan={4}>
                         {j.note && <p className="muted" style={{ marginTop: 0 }}>Instructies: {j.note}</p>}
                         <ul style={{ margin: 0, paddingLeft: 18 }}>
-                          {j.model_ids.map((id) => {
+                          {[...keys, ...extra].map((id) => {
                             const r = j.results?.[id];
                             return (
                               <li key={id}>
@@ -510,6 +570,12 @@ function AgentPanel({ waiting, titles, onJobFinished }: {
       )}
     </div>
   );
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} kB`;
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
 }
 
 function timeAgo(iso: string): string {

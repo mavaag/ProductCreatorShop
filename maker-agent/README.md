@@ -36,6 +36,14 @@ container opnieuw bouwen (stap 5).
    ```
    De eerste keer duurt dat enkele minuten. Daarna zie je in de Catalogus "Agent actief".
 
+## Inbox
+Nieuwe modellen (bestanden, mappen, zip/rar) zet je in `\\NASMAT\MakerProducts\_Inbox`. De agent toont ze in de
+Catalogus (blok Agent > Inbox); met **Inbox verwerken** zet Claude ze op de juiste plek in de bibliotheek
+(`INBOX_PROMPT.md`), bouwt de catalogus opnieuw en synchroniseert. Optioneel maakt hij daarna meteen platen en
+documenten. Claude kopieert alleen; `agent.py` verplaatst daarna de gelukte items naar `_Inbox/_verwerkt`, en ruimt
+die map automatisch op: items die er langer dan `INBOX_RETENTION_DAYS` dagen (standaard 14) staan, worden verwijderd.
+Mislukte items blijven in de Inbox staan. Migratie: `supabase/migration_020_maker_inbox.sql`.
+
 ## Beheer
 - Logboek van de container: `sudo docker logs -f maker-agent`, of Portainer > Containers > maker-agent > Logs.
 - Volledige log per opdracht: `/volume1/Docker/maker-agent/home/logs/<opdracht-id>.log`.

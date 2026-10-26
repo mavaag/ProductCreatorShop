@@ -42,7 +42,11 @@
       "Bash(grep:*)",
       "Bash(jq:*)",
       "Bash(tree:*)",
-      "Bash(sha1sum:*)"
+      "Bash(sha1sum:*)",
+      "Bash(7zz x:*)",
+      "Bash(7zz l:*)",
+      "Bash(cp -n -r:*)",
+      "Bash(cp -rn:*)"
     ],
     "deny": [
       "Read(//volume1/Docker/**)",
