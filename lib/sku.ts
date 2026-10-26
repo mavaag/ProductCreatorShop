@@ -54,6 +54,7 @@ export async function skuExists(
 /** Korte code per techniek, die achter de productnaam in de SKU komt (bv. VAAS-SUBL). */
 export const PROCESS_SKU_CODES: Record<string, string> = {
   "3d_print": "3DPR",
+  resin_print: "RESN",
   uv_print: "UVPR",
   laser_engraving: "ENGR",
   laser_cutting: "CUTT",

@@ -8,10 +8,10 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 // "Regular price" = suggested_price: de afgeronde ,95-verkoopprijs incl. btw.
 //
 // Parameters (allemaal optioneel):
-//   type=3d_print|uv_print|laser_engraving|laser_cutting|sublimation  enkel die techniek
+//   type=3d_print|resin_print|uv_print|laser_engraving|laser_cutting|sublimation  enkel die techniek
 //   changed=1  enkel producten die nieuw/gewijzigd zijn sinds de vorige (gemarkeerde) export
 //   mark=1     na het genereren de geëxporteerde producten/prijzen als "geëxporteerd" markeren
-const PROCESS_TYPES = ["3d_print", "uv_print", "laser_engraving", "laser_cutting", "sublimation"];
+const PROCESS_TYPES = ["3d_print", "resin_print", "uv_print", "laser_engraving", "laser_cutting", "sublimation"];
 
 type Variation = {
   id: string;

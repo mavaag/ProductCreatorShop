@@ -105,7 +105,7 @@ export type Product = {
   id: string;
   sku: string;
   name: string;
-  process_type: "3d_print" | "uv_print" | "laser_engraving" | "laser_cutting" | "sublimation";
+  process_type: "3d_print" | "resin_print" | "uv_print" | "laser_engraving" | "laser_cutting" | "sublimation";
   published: boolean;
   attribute_names: string[];
   default_attribute_values: Record<string, string>; // bv. {"Grootte":"M"} -- WooCommerce "Default Form Values"
@@ -241,6 +241,7 @@ export const DEFAULT_MIN_MARGIN = 0.3;
 
 export const PROCESS_TYPE_LABELS: Record<Product["process_type"], string> = {
   "3d_print": "3D-printen",
+  resin_print: "Resin-printen",
   uv_print: "UV-printen",
   laser_engraving: "Laser engraving",
   laser_cutting: "Laser cutting",
