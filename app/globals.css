@@ -685,3 +685,10 @@ input[type="checkbox"] { accent-color: var(--magenta); }
 @media (max-width: 760px) {
   .maker-detail-grid { grid-template-columns: 1fr; }
 }
+
+/* Catalogus: klikbare bundel-pill ("Bundel opsplitsen") */
+.maker-bundle-pill {
+  cursor: pointer; font-family: inherit; line-height: inherit;
+  background: rgba(255, 214, 0, 0.08); color: var(--yellow); border-color: var(--yellow); text-shadow: none;
+}
+.maker-bundle-pill:hover { background: var(--yellow); color: var(--void); }

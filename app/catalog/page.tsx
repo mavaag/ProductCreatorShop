@@ -48,6 +48,7 @@ export default function CatalogPage() {
   const [search, setSearch] = useState("");
   const [onlyReady, setOnlyReady] = useState(false);
   const [onlyTrademark, setOnlyTrademark] = useState(false);
+  const [onlyBundles, setOnlyBundles] = useState(false);
   const [shown, setShown] = useState(PAGE_SIZE);
   const [openId, setOpenId] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -95,7 +96,7 @@ export default function CatalogPage() {
     }
   }
 
-  useEffect(() => setShown(PAGE_SIZE), [stage, kind, category, search, onlyReady, onlyTrademark]);
+  useEffect(() => setShown(PAGE_SIZE), [stage, kind, category, search, onlyReady, onlyTrademark, onlyBundles]);
 
   function stageOf(m: MakerModel): Exclude<Stage, "all" | "picked"> | null {
     const pick = picks.get(m.id);
@@ -128,13 +129,14 @@ export default function CatalogPage() {
       if (category && (m.category || "(geen)") !== category) return false;
       if (onlyReady && m.kind === "Lasercut" && m.laser_ready.length === 0) return false;
       if (onlyTrademark && !m.is_trademark) return false;
+      if (onlyBundles && !canSplit(m)) return false;
       if (stage === "picked" && !picks.has(m.id)) return false;
       if (stage !== "all" && stage !== "picked" && stageOf(m) !== stage) return false;
       if (q && !`${m.title} ${m.collection} ${m.category} ${m.path}`.toLowerCase().includes(q)) return false;
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [models, picks, links, stage, kind, category, search, onlyReady, onlyTrademark]);
+  }, [models, picks, links, stage, kind, category, search, onlyReady, onlyTrademark, onlyBundles]);
 
   async function togglePick(m: MakerModel) {
     const pick = picks.get(m.id);
@@ -261,6 +263,10 @@ export default function CatalogPage() {
           <input type="checkbox" style={{ width: "auto" }} checked={onlyTrademark} onChange={(e) => setOnlyTrademark(e.target.checked)} />
           Enkel merkfiguren
         </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 0 10px" }} title="Mappen met veel verschillende ontwerpen, die je kan laten opsplitsen in aparte modellen">
+          <input type="checkbox" style={{ width: "auto" }} checked={onlyBundles} onChange={(e) => setOnlyBundles(e.target.checked)} />
+          Enkel bundels
+        </label>
       </div>
 
       {inReadyTab ? (
@@ -341,6 +347,14 @@ export default function CatalogPage() {
                   <div className="prod-cats">
                     {m.kind === "Lasercut" && m.laser_ready.length > 0 && <span className="pill cyan">Snijklaar</span>}
                     {m.has_doc && <span className="pill cyan">Document</span>}
+                    {canSplit(m) && !m.has_doc && (splitDone.has(m.id) ? (
+                      <span className="pill" title="De agent splitst deze bundel op, of gaf aan dat het één model is">{BUNDLE_ICON} Bundel</span>
+                    ) : (
+                      <button type="button" className="pill maker-bundle-pill" onClick={() => splitBundle(m)}
+                        title={`Bundel met ~${m.designs} verschillende ontwerpen. Klik om de agent ze in aparte modellen te laten opsplitsen.`}>
+                        {BUNDLE_ICON} Bundel · ~{m.designs}
+                      </button>
+                    ))}
                     {m.is_trademark && <span className="pill" style={{ color: "var(--yellow)", borderColor: "var(--yellow)" }} title="Merk/personage van iemand anders">Merk</span>}
                     {shopProductId(m, links.get(m.id)) && <span className="pill">In shop #{shopProductId(m, links.get(m.id))}</span>}
                   </div>
@@ -625,6 +639,13 @@ function AgentPanel({ waiting, titles, onJobFinished }: {
     </div>
   );
 }
+
+/** Icoon voor een bundel: gestapelde bladen. */
+const BUNDLE_ICON = (
+  <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true" style={{ verticalAlign: "-1px" }}>
+    <rect x="1.5" y="5.5" width="9" height="9" /><path d="M4.5 3.5h8v8M7 1.5h7.5V9" />
+  </svg>
+);
 
 type WooHit = { id: number; name: string; sku: string; status: string; permalink: string; image: string | null };
 
