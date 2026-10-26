@@ -80,6 +80,7 @@ export default function CatalogPage() {
     return m.has_doc ? "ready" : "doc";
   }
 
+  const titles = useMemo(() => new Map(models.map((m) => [m.id, m.title])), [models]);
   const categories = useMemo(
     () => Array.from(new Set(models.filter((m) => !kind || m.kind === kind).map((m) => m.category || "(geen)"))).sort(),
     [models, kind]
@@ -162,7 +163,6 @@ export default function CatalogPage() {
   if (!ready) return null;
 
   const readyIds = models.filter((m) => stageOf(m) === "ready").map((m) => m.id);
-  const titles = useMemo(() => new Map(models.map((m) => [m.id, m.title])), [models]);
 
   return (
     <div>
