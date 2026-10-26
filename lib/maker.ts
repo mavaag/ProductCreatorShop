@@ -59,7 +59,8 @@ function emptyCostInputs(processType: string) {
  * Maakt van een productdocument een (concept)product met al zijn varianten in de beheertool en koppelt het
  * aan de selectie in maker_picks. De prijsberekening blijft leeg -- die vul je daarna in op de productpagina.
  */
-export async function createProductFromDoc(supabase: SupabaseClient, doc: MakerDoc): Promise<string> {
+/** opts.categories: de categorie die je in de Catalogus koos (anders de voorgestelde uit het document). */
+export async function createProductFromDoc(supabase: SupabaseClient, doc: MakerDoc, opts: { categories?: string } = {}): Promise<string> {
   const p = doc.product;
   const attributeNames = doc.attributes.map((a) => a.name);
   const sku = await nextAvailableSku(supabase, "products", p.sku_base);
@@ -74,7 +75,7 @@ export async function createProductFromDoc(supabase: SupabaseClient, doc: MakerD
       default_attribute_values: Object.fromEntries(doc.attributes.map((a) => [a.name, a.default])),
       description: p.description,
       short_description: p.short_description,
-      categories: p.categories,
+      categories: opts.categories?.trim() || p.categories,
       image_url: (p.image_urls ?? []).join(","),
     })
     .select()
