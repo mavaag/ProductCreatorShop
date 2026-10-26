@@ -399,7 +399,7 @@ function AgentPanel({ waiting, titles, onJobFinished }: {
 
   async function queueInbox() {
     const msg = `${inboxReady.length} item${inboxReady.length === 1 ? "" : "s"} uit de Inbox in de bibliotheek laten zetten?` +
-      (thenProcess ? " Daarna maakt de agent meteen platen en productdocumenten voor de nieuwe modellen." : "") +
+      (thenProcess ? " Daarna maakt de agent meteen de productdocumenten voor de nieuwe modellen (en snijklare platen voor lasermodellen)." : "") +
       " Wat lukt, gaat daarna naar _Inbox/_verwerkt.";
     if (!(await confirmDialog(msg, { confirmLabel: "Verwerken" }))) return;
     const { error } = await supabase.from("maker_jobs").insert({
@@ -492,9 +492,9 @@ function AgentPanel({ waiting, titles, onJobFinished }: {
                 <label>Instructies voor de agent (optioneel)</label>
                 <input value={inboxNote} onChange={(e) => setInboxNote(e.target.value)} placeholder="bv. dit zijn allemaal lampen van één ontwerper" />
               </div>
-              <label style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 0 10px" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 0 10px" }} title="Shoptekst, foto's en varianten; voor lasermodellen ook 3 mm-platen, voor resin de printerkeuze">
                 <input type="checkbox" style={{ width: "auto" }} checked={thenProcess} onChange={(e) => setThenProcess(e.target.checked)} />
-                Daarna meteen platen + documenten maken
+                Daarna meteen productdocumenten maken
               </label>
               <button className="btn" disabled={inboxReady.length === 0} onClick={queueInbox}>Inbox verwerken ({inboxReady.length})</button>
             </div>
