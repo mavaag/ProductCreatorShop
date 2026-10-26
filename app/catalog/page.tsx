@@ -49,6 +49,8 @@ export default function CatalogPage() {
   const [shown, setShown] = useState(PAGE_SIZE);
   const [openId, setOpenId] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  // tab "Klaar om aan te maken": welke modellen je nu als product wil aanmaken (niet bewaard)
+  const [toMake, setToMake] = useState<Set<string>>(new Set());
 
   async function load() {
     setLoading(true);
@@ -76,8 +78,8 @@ export default function CatalogPage() {
     const pick = picks.get(m.id);
     if (pick?.product_id) return "created";
     if (m.woo_product_id) return "shop";
-    if (!pick) return null;
-    return m.has_doc ? "ready" : "doc";
+    if (m.has_doc) return "ready";
+    return pick ? "doc" : null;
   }
 
   const titles = useMemo(() => new Map(models.map((m) => [m.id, m.title])), [models]);
@@ -161,6 +163,7 @@ export default function CatalogPage() {
       }
     }
     setBusy(null);
+    setToMake(new Set());
     await load();
     if (failed.length > 0) await alertDialog(`Niet gelukt:\n${failed.join("\n")}`);
     else if (ids.length === 1 && lastId) window.location.href = `/products/${lastId}`;
@@ -168,14 +171,22 @@ export default function CatalogPage() {
 
   if (!ready) return null;
 
-  const readyIds = models.filter((m) => stageOf(m) === "ready").map((m) => m.id);
+  const inReadyTab = stage === "ready";
+  const chosen = models.filter((m) => toMake.has(m.id) && stageOf(m) === "ready").map((m) => m.id);
+
+  function toggleMake(id: string) {
+    const next = new Set(toMake);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setToMake(next);
+  }
 
   return (
     <div>
       <h1>Catalogus</h1>
       <p className="sub">
-        Alle modellen uit de MakerProducts-bibliotheek op de NAS. Vink aan wat je wil verkopen; zodra er een productdocument
-        is (beschrijving, foto&apos;s, varianten) maak je er met één klik een product van in de beheertool.
+        Alle modellen uit de MakerProducts-bibliotheek op de NAS. Vink aan wat je wil verkopen en laat de agent het
+        verwerken; modellen met een volledig productdocument (beschrijving, foto&apos;s, varianten) verschijnen vanzelf bij
+        &quot;Klaar om aan te maken&quot;, waar je kiest welke je als product aanmaakt.
       </p>
 
       <div className="tabs">
@@ -212,16 +223,27 @@ export default function CatalogPage() {
         </label>
       </div>
 
-      {readyIds.length > 0 && (
+      {inReadyTab ? (
         <div className="card" style={{ marginBottom: 16, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
           <span className="muted" style={{ flex: 1, minWidth: 240 }}>
-            <b style={{ color: "var(--moss)" }}>{readyIds.length}</b> geselecteerd{readyIds.length === 1 ? " model" : "e modellen"} met een
-            productdocument -- klaar om als concept aan te maken in de beheertool.
+            Deze modellen hebben een volledig productdocument (tekst, foto&apos;s, varianten). Vink aan welke je als product
+            wil aanmaken in de beheertool (als concept, nog niet gepubliceerd).
+            {chosen.length > 0 && <> <b style={{ color: "var(--moss)" }}>{chosen.length}</b> aangevinkt.</>}
           </span>
-          <button className="btn" disabled={!!busy} onClick={() => makeProducts(readyIds)}>
-            Maak {readyIds.length} product{readyIds.length === 1 ? "" : "en"}
+          {chosen.length > 0 && (
+            <button className="btn secondary" disabled={!!busy} onClick={() => setToMake(new Set())}>Selectie wissen</button>
+          )}
+          <button className="btn" disabled={!!busy || chosen.length === 0} onClick={() => makeProducts(chosen)}>
+            Maak {chosen.length || ""} product{chosen.length === 1 ? "" : "en"}
           </button>
           {busy && <span className="muted">{busy}</span>}
+        </div>
+      ) : counts.ready > 0 && (
+        <div className="card" style={{ marginBottom: 16, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <span className="muted" style={{ flex: 1, minWidth: 240 }}>
+            <b style={{ color: "var(--moss)" }}>{counts.ready}</b> model{counts.ready === 1 ? "" : "len"} volledig klaar om als product aan te maken.
+          </span>
+          <button className="btn" onClick={() => setStage("ready")}>Bekijk en kies</button>
         </div>
       )}
 
@@ -236,7 +258,10 @@ export default function CatalogPage() {
       <div className="prod-viewbar">
         <div className="prod-viewbar-left">
           {filtered.length > 0 && (
-            <button className="btn secondary" type="button" onClick={selectAllFiltered}>Alles in deze lijst selecteren</button>
+            <button className="btn secondary" type="button"
+              onClick={inReadyTab ? () => setToMake(new Set([...toMake, ...filtered.map((m) => m.id)])) : selectAllFiltered}>
+              Alles in deze lijst selecteren
+            </button>
           )}
           <span className="muted">{loading ? "laden..." : `${filtered.length} model${filtered.length === 1 ? "" : "len"}`}</span>
         </div>
@@ -254,7 +279,7 @@ export default function CatalogPage() {
         <div className="prod-grid">
           {filtered.slice(0, shown).map((m) => {
             const s = stageOf(m);
-            const picked = picks.has(m.id);
+            const picked = inReadyTab ? toMake.has(m.id) : picks.has(m.id);
             return (
               <div
                 key={m.id}
@@ -264,8 +289,9 @@ export default function CatalogPage() {
                 <button type="button" className="prod-thumb maker-thumb-btn" onClick={() => setOpenId(m.id)} aria-label={`Details van ${m.title}`}>
                   {m.thumb_url ? <img src={m.thumb_url} alt="" loading="lazy" /> : <div className="prod-thumb-empty">geen voorbeeld</div>}
                 </button>
-                <label className="prod-check" title="Selecteren">
-                  <input type="checkbox" style={{ width: "auto" }} aria-label={`Selecteer ${m.title}`} checked={picked} onChange={() => togglePick(m)} />
+                <label className="prod-check" title={inReadyTab ? "Aanvinken om als product aan te maken" : "Selecteren (de agent maakt er een document voor)"}>
+                  <input type="checkbox" style={{ width: "auto" }} aria-label={`Selecteer ${m.title}`} checked={picked}
+                    onChange={() => (inReadyTab ? toggleMake(m.id) : togglePick(m))} />
                 </label>
                 <span className="prod-process">{KIND_LABELS[m.kind] ?? m.kind}</span>
                 <div className="prod-body">
@@ -617,7 +643,7 @@ function ModelDetail({ model, pick, busy, onClose, onToggle, onMake }: {
               ) : (
                 <>
                   <button className="btn" disabled={busy || !doc || !!doc.woo_existing} onClick={onMake}>Maak product</button>
-                  <button className="btn secondary" onClick={onToggle}>{pick ? "Uit selectie halen" : "Selecteren"}</button>
+                  {!doc && <button className="btn secondary" onClick={onToggle}>{pick ? "Uit selectie halen" : "Selecteren"}</button>}
                 </>
               )}
             </div>
