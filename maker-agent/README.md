@@ -14,7 +14,7 @@ Catalogus op **Maak product**.
 De container mount enkel `MakerProducts`, de Supabase-`.env` (alleen-lezen, voor de service-key) en de repo
 (alleen-lezen). Agent-code en prompt komen uit de repo die auto-deploy bijhoudt: na een merge op master gebruikt de
 agent bij de volgende opdracht vanzelf de nieuwe versie. Alleen bij een wijziging aan de `Dockerfile` moet je de
-container opnieuw bouwen (stap 4).
+container opnieuw bouwen (stap 5).
 
 ## Eenmalig installeren
 
@@ -26,7 +26,11 @@ container opnieuw bouwen (stap 4).
    ```powershell
    ssh mavaag@192.168.50.10 "umask 077; read -r T; printf 'CLAUDE_CODE_OAUTH_TOKEN=%s\n' \"`$T\" > /volume1/Docker/maker-agent/agent.env"
    ```
-4. **Container bouwen en starten** (vraagt je NAS-wachtwoord voor sudo):
+4. **Shoplijst (optioneel, aangeraden)**: maak in WooCommerce > Instellingen > Geavanceerd > REST API een sleutel met
+   enkel **Lezen**-rechten en zet die in dezelfde `agent.env` (op de NAS, via `ssh` en `read -r`, zoals het token):
+   `WOO_URL=https://3dprintforyou.be`, `WOO_KEY=ck_...`, `WOO_SECRET=cs_...`. Voor elke opdracht haalt de agent dan
+   de actuele productlijst op (`woo_export.py` -> `_catalog/woo_products.json`), zodat hij ziet wat al in de shop staat.
+5. **Container bouwen en starten** (vraagt je NAS-wachtwoord voor sudo):
    ```powershell
    ssh -t mavaag@192.168.50.10 "sudo docker compose -f /volume1/Docker/product-app/src/maker-agent/docker-compose.yml up -d --build"
    ```
