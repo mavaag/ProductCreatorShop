@@ -30,7 +30,10 @@ POLL_S = 30
 IDLE_EXIT_S = 3600
 JOB_TIMEOUT_S = 6 * 3600
 TAIL_LINES = 60
-VERSION = '8'
+VERSION = '9'
+# Techniekmappen in de Inbox: zet je iets in _Inbox/Resin, dan weet de agent dat het een resinprint is (enz.).
+# Items los in _Inbox blijven werken: dan beslist de agent zelf.
+TECH_DIRS = {'fdm': 'fdm', 'resin': 'resin', 'laser': 'laser'}
 WORK_KEEP_DAYS = 2   # uitgepakte inbox-archieven in ~/work/inbox (enkel tijdelijk werk van de agent)
 CATALOG = os.path.join(supa.MAKER_ROOT, '_catalog')
 
@@ -55,16 +58,22 @@ def tree_stats(path):
     return n, size, newest or os.stat(path).st_mtime
 
 
+def _inbox_entries(folder):
+    return [n for n in sorted(os.listdir(folder)) if not n.startswith(('.', '_', '#')) and n.lower() not in IGNORE]
+
+
 def scan_inbox():
-    """Items in _Inbox (alles behalve _verwerkt en verborgen bestanden), voor de Catalogus."""
+    """Items in _Inbox (alles behalve _verwerkt en verborgen bestanden), voor de Catalogus. Wat in een techniekmap
+    staat (_Inbox/FDM, _Inbox/Resin, _Inbox/Laser) heet "<map>/<naam>" en krijgt die techniek mee."""
     if not os.path.isdir(INBOX): return []
     out = []
-    for name in sorted(os.listdir(INBOX)):
-        if name.startswith(('.', '_', '#')) or name.lower() in IGNORE: continue
+    for name in _inbox_entries(INBOX):
         p = os.path.join(INBOX, name)
-        n, size, newest = tree_stats(p)
-        out.append({'name': name, 'kind': 'folder' if os.path.isdir(p) else 'file', 'files': n, 'size': size,
-                    'ready': time.time() - newest > SETTLE_S})
+        tech = TECH_DIRS.get(name.lower()) if os.path.isdir(p) else None
+        for item, path, t in ([(f'{name}/{c}', os.path.join(p, c), tech) for c in _inbox_entries(p)] if tech else [(name, p, '')]):
+            n, size, newest = tree_stats(path)
+            out.append({'name': item, 'kind': 'folder' if os.path.isdir(path) else 'file', 'files': n, 'size': size,
+                        'ready': time.time() - newest > SETTLE_S, 'technique': t})
     return out
 
 
@@ -105,14 +114,20 @@ def cleanup_work(names=None):
 
 
 def move_done(name):
-    """Verwerkt inbox-item naar _Inbox/_verwerkt/<datum>_<naam> (mtime = nu, zodat het opruimen vanaf nu telt)."""
+    """Verwerkt inbox-item naar _Inbox/_verwerkt/<datum>_<naam> (mtime = nu, zodat het opruimen vanaf nu telt).
+    name mag "<techniekmap>/<naam>" zijn; de techniekmap zelf blijft staan."""
     src = os.path.join(INBOX, name)
-    if not os.path.exists(src) or os.path.realpath(os.path.dirname(src)) != os.path.realpath(INBOX): return False
+    parent = os.path.realpath(os.path.dirname(src))
+    allowed = {os.path.realpath(INBOX)} | {os.path.realpath(os.path.join(INBOX, d)) for d in os.listdir(INBOX)
+                                           if d.lower() in TECH_DIRS}
+    if not os.path.exists(src) or parent not in allowed or os.path.basename(src).lower() in TECH_DIRS and parent == os.path.realpath(INBOX):
+        return False
+    base = os.path.basename(src)
     os.makedirs(DONE, exist_ok=True)
-    dst = os.path.join(DONE, f'{datetime.date.today().isoformat()}_{name}')
+    dst = os.path.join(DONE, f'{datetime.date.today().isoformat()}_{base}')
     k = 2
     while os.path.exists(dst):
-        dst = os.path.join(DONE, f'{datetime.date.today().isoformat()}_{k}_{name}'); k += 1
+        dst = os.path.join(DONE, f'{datetime.date.today().isoformat()}_{k}_{base}'); k += 1
     shutil.move(src, dst)
     os.utime(dst, None)
     return True
@@ -184,7 +199,7 @@ def build_prompt(job, shop_note):
         data = {'job_id': jid, 'note': job['note'], 'then_process': job.get('then_process', False), 'inbox': INBOX,
                 'shop_export': shop_note, 'items': items, 'missing_items': missing}
         return prompt + '\n\n## This job\n```json\n' + json.dumps(data, indent=2, ensure_ascii=False) + '\n```\n', len(items), 'item'
-    rows = supa.rest('GET', 'maker_models?select=id,title,kind,collection,category,path,laser_ready,has_doc&id=in.('
+    rows = supa.rest('GET', 'maker_models?select=id,title,kind,technique,collection,category,path,laser_ready,has_doc&id=in.('
                      + ','.join(f'"{m}"' for m in job['model_ids']) + ')') or []
     info = {r['id']: r for r in rows}
     models = [info.get(m, {'id': m}) for m in job['model_ids']]
@@ -283,7 +298,7 @@ def run_job(job):
                 except OSError as e: tail.append(f'verplaatsen van {name} mislukt: {e}')
         tail.append(f'{moved} inbox-item{"" if moved == 1 else "s"} verplaatst naar _Inbox/_verwerkt')
         done_names = [n for n in job['items'] if results.get(n, {}).get('status') == 'ok']
-        cleanup_work(done_names)   # uitgepakte kopie in ~/work/inbox is niet meer nodig
+        cleanup_work([os.path.basename(n) for n in done_names])   # uitgepakte kopie in ~/work/inbox is niet meer nodig
 
     keys = job['items'] if inbox_job else job['model_ids']
     ok = sum(1 for k in keys if results.get(k, {}).get('status') == 'ok')

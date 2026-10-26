@@ -9,7 +9,7 @@ import datetime, json, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import supa
 
-COLUMNS = ('id', 'title', 'kind', 'collection', 'category', 'path', 'formats', 'thicknesses', 'laser_ready', 'files', 'designs', 'bundle')
+COLUMNS = ('id', 'title', 'kind', 'collection', 'category', 'path', 'formats', 'thicknesses', 'laser_ready', 'files', 'designs', 'bundle', 'technique')
 
 
 def main():
@@ -25,6 +25,7 @@ def main():
         row['collection'] = row['collection'] or ''
         row['designs'] = row['designs'] or 0
         row['bundle'] = row['bundle'] or ''
+        row['technique'] = row['technique'] or ''
         row['formats'] = row['formats'] or {}
         row['thicknesses'] = row['thicknesses'] or []
         row['laser_ready'] = row['laser_ready'] or []
