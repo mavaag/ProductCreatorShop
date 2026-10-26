@@ -12,7 +12,7 @@ that it shows up in the catalog, report per item, then stop.
 - Shell commands that are not on the allow list are refused; do not try to get around that. A refused command is
   only that command: split compound commands, or use a small Python script.
   Allowed: `python3`, `ls`, `cat`, `head`, `tail`, `grep`, `find` (no -delete/-exec), `wc`, `du`, `file`, `stat`, `sort`,
-  `uniq`, `cut`, `tr`, `echo`, `printf`, `mkdir`, `cp -n`, `cp -n -r`, `md5sum`, `diff`, `cmp`, `unzip -n`, `7zz x`,
+  `uniq`, `cut`, `tr`, `echo`, `printf`, `mkdir`, `cp -n`, `cp -n -r`, `md5sum`, `diff`, `cmp`, `unzip -n`, `7zz x`, `unrar x`,
   `inkscape`, plus Read/Write/Edit (writing only under `/volume1/MakerProducts` and `~/work`).
 - Do not process adult/NSFW content: report it `skipped`. Items that are not models (installers, random documents):
   `skipped` with the reason.
@@ -34,7 +34,7 @@ A **model is one folder** holding its files (sources, images, README/licence). T
   existing collection when it fits, otherwise create one named after the designer/pack or the theme.
 
 ## Per item
-1. Look at what it is. Extract archives (`unzip -n` / `7zz x -o<dir>`) into `~/work/inbox/<item>/` first, never
+1. Look at what it is. Extract archives (`unzip -n` / `7zz x -o<dir>`; RAR with `unrar x -o- <file> <dir>/`, because 7zz cannot read RAR) into `~/work/inbox/<item>/` first, never
    inside the Inbox. Nested archives: extract those too.
 2. Decide laser vs 3D print (DXF/SVG/AI/PDF/CDR/PLT = laser; STL/3MF/OBJ = 3D print) and what the models are. A pack
    of several models becomes several model folders; one model with variants stays one folder.
