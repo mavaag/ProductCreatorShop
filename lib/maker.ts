@@ -20,9 +20,11 @@ export type MakerModel = {
   designs: number;
   /** bundel waaruit dit model kwam ("" = geen) */
   bundle: string;
+  /** "resin" / "fdm" / "laser", of "" = nog niet bekend (uit _technique.txt, de Inbox-techniekmap of de bestanden) */
+  technique: string;
 };
 
-export const MAKER_MODEL_COLUMNS = "id, title, kind, collection, category, path, laser_ready, thumb_url, has_doc, woo_product_id, is_trademark, designs, bundle";
+export const MAKER_MODEL_COLUMNS = "id, title, kind, collection, category, path, laser_ready, thumb_url, has_doc, woo_product_id, is_trademark, designs, bundle, technique";
 
 export type MakerPick = { model_id: string; product_id: string | null; created_at: string };
 
@@ -172,6 +174,13 @@ export function canSplit(m: MakerModel): boolean {
   return !m.bundle && m.collection !== "Heads AAS26" && (m.designs ?? 0) >= min;
 }
 
+/** Label op een catalogus-kaartje: de techniek als die gekend is, anders de plaats in de bibliotheek. */
+export function techniqueLabel(m: Pick<MakerModel, "kind" | "technique">): string {
+  if (m.technique === "resin") return "Resin";
+  if (m.technique === "fdm") return "3D-print FDM";
+  return m.kind === "Lasercut" ? "Laser" : m.kind === "3D-Print" ? "3D-print" : m.kind;
+}
+
 /** Opdracht voor de MakerProducts-agent op de NAS (tabel maker_jobs, zie maker-agent/). */
 export type MakerJob = {
   id: string;
@@ -196,7 +205,7 @@ export type MakerAgent = {
   status: string;
   version: string;
   /** inhoud van \\NASMAT\MakerProducts\_Inbox; ready = de laatste 2 minuten niet meer gewijzigd (kopiëren klaar) */
-  inbox?: { name: string; kind: "file" | "folder"; files: number; size: number; ready: boolean }[];
+  inbox?: { name: string; kind: "file" | "folder"; files: number; size: number; ready: boolean; technique?: string }[];
   inbox_info?: string;
 };
 

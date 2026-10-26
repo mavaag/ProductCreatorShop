@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
 import { PROCESS_TYPE_LABELS } from "@/lib/types";
 import { alertDialog, confirmDialog } from "@/components/DialogHost";
-import { AGENT_ONLINE_MS, MAKER_MODEL_COLUMNS, MakerAgent, MakerDoc, MakerJob, MakerModel, MakerPick, MakerWooLink, canSplit, createProductFromDoc, licenseWarning, shopProductId } from "@/lib/maker";
+import { AGENT_ONLINE_MS, MAKER_MODEL_COLUMNS, MakerAgent, MakerDoc, MakerJob, MakerModel, MakerPick, MakerWooLink, canSplit, createProductFromDoc, licenseWarning, shopProductId, techniqueLabel } from "@/lib/maker";
 
 /** Stappen van een model: kiezen -> document (beschrijving, foto's, varianten) -> product in de beheertool. */
 type Stage = "all" | "picked" | "doc" | "ready" | "created" | "shop";
@@ -20,7 +20,7 @@ const STAGES: { value: Stage; label: string }[] = [
   { value: "shop", label: "Al in de shop" },
 ];
 
-const KIND_COLORS: Record<string, string> = { Lasercut: "#ff5a5a", "3D-Print": "var(--cyan)" };
+const KIND_COLORS: Record<string, string> = { Lasercut: "#ff5a5a", "3D-Print": "var(--cyan)", resin: "#3dffc5" };
 const KIND_LABELS: Record<string, string> = { Lasercut: "Laser", "3D-Print": "3D-print" };
 const PAGE_SIZE = 120;
 
@@ -331,7 +331,7 @@ export default function CatalogPage() {
               <div
                 key={m.id}
                 className={`prod-card${picked ? " selected" : ""}`}
-                style={{ "--prod-color": KIND_COLORS[m.kind] ?? "var(--cyan)" } as CSSProperties}
+                style={{ "--prod-color": KIND_COLORS[m.technique === "resin" ? "resin" : m.kind] ?? "var(--cyan)" } as CSSProperties}
               >
                 <button type="button" className="prod-thumb maker-thumb-btn" onClick={() => setOpenId(m.id)} aria-label={`Details van ${m.title}`}>
                   {m.thumb_url ? <img src={m.thumb_url} alt="" loading="lazy" /> : <div className="prod-thumb-empty">geen voorbeeld</div>}
@@ -340,7 +340,7 @@ export default function CatalogPage() {
                   <input type="checkbox" style={{ width: "auto" }} aria-label={`Selecteer ${m.title}`} checked={picked}
                     onChange={() => (inReadyTab ? toggleMake(m.id) : togglePick(m))} />
                 </label>
-                <span className="prod-process">{KIND_LABELS[m.kind] ?? m.kind}</span>
+                <span className="prod-process">{techniqueLabel(m)}</span>
                 <div className="prod-body">
                   <button type="button" className="prod-name maker-name-btn" onClick={() => setOpenId(m.id)}>{m.title}</button>
                   <div className="prod-sku">{[m.collection, m.category].filter(Boolean).join(" · ")}</div>
@@ -535,7 +535,9 @@ function AgentPanel({ waiting, titles, onJobFinished }: {
       <div style={{ borderTop: "1px solid var(--line, #2a2f55)", marginTop: 14, paddingTop: 12 }}>
         <h3 style={{ margin: "0 0 6px" }}>Inbox</h3>
         <p className="muted" style={{ margin: 0 }}>
-          Nieuwe modellen (bestanden, mappen, zip/rar) zet je in <span className="mono">\\NASMAT\MakerProducts\_Inbox</span>.
+          Nieuwe modellen (bestanden, mappen, zip/rar) zet je in <span className="mono">\\NASMAT\MakerProducts\_Inbox</span>,
+          bij voorkeur in de juiste techniekmap: <span className="mono">FDM</span>, <span className="mono">Resin</span> of{" "}
+          <span className="mono">Laser</span>. Dan weet de agent meteen hoe het geproduceerd wordt; los in de Inbox beslist hij zelf.
           De agent zet ze op de juiste plek in de bibliotheek; wat lukt, gaat naar <span className="mono">_Inbox\_verwerkt</span>.
           {agent?.inbox_info && <> {agent.inbox_info}.</>}
         </p>
@@ -547,6 +549,7 @@ function AgentPanel({ waiting, titles, onJobFinished }: {
               {inbox.map((i) => (
                 <li key={i.name}>
                   <span className="mono">{i.name}</span>{" "}
+                  {i.technique && <span className="pill cyan" style={{ marginRight: 6 }}>{i.technique === "fdm" ? "FDM" : i.technique === "resin" ? "Resin" : "Laser"}</span>}
                   <span className="muted">
                     ({i.kind === "folder" ? `map, ${i.files} bestand${i.files === 1 ? "" : "en"}` : "bestand"}, {formatSize(i.size)})
                     {!i.ready && " -- wordt nog gekopieerd..."}
@@ -817,7 +820,7 @@ function ModelDetail({ model, pick, busy, onClose, onToggle, onMake, onSplit, sp
           <div>
             <h2 style={{ marginTop: 0 }}>{doc?.product.name ?? model.title}</h2>
             <p className="muted" style={{ margin: 0 }}>
-              {KIND_LABELS[model.kind] ?? model.kind} · {[model.collection, model.category, model.bundle && `uit bundel ${model.bundle}`].filter(Boolean).join(" · ")} · <span className="mono">{model.path}</span>
+              {techniqueLabel(model)} · {[model.collection, model.category, model.bundle && `uit bundel ${model.bundle}`].filter(Boolean).join(" · ")} · <span className="mono">{model.path}</span>
             </p>
           </div>
           <button className="icon-btn" onClick={onClose} aria-label="Sluiten">

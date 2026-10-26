@@ -33,6 +33,18 @@ A **model is one folder** holding its files (sources, images, README/licence). T
 - 3D print: `3D-Print/<Collection>/<Model>/` (every folder directly under `3D-Print` is a collection). Use an
   existing collection when it fits, otherwise create one named after the designer/pack or the theme.
 
+## Technique folders (user decision 2026-10-26)
+The user can sort new items into technique folders in the Inbox. An item named `Resin/<name>`, `FDM/<name>` or
+`Laser/<name>` (field `technique` in the job: "resin", "fdm", "laser") tells you how it will be produced -- follow it,
+do not second-guess it:
+- `resin` / `fdm`: it goes to `3D-Print/<Collection>/<Model>/`. In **every model folder** you create for it, also write
+  a file `_technique.txt` containing just `resin` or `fdm` (the catalog reads it: the card shows Resin or FDM, and the
+  model workflow makes a resin or an FDM product from it).
+- `laser`: it goes to `Lasercut/Vectors/<Category>/<Model>/` (no `_technique.txt` needed).
+- An item directly in `_Inbox` (technique ""): decide yourself as before. Only write `_technique.txt` when the files
+  make it certain (pre-supported files or resin slicer projects -> `resin`).
+Extract into `~/work/inbox/<last part of the item name>/` (without the technique folder).
+
 ## Per item
 1. Look at what it is. Extract archives (`unzip -n` / `7zz x -o<dir>`; RAR with `unrar x -o- <file> <dir>/`, because 7zz cannot read RAR) into `~/work/inbox/<item>/` first, never
    inside the Inbox. Nested archives: extract those too.

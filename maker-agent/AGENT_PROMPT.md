@@ -76,6 +76,9 @@ Every model in the job must end with exactly one `result`. Notes are short and i
 3. Report the `result` for the model before moving on.
 
 ## Resin figures (user decision 2026-10-26)
+- **The model's `technique` in the job decides** (from `_technique.txt` in the model folder or the Inbox technique
+  folder): `resin` -> always a resin product (even without pre-supported files: then mention that supports still have
+  to be added); `fdm` -> an FDM product (Size S/M/L), never resin. Only when `technique` is empty, decide as below.
 - **Resin model** = the designer made it for resin: pre-supported files (`*supported*`, `*presupported*`), resin slicer
   projects (`.lys`, `.chitubox`, `.ctb`, `.cbddlp`, `.pwmx`, `.goo`, `.prz`), or it is a detailed miniature/bust sold
   for resin printing (e.g. the Chibi collection). When unsure, look at the README/description and the part sizes.
