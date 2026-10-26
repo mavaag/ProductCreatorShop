@@ -63,6 +63,10 @@ Every model in the job must end with exactly one `result`. Notes are short and i
 2. **Every model without a document** (`has_doc` false): write `_catalog/products/<id>.json` following the runbook
    rules (English shop texts in the live templates, all laser products are DIY kits, variants, existing WooCommerce
    categories only, trademark flag, check the shop export for an existing product when one is available).
+   **Brand/character names (user decision 2026-10-26): use them.** Name the product with the real character, franchise
+   or brand (e.g. "Daredevil vs Punisher Diorama Resin Figure (Unpainted)") and use them in the texts. Still set
+   `license.trademark: true` and put the rights holder in `license.note` (e.g. "Marvel / Disney"), so the user can see
+   which products depend on a licence. This replaces the earlier runbook rule "shop name without the brand".
    For FDM 3D prints: Size S/M/L = 5/8/12 cm on the largest dimension; take dimensions from the STL bounding box.
    For **resin** models see "Resin figures" below.
    **Already in the shop?** `/volume1/MakerProducts/_catalog/woo_products.json` is refreshed from WooCommerce right
