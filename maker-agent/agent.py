@@ -19,7 +19,7 @@ POLL_S = 30
 IDLE_EXIT_S = 3600
 JOB_TIMEOUT_S = 6 * 3600
 TAIL_LINES = 60
-VERSION = '3'
+VERSION = '4'
 
 status = {'text': 'wacht op opdrachten'}
 
@@ -77,8 +77,11 @@ def run_job(job):
                      + ','.join(f'"{m}"' for m in job['model_ids']) + ')') or []
     info = {r['id']: r for r in rows}
     models = [info.get(m, {'id': m}) for m in job['model_ids']]
+    # actuele shoplijst, zodat de agent kan nakijken of een model al in de shop staat
+    r = subprocess.run(['python3', os.path.join(HERE, 'woo_export.py')], capture_output=True, text=True)
+    shop_note = (r.stdout + r.stderr).strip().splitlines()[-1:] or ['woo_export: geen uitvoer']
     prompt = open(os.path.join(HERE, 'AGENT_PROMPT.md'), encoding='utf-8').read()
-    prompt += '\n\n## This job\n```json\n' + json.dumps({'job_id': jid, 'note': job['note'], 'models': models},
+    prompt += '\n\n## This job\n```json\n' + json.dumps({'job_id': jid, 'note': job['note'], 'shop_export': shop_note[0], 'models': models},
                                                        indent=2, ensure_ascii=False) + '\n```\n'
     status['text'] = f'bezig met opdracht van {len(models)} model{"" if len(models) == 1 else "len"}'
     tail = []

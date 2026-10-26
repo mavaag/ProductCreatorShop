@@ -64,6 +64,10 @@ Every model in the job must end with exactly one `result`. Notes are short and i
    rules (English shop texts in the live templates, all laser products are DIY kits, variants, existing WooCommerce
    categories only, trademark flag, check the shop export for an existing product when one is available).
    For 3D prints: Size S/M/L = 5/8/12 cm on the largest dimension; take dimensions from the STL bounding box.
+   **Already in the shop?** `/volume1/MakerProducts/_catalog/woo_products.json` is refreshed from WooCommerce right
+   before every job (see `shop_export` in the job below; if it says the export failed, the file may be old or
+   missing -- say so in the result note). Match on product name, image file names and SKU. When a model is already
+   sold, fill `woo_existing` ({id, name, permalink}) and keep the shop text, as the runbook describes.
 3. Report the `result` for the model before moving on.
 
 Finish with build/sync/publish, a final `progress` line in Dutch summarising the job, and stop.
