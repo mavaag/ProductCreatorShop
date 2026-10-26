@@ -98,8 +98,10 @@ Every model in the job must end with exactly one `result`. Notes are short and i
     (298 x 164 x 300); the script picks the one with the fewest plates. The **Elegoo Saturn 3 Ultra** (218 x 122 x 260)
     is a spare: the script adds a Saturn set only for miniatures (largest dimension <= 80 mm). Do not override this
     unless the job note asks for a printer.
-  - Look at `_OVERVIEW.png` before you accept it. Exit code 2 = a part fits no printer: report the model `failed`
-    with the dimensions from the JSON.
+  - Look at `_OVERVIEW.png` before you accept it. **A part that is too big is not a reason to stop** (user decision
+    2026-10-26): the script puts it alone on its own plate of the chosen printer and lists it in `warnings`. Finish the
+    document anyway, report the model `ok`, and start the result note with "LET OP: te groot: <part> (<dims>) --
+    opsplitsen of schuin zetten in de slicer". Also put the warnings in `notes_internal`.
   - No supports are added and nothing is sliced: when the files are not pre-supported, say in the result note that
     supports still have to be added in the slicer.
 - `variations[0].production` for resin, from the script's JSON (first set = the chosen printer):
