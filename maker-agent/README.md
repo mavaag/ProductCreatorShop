@@ -37,7 +37,7 @@ container opnieuw bouwen (stap 5).
    De eerste keer duurt dat enkele minuten. Daarna zie je in de Catalogus "Agent actief".
 
 ## Inbox
-Nieuwe modellen (bestanden, mappen, zip/rar) zet je in `\NASMAT\MakerProducts\_Inbox`. De agent toont ze in de
+Nieuwe modellen (bestanden, mappen, zip/rar) zet je in `\\NASMAT\MakerProducts\_Inbox`. De agent toont ze in de
 Catalogus (blok Agent > Inbox); met **Inbox verwerken** zet Claude ze op de juiste plek in de bibliotheek
 (`INBOX_PROMPT.md`), bouwt de catalogus opnieuw en synchroniseert. Optioneel maakt hij daarna meteen platen en
 documenten. Claude kopieert alleen; `agent.py` verplaatst daarna de gelukte items naar `_Inbox/_verwerkt`, en ruimt
