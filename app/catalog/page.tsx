@@ -381,7 +381,7 @@ function AgentPanel({ waiting, titles, onJobFinished }: {
     setError(null);
   }
 
-  const active = jobs.some((j) => j.status === "queued" || j.status === "running");
+  const active = jobs.some((j) => j.status === "queued" || j.status === "running") || (agent?.inbox ?? []).some((i) => !i.ready);
   useEffect(() => {
     loadJobs();
     const t = setInterval(() => { loadJobs(); setTick((x) => x + 1); }, active ? 15000 : 60000);

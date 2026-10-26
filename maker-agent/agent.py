@@ -21,12 +21,13 @@ LOGS = os.path.join(HOME, 'logs')
 INBOX = os.path.join(supa.MAKER_ROOT, '_Inbox')
 DONE = os.path.join(INBOX, '_verwerkt')
 RETENTION_DAYS = int(os.environ.get('INBOX_RETENTION_DAYS', '14'))
-SETTLE_S = 120          # een item dat de laatste 2 minuten nog veranderde, wordt waarschijnlijk nog gekopieerd
+SETTLE_S = 60           # een item dat de laatste minuut nog veranderde, wordt waarschijnlijk nog gekopieerd
+IGNORE = {'desktop.ini', 'thumbs.db', '.ds_store'}   # schrijft Windows/macOS zelf, telt niet als kopiëren
 POLL_S = 30
 IDLE_EXIT_S = 3600
 JOB_TIMEOUT_S = 6 * 3600
 TAIL_LINES = 60
-VERSION = '5'
+VERSION = '6'
 
 status = {'text': 'wacht op opdrachten'}
 
@@ -39,13 +40,14 @@ def tree_stats(path):
     """(aantal bestanden, totale grootte, laatste wijziging) van een bestand of map."""
     if os.path.isfile(path):
         st = os.stat(path); return 1, st.st_size, st.st_mtime
-    n = size = 0; newest = os.stat(path).st_mtime
+    n = size = 0; newest = 0
     for dp, dn, fn in os.walk(path):
         for f in fn:
+            if f.lower() in IGNORE: continue
             try: st = os.stat(os.path.join(dp, f))
             except OSError: continue
             n += 1; size += st.st_size; newest = max(newest, st.st_mtime)
-    return n, size, newest
+    return n, size, newest or os.stat(path).st_mtime
 
 
 def scan_inbox():
@@ -53,7 +55,7 @@ def scan_inbox():
     if not os.path.isdir(INBOX): return []
     out = []
     for name in sorted(os.listdir(INBOX)):
-        if name.startswith(('.', '_', '#')): continue
+        if name.startswith(('.', '_', '#')) or name.lower() in IGNORE: continue
         p = os.path.join(INBOX, name)
         n, size, newest = tree_stats(p)
         out.append({'name': name, 'kind': 'folder' if os.path.isdir(p) else 'file', 'files': n, 'size': size,
