@@ -34,6 +34,13 @@ LAYER_MM = 0.05
 BOTTOM_LAYERS, BOTTOM_SEC = 6, 30
 EDGE_MM = 5                      # vrije rand op de bouwplaat
 WASTE = 1.10                     # +10% resin voor verlies (vat, spoelen)
+# Hol printen (gebruikerskeuze 2026-10-26): grotere onderdelen worden in de slicer uitgehold. Resin = schil van WALL_MM
+# (oppervlakte x wanddikte), nooit meer dan massief. Onderdelen waarvan de kleinste maat < HOLLOW_MIN_MM is, blijven
+# massief (te dun om uit te hollen). Supports: zit "support" in de bestandsnaam, dan zijn ze inbegrepen in de mesh;
+# anders SUPPORTS extra.
+WALL_MM = 2.0
+HOLLOW_MIN_MM = 15.0
+SUPPORTS = 1.15
 MESH_EXT = {'.stl', '.obj', '.3mf'}
 SKIP_DIRS = {'PrintReady', 'LaserReady', '__MACOSX', '@eaDir', '.@__thumb', '#Recycle'}
 
@@ -88,7 +95,16 @@ def part_info(path):
     lo, hi = tri.reshape(-1, 3).min(0), tri.reshape(-1, 3).max(0)
     # volume via getekende tetraëders (benadering bij niet-gesloten meshes)
     vol = abs(np.einsum('ij,ij->i', tri[:, 0], np.cross(tri[:, 1], tri[:, 2])).sum()) / 6.0
-    return {'file': path, 'tri': tri, 'lo': lo, 'size': hi - lo, 'volume_mm3': vol}
+    area = np.linalg.norm(np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0]), axis=1).sum() / 2.0
+    return {'file': path, 'tri': tri, 'lo': lo, 'size': hi - lo, 'volume_mm3': vol, 'area_mm2': area}
+
+
+def resin_mm3(part, hollow=True):
+    """Resin voor één onderdeel: hol (schil van WALL_MM) als het dik genoeg is, anders massief; + supports."""
+    vol = part['volume_mm3']
+    if hollow and float(part['size'].min()) >= HOLLOW_MIN_MM:
+        vol = min(vol, part['area_mm2'] * WALL_MM)
+    return vol * (1.0 if 'support' in os.path.basename(part['file']).lower() else SUPPORTS)
 
 
 # ---------- schikken (MaxRects, beste korte zijde, kwartslag mag) ----------
@@ -221,7 +237,7 @@ def estimate(plate, printer):
     hmax = max(p['size'][2] for p, *_ in plate)
     layers = math.ceil(hmax / LAYER_MM)
     sec = BOTTOM_LAYERS * BOTTOM_SEC + max(layers - BOTTOM_LAYERS, 0) * printer['sec_per_layer']
-    ml = sum(p['volume_mm3'] for p, *_ in plate) / 1000 * WASTE
+    ml = sum(resin_mm3(p) for p, *_ in plate) / 1000 * WASTE
     return round(sec / 3600, 2), round(ml, 1), round(hmax, 1)
 
 
@@ -230,7 +246,8 @@ def make_set(model_dir, name, key, parts, spacing, out_root, dry):
     plates = pack(parts, printer, spacing)
     k = per_plate(parts, printer, spacing)
     est = [estimate(p, printer) for p in plates]
-    figure_ml = round(sum(p['volume_mm3'] for p in parts) / 1000 * WASTE, 1)
+    figure_ml = round(sum(resin_mm3(p) for p in parts) / 1000 * WASTE, 1)
+    solid_ml = round(sum(resin_mm3(p, hollow=False) for p in parts) / 1000 * WASTE, 1)
     warnings = []
     for p in parts:
         c, dims = fit_class(p, printer), ' x '.join(str(round(float(v))) for v in p['size'])
@@ -240,6 +257,7 @@ def make_set(model_dir, name, key, parts, spacing, out_root, dry):
             warnings.append(f'{os.path.basename(p["file"])} ({dims} mm) is te groot voor de {printer["name"]}: '
                             'in de slicer opsplitsen of schuin zetten (staat apart op een eigen plaat).')
     res = {'printer': printer['name'], 'plates': len(plates), 'figures_per_plate': k, 'warnings': warnings,
+           'resin_ml_solid': solid_ml,
            'print_hours': round(sum(e[0] for e in est), 2), 'resin_ml': figure_ml,
            'print_hours_full_plate': round(estimate(pack(parts, printer, spacing, k)[0], printer)[0], 2) if k else None,
            'plate_details': [{'plate': i + 1, 'parts': [os.path.basename(p['file']) for p, *_ in pl], 'height_mm': e[2],
@@ -259,8 +277,9 @@ def make_set(model_dir, name, key, parts, spacing, out_root, dry):
     lines = [f'{name} - {printer["name"]}', '',
              f'{len(plates)} plaat/platen voor 1 figuur; {k} figuur/figuren passen samen op 1 plaat.' if k else
              f'{len(plates)} platen voor 1 figuur.',
-             f'Resin per figuur: ca. {figure_ml} ml (incl. 10% verlies). Printtijd (schatting, {LAYER_MM} mm lagen): '
-             f'ca. {res["print_hours"]} u voor 1 figuur.']
+             f'Resin per figuur: ca. {figure_ml} ml, hol geprint met {WALL_MM:g} mm wand (massief: ca. {solid_ml} ml); '
+             f'incl. 10% verlies en {round((SUPPORTS - 1) * 100)}% supports als die niet in de bestanden zitten.',
+             f'Printtijd (schatting, {LAYER_MM} mm lagen): ca. {res["print_hours"]} u voor 1 figuur.']
     if k > 1: lines.append(f'batch_{k}x.stl: {k} figuren samen op 1 plaat, ca. {res["print_hours_full_plate"]} u (zelfde hoogte, dus zelfde tijd).')
     if warnings: lines += ['', 'LET OP:'] + [f'- {w}' for w in warnings]
     lines.append('')
@@ -293,7 +312,8 @@ def main():
     out = a.out or os.path.join(d, 'PrintReady')
     biggest = max(float(p['size'].max()) for p in parts)
     summary = {'name': name, 'parts': [{'file': os.path.relpath(p['file'], d), 'size_mm': [round(float(x), 1) for x in p['size']],
-                                        'volume_ml': round(p['volume_mm3'] / 1000, 2)} for p in parts],
+                                        'volume_ml': round(p['volume_mm3'] / 1000, 2),
+                                        'resin_ml': round(resin_mm3(p) / 1000, 2)} for p in parts],
                'size_mm': [round(float(x), 1) for x in np.max([p['size'] for p in parts], axis=0)], 'sets': []}
     if a.printer != 'auto':
         keys = [a.printer]

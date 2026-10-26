@@ -107,7 +107,7 @@ Every model in the job must end with exactly one `result`. Notes are short and i
 - `variations[0].production` for resin, from the script's JSON (first set = the chosen printer):
   `{"technology": "resin", "printer": "<sets[0].printer>", "presupported": true|false, "files": [<relative paths>],
   "size_mm": [x, y, z], "parts": n, "plates": <sets[0].plates>, "figures_per_plate": <sets[0].figures_per_plate>,
-  "print_hours": <sets[0].print_hours>, "resin_ml": <sets[0].resin_ml>,
+  "print_hours": <sets[0].print_hours>, "resin_ml": <sets[0].resin_ml> (hollow, 2 mm wall -- the script's default),
   "printready": ["<PrintReady folder of each set, relative to the model dir>"]}`. The product tool fills the cost
   calculation (printer time + resin) from `printer`, `print_hours` and `resin_ml`.
 - Result note, e.g. "GK3 Ultra: 1 plaat, 10 per plaat, ca. 22 ml, 0,7 u (+ Saturn: mini)".
