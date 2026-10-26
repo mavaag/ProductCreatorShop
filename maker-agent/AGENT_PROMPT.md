@@ -85,12 +85,27 @@ Every model in the job must end with exactly one `result`. Notes are short and i
   Product type **simple**: no size variants. The size is **the size the file is delivered in** (do not scale): measure
   the STL bounding boxes and state the assembled height (or largest dimension) in the text, e.g. "approx. 75 mm tall".
   Mention it is delivered unpainted (ready to prime and paint) and, when it has several parts, that it needs gluing.
-- Printers (build volume X x Y x Z mm), pick the **smallest that fits** every part (parts may be rotated):
-  Elegoo Saturn 3 Ultra 218 x 122 x 260 · Anycubic Photon M3 Max 298 x 164 x 300 · UniFormation GK3 Ultra 300 x 160 x 300.
-  If a part fits none of them, report the model `failed` with the dimensions.
-- `variations[0].production` for resin: `{"technology": "resin", "printer": "...", "presupported": true|false,
-  "files": ["<path of each file to print, prefer the pre-supported STL or the slicer project>"],
-  "size_mm": [x, y, z], "parts": n}`.
+- **Build plates (user decision 2026-10-26)**: run
+  `python3 /src/tools/maker/resin_plates.py "<model dir>" --name "<product name without 'Resin Figure (Unpainted)'>" --files <files>`
+  with exactly the set that gets printed: one file per part, the **pre-supported** version when there is one, no
+  duplicates (skip preview/"decimated"/combined meshes and the unsupported copy of a supported part). It checks every
+  part against the printers, packs the parts on the build plate and writes `<model>/PrintReady/<Name>_<printer>/`
+  (`plate_N.stl`, `batch_<k>x.stl`, `_OVERVIEW.png`, `README.txt`, `plates.json`) and prints a JSON summary.
+  - Printers: the main printers are the **UniFormation GK3 Ultra** (300 x 160 x 300) and the **Anycubic Photon M3 Max**
+    (298 x 164 x 300); the script picks the one with the fewest plates. The **Elegoo Saturn 3 Ultra** (218 x 122 x 260)
+    is a spare: the script adds a Saturn set only for miniatures (largest dimension <= 80 mm). Do not override this
+    unless the job note asks for a printer.
+  - Look at `_OVERVIEW.png` before you accept it. Exit code 2 = a part fits no printer: report the model `failed`
+    with the dimensions from the JSON.
+  - No supports are added and nothing is sliced: when the files are not pre-supported, say in the result note that
+    supports still have to be added in the slicer.
+- `variations[0].production` for resin, from the script's JSON (first set = the chosen printer):
+  `{"technology": "resin", "printer": "<sets[0].printer>", "presupported": true|false, "files": [<relative paths>],
+  "size_mm": [x, y, z], "parts": n, "plates": <sets[0].plates>, "figures_per_plate": <sets[0].figures_per_plate>,
+  "print_hours": <sets[0].print_hours>, "resin_ml": <sets[0].resin_ml>,
+  "printready": ["<PrintReady folder of each set, relative to the model dir>"]}`. The product tool fills the cost
+  calculation (printer time + resin) from `printer`, `print_hours` and `resin_ml`.
+- Result note, e.g. "GK3 Ultra: 1 plaat, 10 per plaat, ca. 22 ml, 0,7 u (+ Saturn: mini)".
 - An FDM version of the same model stays a separate product (only make it when the job note asks for it).
 
 Finish with build/sync/publish, a final `progress` line in Dutch summarising the job, and stop.

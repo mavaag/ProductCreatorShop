@@ -16,6 +16,7 @@ function todayIso() {
 const UNITS = ["g", "kg", "ml", "vel", "stuk", "m2"];
 const CATEGORIES = [
   { value: "filament", label: "Filament" },
+  { value: "resin", label: "Resin" },
   { value: "ink", label: "Inkt" },
   { value: "paper", label: "Papier" },
   { value: "blank", label: "Blanco object" },
