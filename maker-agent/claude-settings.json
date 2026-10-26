@@ -61,6 +61,10 @@
       "Bash(find * -exec*)",
       "Bash(find * -execdir*)",
       "Bash(find * -ok*)"
+    ],
+    "additionalDirectories": [
+      "/volume1/MakerProducts",
+      "/src"
     ]
   }
 }
