@@ -3,8 +3,10 @@
 # repo gemount (/src, bijgehouden door auto-deploy), zodat een merge op master volstaat om ze bij te werken.
 FROM node:22-bookworm-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      python3 python3-pip python3-venv inkscape git ca-certificates curl 7zip unzip \
+# non-free aanzetten voor unrar: het Debian-pakket 7zip kan om licentieredenen geen RAR uitpakken
+RUN sed -i 's/^Components: main$/Components: main non-free/' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update && apt-get install -y --no-install-recommends \
+      python3 python3-pip python3-venv inkscape git ca-certificates curl 7zip unzip unrar \
     && rm -rf /var/lib/apt/lists/*
 
 # vaste versies: een nieuwere release kan de nesting/conversie anders laten uitkomen

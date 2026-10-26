@@ -46,7 +46,10 @@
       "Bash(7zz x:*)",
       "Bash(7zz l:*)",
       "Bash(cp -n -r:*)",
-      "Bash(cp -rn:*)"
+      "Bash(cp -rn:*)",
+      "Bash(unrar x:*)",
+      "Bash(unrar l:*)",
+      "Bash(unrar t:*)"
     ],
     "deny": [
       "Read(//volume1/Docker/**)",
