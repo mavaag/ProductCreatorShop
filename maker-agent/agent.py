@@ -19,7 +19,7 @@ POLL_S = 30
 IDLE_EXIT_S = 3600
 JOB_TIMEOUT_S = 6 * 3600
 TAIL_LINES = 60
-VERSION = '1'
+VERSION = '2'
 
 status = {'text': 'wacht op opdrachten'}
 
@@ -83,7 +83,7 @@ def run_job(job):
     status['text'] = f'bezig met opdracht van {len(models)} model{"" if len(models) == 1 else "len"}'
     tail = []
     cmd = ['claude', '-p', prompt, '--output-format', 'stream-json', '--verbose',
-           '--permission-mode', 'dontAsk', '--settings', os.path.join(HERE, 'claude-settings.json')]
+           '--model', os.environ.get('MAKER_AGENT_MODEL', 'opus'), '--permission-mode', 'dontAsk', '--settings', os.path.join(HERE, 'claude-settings.json')]
     env = dict(os.environ, MAKER_JOB_ID=jid)
     print(f'opdracht {jid}: {len(models)} modellen', flush=True)
     started = time.time(); last_push = 0

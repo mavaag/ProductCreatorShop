@@ -20,7 +20,29 @@
       "Bash(tail:*)",
       "Bash(wc:*)",
       "Bash(file:*)",
-      "Bash(du:*)"
+      "Bash(du:*)",
+      "Bash(cat:*)",
+      "Bash(echo:*)",
+      "Bash(printf:*)",
+      "Bash(sort:*)",
+      "Bash(uniq:*)",
+      "Bash(cut:*)",
+      "Bash(tr:*)",
+      "Bash(find:*)",
+      "Bash(stat:*)",
+      "Bash(pwd:*)",
+      "Bash(cd:*)",
+      "Bash(basename:*)",
+      "Bash(dirname:*)",
+      "Bash(realpath:*)",
+      "Bash(test:*)",
+      "Bash(true:*)",
+      "Bash(diff:*)",
+      "Bash(cmp:*)",
+      "Bash(grep:*)",
+      "Bash(jq:*)",
+      "Bash(tree:*)",
+      "Bash(sha1sum:*)"
     ],
     "deny": [
       "Read(//volume1/Docker/**)",
@@ -34,7 +56,11 @@
       "Bash(docker:*)",
       "Bash(sudo:*)",
       "WebFetch",
-      "WebSearch"
+      "WebSearch",
+      "Bash(find * -delete*)",
+      "Bash(find * -exec*)",
+      "Bash(find * -execdir*)",
+      "Bash(find * -ok*)"
     ]
   }
 }
