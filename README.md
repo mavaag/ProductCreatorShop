@@ -113,6 +113,27 @@ Klik op **Personalisatie opslaan** en synchroniseer het product: de sync stuurt 
 - Producten waarvan de instellingen nog niet in de app staan, laat de sync ongemoeid. Heb je ze al in WooCommerce
   ingesteld, haal ze dan eerst binnen met **Metadata uit WooCommerce importeren**.
 
+## 7. Catalogus (MakerProducts-bibliotheek)
+
+De pagina **Catalogus** toont alle modellen uit de bibliotheek op de NAS (`/volume1/MakerProducts`, laser + 3D-print)
+als kaartjes, met filters op techniek, categorie en "enkel snijklaar". Werkwijze:
+
+1. **Selecteren** -- vink aan welke modellen je wil verkopen (bewaard in `maker_picks`).
+2. **Document** -- per geselecteerd model wordt een productdocument gemaakt (`_catalog/products/<id>.json` op de NAS:
+   Engelse shoptekst, categorie, varianten zoals 3/6 mm en M/L of S/M/L, foto's, productiegegevens) en gepubliceerd.
+3. **Maak product** -- maakt het product + alle varianten aan in de beheertool (als concept, niet gepubliceerd).
+   Daarna vul je de prijsberekening in en synchroniseer je zoals altijd met WooCommerce.
+
+Eenmalig: voer `supabase/migration_018_maker_catalog.sql` uit in de SQL Editor. Daarna op de NAS:
+
+```
+python3 tools/maker/sync_catalog.py    # catalogus + thumbnails -> Supabase (na elke rebuild van catalog.json)
+python3 tools/maker/publish_docs.py    # nieuwe/gewijzigde productdocumenten + foto's -> Supabase
+```
+
+De scripts lezen de service-key uit `/volume1/Docker/supabase/.env`; er staan geen geheimen in de repo.
+Nieuw veld `products.short_description`: wordt bij de sync enkel meegestuurd als het ingevuld is.
+
 ## Projectstructuur
 
 ```

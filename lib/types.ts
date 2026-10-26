@@ -110,6 +110,7 @@ export type Product = {
   attribute_names: string[];
   default_attribute_values: Record<string, string>; // bv. {"Grootte":"M"} -- WooCommerce "Default Form Values"
   description: string;
+  short_description: string; // WooCommerce "short description" -- leeg = de sync laat die in WooCommerce ongemoeid
   categories: string; // WooCommerce-notatie, bv. "Woondecoratie > Vazen, Cadeaus"
   image_url: string; // één of meerdere URL's, gescheiden door komma
   weight_kg: number | null;
