@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
 import { PROCESS_TYPE_LABELS } from "@/lib/types";
 import { alertDialog, confirmDialog } from "@/components/DialogHost";
-import { AGENT_ONLINE_MS, MAKER_MODEL_COLUMNS, MakerAgent, MakerDoc, MakerJob, MakerModel, MakerPick, createProductFromDoc } from "@/lib/maker";
+import { AGENT_ONLINE_MS, MAKER_MODEL_COLUMNS, MakerAgent, MakerDoc, MakerJob, MakerModel, MakerPick, createProductFromDoc, licenseWarning } from "@/lib/maker";
 
 /** Stappen van een model: kiezen -> document (beschrijving, foto's, varianten) -> product in de beheertool. */
 type Stage = "all" | "picked" | "doc" | "ready" | "created" | "shop";
@@ -144,6 +144,12 @@ export default function CatalogPage() {
     if (ids.length > 1 && !(await confirmDialog(`${ids.length} producten aanmaken in de beheertool (als concept, nog niet gepubliceerd)?`))) return;
     const { data, error } = await supabase.from("maker_models").select("id, doc").in("id", ids);
     if (error) { setError(error.message); return; }
+    const restricted = (data ?? []).filter((r) => licenseWarning(r.doc as MakerDoc));
+    if (restricted.length > 0 && !(await confirmDialog(
+      `Let op, licentie: ${restricted.map((r) => (r.doc as MakerDoc).product.name).join(", ")} ` +
+      `${restricted.length === 1 ? "heeft" : "hebben"} een niet-commerciële licentie. Verkopen mag pas met toestemming van de ontwerper. Toch aanmaken?`,
+      { confirmLabel: "Toch aanmaken", danger: true },
+    ))) return;
     const failed: string[] = [];
     let lastId: string | null = null;
     for (const [i, row] of (data ?? []).entries()) {
@@ -554,6 +560,11 @@ function ModelDetail({ model, pick, busy, onClose, onToggle, onMake }: {
               </p>
             ) : (
               <>
+                {licenseWarning(doc) && (
+                  <p className="warning" style={{ marginTop: 0 }}>
+                    <b>Licentie: niet commercieel.</b> {licenseWarning(doc)} Verkopen mag pas met toestemming van de ontwerper.
+                  </p>
+                )}
                 <div className="prod-cats" style={{ marginTop: 0 }}>
                   <span className="pill cyan">{PROCESS_TYPE_LABELS[doc.product.process_type]}</span>
                   <span className="pill">{doc.product.categories}</span>

@@ -12,6 +12,12 @@ its models are at the bottom of this prompt. Work through every model, report as
   follow the same rules (no `os.remove`, `shutil.rmtree`, `shutil.move`, opening existing files for writing).
 - When a model cannot be done well (broken/missing source, unclear part counts, adult content, archive of many
   models, only a CDR/EPS file), mark it `failed` or `skipped` with a short reason. Do not guess or ship half work.
+- **Licences (user decision 2026-10-26): process anyway, with a warning.** Look for LICENSE/README/attribution
+  files. If the licence forbids commercial use (CC BY-NC, "personal use only", ...), still make the plates and the
+  document, but set `license.status` to `"non-commercial"` and `license.note` to licence + designer + source URL
+  (e.g. "CC BY-NC 3.0, difred, thingiverse.com/thing:8174 - toestemming vragen"). Report the model as `ok` with a
+  note that starts with "LET OP licentie:". The Catalogus then warns the user before a product is created.
+  A designer thickness of 4 mm is not a reason to skip: retarget the slots to 3 mm as the runbook describes.
 - No network access other than Supabase via the provided scripts. Keep secrets out of output.
 
 ## Shell commands (important)
