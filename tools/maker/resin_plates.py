@@ -7,6 +7,9 @@
   Geef bij een model met supported én unsupported versies met --files enkel de set die geprint moet worden.
 - De onderdelen blijven staan zoals de ontwerper ze aanlevert (voorgesupporte bestanden zijn al georiënteerd); op de
   plaat mogen ze een kwartslag draaien. Elk onderdeel komt met zijn onderkant op z=0.
+- Te grote onderdelen (gebruikerskeuze 2026-10-26): niet stoppen. Past een onderdeel enkel zonder rand, dan krijgt het
+  een eigen plaat ("krap"); past het helemaal niet, dan staat het alleen op een eigen plaat van de gekozen printer,
+  rood gemarkeerd ("te groot": in de slicer opsplitsen of schuin zetten). Dat staat in warnings en in de README.
 - Printerkeuze (gebruikerskeuze 2026-10-26): de hoofdprinters zijn de UniFormation GK3 Ultra en de Anycubic Photon M3
   Max; "auto" neemt degene met de minste platen (gelijk: GK3 Ultra). Is het een miniatuur (alles past op de Elegoo
   Saturn 3 Ultra en de grootste maat is <= MINI_MM), dan komen er ook platen voor de Saturn bij.
@@ -31,6 +34,13 @@ LAYER_MM = 0.05
 BOTTOM_LAYERS, BOTTOM_SEC = 6, 30
 EDGE_MM = 5                      # vrije rand op de bouwplaat
 WASTE = 1.10                     # +10% resin voor verlies (vat, spoelen)
+# Hol printen (gebruikerskeuze 2026-10-26): grotere onderdelen worden in de slicer uitgehold. Resin = schil van WALL_MM
+# (oppervlakte x wanddikte), nooit meer dan massief. Onderdelen waarvan de kleinste maat < HOLLOW_MIN_MM is, blijven
+# massief (te dun om uit te hollen). Supports: zit "support" in de bestandsnaam, dan zijn ze inbegrepen in de mesh;
+# anders SUPPORTS extra.
+WALL_MM = 2.0
+HOLLOW_MIN_MM = 15.0
+SUPPORTS = 1.15
 MESH_EXT = {'.stl', '.obj', '.3mf'}
 SKIP_DIRS = {'PrintReady', 'LaserReady', '__MACOSX', '@eaDir', '.@__thumb', '#Recycle'}
 
@@ -85,7 +95,16 @@ def part_info(path):
     lo, hi = tri.reshape(-1, 3).min(0), tri.reshape(-1, 3).max(0)
     # volume via getekende tetraëders (benadering bij niet-gesloten meshes)
     vol = abs(np.einsum('ij,ij->i', tri[:, 0], np.cross(tri[:, 1], tri[:, 2])).sum()) / 6.0
-    return {'file': path, 'tri': tri, 'lo': lo, 'size': hi - lo, 'volume_mm3': vol}
+    area = np.linalg.norm(np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0]), axis=1).sum() / 2.0
+    return {'file': path, 'tri': tri, 'lo': lo, 'size': hi - lo, 'volume_mm3': vol, 'area_mm2': area}
+
+
+def resin_mm3(part, hollow=True):
+    """Resin voor één onderdeel: hol (schil van WALL_MM) als het dik genoeg is, anders massief; + supports."""
+    vol = part['volume_mm3']
+    if hollow and float(part['size'].min()) >= HOLLOW_MIN_MM:
+        vol = min(vol, part['area_mm2'] * WALL_MM)
+    return vol * (1.0 if 'support' in os.path.basename(part['file']).lower() else SUPPORTS)
 
 
 # ---------- schikken (MaxRects, beste korte zijde, kwartslag mag) ----------
@@ -116,11 +135,25 @@ class Bin:
         self.used.append((x, y, w, h))
 
 
-def fits(part, printer):
+def fits(part, printer, edge=EDGE_MM):
     W, D, H = printer['size']
     sx, sy, sz = part['size']
-    room = (W - 2 * EDGE_MM, D - 2 * EDGE_MM)
+    room = (W - 2 * edge, D - 2 * edge)
     return sz <= H and ((sx <= room[0] and sy <= room[1]) or (sy <= room[0] and sx <= room[1]))
+
+
+def fit_class(part, printer):
+    """'ok' = past met rand, 'tight' = past enkel zonder rand (eigen plaat), 'oversize' = past niet."""
+    return 'ok' if fits(part, printer) else 'tight' if fits(part, printer, edge=0.5) else 'oversize'
+
+
+def alone(part, printer):
+    """Eigen plaat voor een krap of te groot onderdeel: gecentreerd, langste kant langs de lange zijde van de plaat."""
+    W, D, _ = printer['size']
+    sx, sy = float(part['size'][0]), float(part['size'][1])
+    rot = (sx > sy) != (W > D)
+    w, h = (sy, sx) if rot else (sx, sy)
+    return [(part, (W - w) / 2, (D - h) / 2, rot)]
 
 
 def pack(parts, printer, spacing, copies=1):
@@ -129,6 +162,9 @@ def pack(parts, printer, spacing, copies=1):
     items = sorted([p for _ in range(copies) for p in parts], key=lambda p: -p['size'][0] * p['size'][1])
     plates = []
     for p in items:
+        if fit_class(p, printer) != 'ok':     # krap of te groot: alleen op een eigen plaat, niets anders erbij
+            plates.append((Bin(0, 0), alone(p, printer)))
+            continue
         w, h = p['size'][0] + spacing, p['size'][1] + spacing
         for b in plates:
             f = b[0].fit(w, h)
@@ -146,6 +182,7 @@ def pack(parts, printer, spacing, copies=1):
 
 def per_plate(parts, printer, spacing):
     """Hoeveel volledige figuren (alle onderdelen) passen samen op één plaat."""
+    if any(fit_class(p, printer) != 'ok' for p in parts): return 0
     n = 1
     while n < 60 and len(pack(parts, printer, spacing, n + 1)) == 1: n += 1
     return n if len(pack(parts, printer, spacing, 1)) == 1 else 0
@@ -174,18 +211,23 @@ def overview(path, plates, printer, title):
     import matplotlib.pyplot as plt
     from matplotlib.patches import Rectangle
     W, D, _ = printer['size']
-    fig, axes = plt.subplots(1, len(plates), figsize=(5.5 * len(plates), 5.5 * D / W + 0.8), squeeze=False)
-    for i, (ax, plate) in enumerate(zip(axes[0], plates)):
+    cols = min(len(plates), 3); rows = math.ceil(len(plates) / cols)   # raster van max. 3 platen per rij
+    fig, axes = plt.subplots(rows, cols, figsize=(5.5 * cols, (5.5 * D / W + 0.6) * rows + 0.4), squeeze=False)
+    for ax in axes.flat[len(plates):]: ax.axis('off')
+    for i, (ax, plate) in enumerate(zip(axes.flat, plates)):
         ax.add_patch(Rectangle((0, 0), W, D, fill=False, lw=2))
         for part, x, y, rot in plate:
+            big = fit_class(part, printer) == 'oversize'
             t = placed_triangles(part, x, y, rot)
             pts = t.reshape(-1, 3)[:, :2]
             if len(pts) > 20000: pts = pts[np.random.default_rng(0).choice(len(pts), 20000, replace=False)]
             ax.scatter(pts[:, 0], pts[:, 1], s=0.2, alpha=0.4)
             sx, sy = (part['size'][1], part['size'][0]) if rot else (part['size'][0], part['size'][1])
-            ax.add_patch(Rectangle((x, y), sx, sy, fill=False, lw=0.6, ls='--'))
+            ax.add_patch(Rectangle((x, y), sx, sy, fill=False, lw=1.5 if big else 0.6, ls='--', color='red' if big else 'black'))
             ax.text(x + sx / 2, y + sy / 2, os.path.splitext(os.path.basename(part['file']))[0][:18], ha='center', va='center', fontsize=6)
-        ax.set_xlim(-5, W + 5); ax.set_ylim(-5, D + 5); ax.set_aspect('equal')
+        xs = [v for part, x, y, rot in plate for v in (x, x + (part['size'][1] if rot else part['size'][0]))]
+        ys = [v for part, x, y, rot in plate for v in (y, y + (part['size'][0] if rot else part['size'][1]))]
+        ax.set_xlim(min(-5, *xs) - 2, max(W + 5, *xs) + 2); ax.set_ylim(min(-5, *ys) - 2, max(D + 5, *ys) + 2); ax.set_aspect('equal')
         ax.set_title(f'plaat {i + 1} - {printer["name"]} ({W}x{D})', fontsize=9)
     fig.suptitle(title, fontsize=10)
     fig.tight_layout(); fig.savefig(path, dpi=110); plt.close(fig)
@@ -195,7 +237,7 @@ def estimate(plate, printer):
     hmax = max(p['size'][2] for p, *_ in plate)
     layers = math.ceil(hmax / LAYER_MM)
     sec = BOTTOM_LAYERS * BOTTOM_SEC + max(layers - BOTTOM_LAYERS, 0) * printer['sec_per_layer']
-    ml = sum(p['volume_mm3'] for p, *_ in plate) / 1000 * WASTE
+    ml = sum(resin_mm3(p) for p, *_ in plate) / 1000 * WASTE
     return round(sec / 3600, 2), round(ml, 1), round(hmax, 1)
 
 
@@ -204,8 +246,18 @@ def make_set(model_dir, name, key, parts, spacing, out_root, dry):
     plates = pack(parts, printer, spacing)
     k = per_plate(parts, printer, spacing)
     est = [estimate(p, printer) for p in plates]
-    figure_ml = round(sum(p['volume_mm3'] for p in parts) / 1000 * WASTE, 1)
-    res = {'printer': printer['name'], 'plates': len(plates), 'figures_per_plate': k,
+    figure_ml = round(sum(resin_mm3(p) for p in parts) / 1000 * WASTE, 1)
+    solid_ml = round(sum(resin_mm3(p, hollow=False) for p in parts) / 1000 * WASTE, 1)
+    warnings = []
+    for p in parts:
+        c, dims = fit_class(p, printer), ' x '.join(str(round(float(v))) for v in p['size'])
+        if c == 'tight':
+            warnings.append(f'{os.path.basename(p["file"])} ({dims} mm) past enkel zonder rand: eigen plaat, krap.')
+        elif c == 'oversize':
+            warnings.append(f'{os.path.basename(p["file"])} ({dims} mm) is te groot voor de {printer["name"]}: '
+                            'in de slicer opsplitsen of schuin zetten (staat apart op een eigen plaat).')
+    res = {'printer': printer['name'], 'plates': len(plates), 'figures_per_plate': k, 'warnings': warnings,
+           'resin_ml_solid': solid_ml,
            'print_hours': round(sum(e[0] for e in est), 2), 'resin_ml': figure_ml,
            'print_hours_full_plate': round(estimate(pack(parts, printer, spacing, k)[0], printer)[0], 2) if k else None,
            'plate_details': [{'plate': i + 1, 'parts': [os.path.basename(p['file']) for p, *_ in pl], 'height_mm': e[2],
@@ -225,9 +277,11 @@ def make_set(model_dir, name, key, parts, spacing, out_root, dry):
     lines = [f'{name} - {printer["name"]}', '',
              f'{len(plates)} plaat/platen voor 1 figuur; {k} figuur/figuren passen samen op 1 plaat.' if k else
              f'{len(plates)} platen voor 1 figuur.',
-             f'Resin per figuur: ca. {figure_ml} ml (incl. 10% verlies). Printtijd (schatting, {LAYER_MM} mm lagen): '
-             f'ca. {res["print_hours"]} u voor 1 figuur.']
+             f'Resin per figuur: ca. {figure_ml} ml, hol geprint met {WALL_MM:g} mm wand (massief: ca. {solid_ml} ml); '
+             f'incl. 10% verlies en {round((SUPPORTS - 1) * 100)}% supports als die niet in de bestanden zitten.',
+             f'Printtijd (schatting, {LAYER_MM} mm lagen): ca. {res["print_hours"]} u voor 1 figuur.']
     if k > 1: lines.append(f'batch_{k}x.stl: {k} figuren samen op 1 plaat, ca. {res["print_hours_full_plate"]} u (zelfde hoogte, dus zelfde tijd).')
+    if warnings: lines += ['', 'LET OP:'] + [f'- {w}' for w in warnings]
     lines.append('')
     for d in res['plate_details']:
         lines.append(f'plate_{d["plate"]}.stl: {", ".join(d["parts"])} - hoogte {d["height_mm"]} mm, ca. {d["print_hours"]} u, {d["resin_ml"]} ml')
@@ -258,25 +312,22 @@ def main():
     out = a.out or os.path.join(d, 'PrintReady')
     biggest = max(float(p['size'].max()) for p in parts)
     summary = {'name': name, 'parts': [{'file': os.path.relpath(p['file'], d), 'size_mm': [round(float(x), 1) for x in p['size']],
-                                        'volume_ml': round(p['volume_mm3'] / 1000, 2)} for p in parts],
+                                        'volume_ml': round(p['volume_mm3'] / 1000, 2),
+                                        'resin_ml': round(resin_mm3(p) / 1000, 2)} for p in parts],
                'size_mm': [round(float(x), 1) for x in np.max([p['size'] for p in parts], axis=0)], 'sets': []}
-    too_big = [p for p in parts if not any(fits(p, PRINTERS[k]) for k in PRINTERS)]
-    if too_big:
-        summary['error'] = 'past op geen enkele printer: ' + ', '.join(
-            f'{os.path.basename(p["file"])} ({" x ".join(str(round(float(x))) for x in p["size"])} mm)' for p in too_big)
-        print(json.dumps(summary, indent=2, ensure_ascii=False)); sys.exit(2)
     if a.printer != 'auto':
         keys = [a.printer]
     else:
-        ok = [k for k in MAIN if all(fits(p, PRINTERS[k]) for p in parts)]
-        if not ok:
-            keys = ['saturn']   # past enkel op de Saturn (zou niet mogen gebeuren: die is het kleinst)
-        else:
-            keys = [min(ok, key=lambda k: (len(pack(parts, PRINTERS[k], a.spacing)), MAIN.index(k)))]
+        # hoofdprinter: eerst de minste te grote onderdelen, dan de minste krappe, dan de minste platen (gelijk: GK3)
+        def score(k):
+            cls = [fit_class(p, PRINTERS[k]) for p in parts]
+            return (cls.count('oversize'), cls.count('tight'), len(pack(parts, PRINTERS[k], a.spacing)), MAIN.index(k))
+        keys = [min(MAIN, key=score)]
         if biggest <= MINI_MM and all(fits(p, PRINTERS['saturn']) for p in parts): keys.append('saturn')
     summary['miniature'] = biggest <= MINI_MM
     for k in keys:
         summary['sets'].append(make_set(d, name, k, parts, a.spacing, out, a.dry_run))
+    summary['warnings'] = summary['sets'][0]['warnings']
     print(json.dumps(summary, indent=2, ensure_ascii=False))
 
 
