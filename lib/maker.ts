@@ -1,5 +1,5 @@
 import { SupabaseClient } from "@supabase/supabase-js";
-import { EMPTY_COST_INPUTS, Product } from "@/lib/types";
+import { CostInputs, EMPTY_COST_INPUTS, Product } from "@/lib/types";
 import { nextAvailableSku, slugifyForSku } from "@/lib/sku";
 
 /** Eén model uit de MakerProducts-bibliotheek (tabel maker_models, zonder het zware doc-veld). */
@@ -59,9 +59,41 @@ function emptyCostInputs(processType: string) {
   return { ...EMPTY_COST_INPUTS, machine_time: Array.from({ length: machineLines }, () => ({ machine_id: "", hours: 0 })) };
 }
 
+/** Resin-gegevens die resin_plates.py in variations[].production zet (zie maker-agent/AGENT_PROMPT.md). */
+type ResinProduction = { technology?: string; printer?: string; print_hours?: number; resin_ml?: number };
+
+/**
+ * Kostenopbouw voor een resinvariant vooraf invullen uit het document: machinetijd op de gekozen printer (één figuur)
+ * en de resin (eerste materiaal met "resin" in naam of categorie, omgerekend naar zijn eenheid). Wat niet gevonden
+ * wordt, blijft leeg -- dat vul je dan zelf in.
+ */
+async function resinCostInputs(supabase: SupabaseClient, prod: ResinProduction): Promise<CostInputs> {
+  const base = emptyCostInputs("resin_print");
+  if (prod.technology !== "resin" || !prod.print_hours) return base;
+  const [{ data: machines }, { data: materials }] = await Promise.all([
+    supabase.from("machines").select("id, name, category"),
+    supabase.from("materials").select("id, name, category, unit"),
+  ]);
+  // "UniFormation GK3 Ultra" -> zoeken op het typenummer (GK3, M3 MAX, SATURN 3)
+  const key = (prod.printer ?? "").toUpperCase().match(/GK3|M3 MAX|SATURN 3/)?.[0];
+  const machine = (machines ?? []).find((m) => key && m.name.toUpperCase().includes(key))
+    ?? (machines ?? []).find((m) => m.category === "resin_printer");
+  const resin = (materials ?? []).find((m) => /resin/i.test(`${m.name} ${m.category}`));
+  const ml = prod.resin_ml ?? 0;
+  const perUnit: Record<string, number> = { ml: 1, l: 1 / 1000, g: 1.1, kg: 1.1 / 1000 };   // resin ~1,1 g/ml
+  return {
+    ...base,
+    machine_time: [{ machine_id: machine?.id ?? "", hours: Math.round(prod.print_hours * 100) / 100 }],
+    materials: resin && ml && perUnit[resin.unit]
+      ? [{ material_id: resin.id, quantity: Math.round(ml * perUnit[resin.unit] * 1000) / 1000 }]
+      : [],
+  };
+}
+
 /**
  * Maakt van een productdocument een (concept)product met al zijn varianten in de beheertool en koppelt het
- * aan de selectie in maker_picks. De prijsberekening blijft leeg -- die vul je daarna in op de productpagina.
+ * aan de selectie in maker_picks. De prijsberekening blijft leeg -- die vul je daarna in op de productpagina -- behalve
+ * bij resin, waar printer, printtijd en resin uit resin_plates.py al ingevuld worden.
  */
 /** opts.categories: de categorie die je in de Catalogus koos (anders de voorgestelde uit het document). */
 export async function createProductFromDoc(supabase: SupabaseClient, doc: MakerDoc, opts: { categories?: string } = {}): Promise<string> {
@@ -87,12 +119,18 @@ export async function createProductFromDoc(supabase: SupabaseClient, doc: MakerD
   if (error) throw error;
 
   const rows = [];
-  for (const v of attributeNames.length === 0 ? [{ attributes: {} as Record<string, string> }] : doc.variations) {
+  const variations = attributeNames.length === 0
+    ? [{ attributes: {} as Record<string, string>, production: doc.variations[0]?.production ?? {} }]
+    : doc.variations;
+  for (const v of variations) {
     const values = attributeNames.map((n) => v.attributes[n]).filter(Boolean);
     const variationSku = values.length === 0
       ? product.sku
       : await nextAvailableSku(supabase, "product_variations", `${product.sku}-` + values.map(slugifyForSku).join("-"));
-    rows.push({ product_id: product.id, sku: variationSku, attribute_values: v.attributes, cost_inputs: emptyCostInputs(p.process_type) });
+    const cost_inputs = p.process_type === "resin_print"
+      ? await resinCostInputs(supabase, v.production as ResinProduction)
+      : emptyCostInputs(p.process_type);
+    rows.push({ product_id: product.id, sku: variationSku, attribute_values: v.attributes, cost_inputs });
   }
   const { error: varError } = await supabase.from("product_variations").insert(rows);
   if (varError) {
