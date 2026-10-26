@@ -108,6 +108,14 @@ export function licenseWarning(doc: MakerDoc | null | undefined): string | null 
   return null;
 }
 
+/** Zelf gemaakte koppeling model -> WooCommerce-product (tabel maker_woo_links); woo_product_id null = bewust niet in de shop. */
+export type MakerWooLink = { model_id: string; woo_product_id: number | null; woo_name: string; woo_permalink: string };
+
+/** Shopproduct van een model: jouw koppeling gaat voor op de suggestie van de agent (doc.woo_existing). */
+export function shopProductId(m: MakerModel, link: MakerWooLink | undefined): number | null {
+  return link ? link.woo_product_id : m.woo_product_id;
+}
+
 /** Opdracht voor de MakerProducts-agent op de NAS (tabel maker_jobs, zie maker-agent/). */
 export type MakerJob = {
   id: string;

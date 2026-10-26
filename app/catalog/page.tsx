@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
 import { PROCESS_TYPE_LABELS } from "@/lib/types";
 import { alertDialog, confirmDialog } from "@/components/DialogHost";
-import { AGENT_ONLINE_MS, MAKER_MODEL_COLUMNS, MakerAgent, MakerDoc, MakerJob, MakerModel, MakerPick, createProductFromDoc, licenseWarning } from "@/lib/maker";
+import { AGENT_ONLINE_MS, MAKER_MODEL_COLUMNS, MakerAgent, MakerDoc, MakerJob, MakerModel, MakerPick, MakerWooLink, createProductFromDoc, licenseWarning, shopProductId } from "@/lib/maker";
 
 /** Stappen van een model: kiezen -> document (beschrijving, foto's, varianten) -> product in de beheertool. */
 type Stage = "all" | "picked" | "doc" | "ready" | "created" | "shop";
@@ -39,6 +39,7 @@ export default function CatalogPage() {
   const ready = useAuthGuard();
   const [models, setModels] = useState<MakerModel[]>([]);
   const [picks, setPicks] = useState<Map<string, MakerPick>>(new Map());
+  const [links, setLinks] = useState<Map<string, MakerWooLink>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [stage, setStage] = useState<Stage>("all");
@@ -59,12 +60,14 @@ export default function CatalogPage() {
   async function load() {
     setLoading(true);
     try {
-      const [m, p] = await Promise.all([
+      const [m, p, l] = await Promise.all([
         fetchAll<MakerModel>("maker_models", MAKER_MODEL_COLUMNS, "id"),
         fetchAll<MakerPick>("maker_picks", "model_id, product_id, created_at", "model_id"),
+        fetchAll<MakerWooLink>("maker_woo_links", "model_id, woo_product_id, woo_name, woo_permalink", "model_id"),
       ]);
       setModels(m.sort((a, b) => a.title.localeCompare(b.title)));
       setPicks(new Map(p.map((x) => [x.model_id, x])));
+      setLinks(new Map(l.map((x) => [x.model_id, x])));
       setError(null);
     } catch (e: any) {
       setError(e.message ?? String(e));
@@ -91,7 +94,7 @@ export default function CatalogPage() {
   function stageOf(m: MakerModel): Exclude<Stage, "all" | "picked"> | null {
     const pick = picks.get(m.id);
     if (pick?.product_id) return "created";
-    if (m.woo_product_id) return "shop";
+    if (shopProductId(m, links.get(m.id))) return "shop";
     if (m.has_doc) return "ready";
     return pick ? "doc" : null;
   }
@@ -110,7 +113,7 @@ export default function CatalogPage() {
     }
     return c;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [models, picks]);
+  }, [models, picks, links]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -125,7 +128,7 @@ export default function CatalogPage() {
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [models, picks, stage, kind, category, search, onlyReady, onlyTrademark]);
+  }, [models, picks, links, stage, kind, category, search, onlyReady, onlyTrademark]);
 
   async function togglePick(m: MakerModel) {
     const pick = picks.get(m.id);
@@ -320,7 +323,7 @@ export default function CatalogPage() {
                     {m.kind === "Lasercut" && m.laser_ready.length > 0 && <span className="pill cyan">Snijklaar</span>}
                     {m.has_doc && <span className="pill cyan">Document</span>}
                     {m.is_trademark && <span className="pill" style={{ color: "var(--yellow)", borderColor: "var(--yellow)" }} title="Merk/personage van iemand anders">Merk</span>}
-                    {m.woo_product_id && <span className="pill">In shop #{m.woo_product_id}</span>}
+                    {shopProductId(m, links.get(m.id)) && <span className="pill">In shop #{shopProductId(m, links.get(m.id))}</span>}
                   </div>
                 </div>
                 <div className="prod-foot">
@@ -350,6 +353,8 @@ export default function CatalogPage() {
           onClose={() => setOpenId(null)}
           onToggle={() => togglePick(models.find((m) => m.id === openId)!)}
           onMake={() => makeProducts([openId])}
+          link={links.get(openId)}
+          onLinked={load}
           category={categoryChoice.get(openId)}
           wcCategories={wcCategories}
           onCategory={(c) => {
@@ -599,6 +604,117 @@ function AgentPanel({ waiting, titles, onJobFinished }: {
   );
 }
 
+type WooHit = { id: number; name: string; sku: string; status: string; permalink: string; image: string | null };
+
+/**
+ * Koppeling van een catalogusmodel aan een bestaand WooCommerce-product. Jouw koppeling (maker_woo_links) gaat voor op
+ * de suggestie van de agent (doc.woo_existing); "Klopt niet" bewaart een koppeling zonder product.
+ */
+function ShopLink({ model, doc, link, onLinked }: { model: MakerModel; doc: MakerDoc | null; link: MakerWooLink | undefined; onLinked: () => void }) {
+  const [query, setQuery] = useState("");
+  const [hits, setHits] = useState<WooHit[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const suggestion = doc?.woo_existing ?? null;
+  const linkedId = shopProductId(model, link);
+  // vermoedens van de agent in de notities, bv. "Possibly already in the shop as #1212 (...)"
+  const guesses = Array.from(new Set((doc?.notes_internal ?? []).flatMap((n) =>
+    /in the shop/i.test(n) ? Array.from(n.matchAll(/#(\d+)/g), (x) => x[1]) : [])));
+
+  async function search(q = query) {
+    if (!q.trim()) return;
+    setSearching(true); setError(null);
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const res = await fetch(`/api/woocommerce/products?search=${encodeURIComponent(q.trim())}`, {
+        headers: { Authorization: `Bearer ${session.session?.access_token}` },
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? res.statusText);
+      setHits(body.products);
+    } catch (e: any) {
+      setError(e.message ?? String(e));
+    }
+    setSearching(false);
+  }
+
+  async function save(woo: { id: number; name: string; permalink: string } | null) {
+    const { error } = await supabase.from("maker_woo_links").upsert({
+      model_id: model.id, woo_product_id: woo?.id ?? null, woo_name: woo?.name ?? "", woo_permalink: woo?.permalink ?? "",
+    });
+    if (error) { setError(error.message); return; }
+    setHits(null); setQuery("");
+    onLinked();
+  }
+
+  async function reset() {
+    const { error } = await supabase.from("maker_woo_links").delete().eq("model_id", model.id);
+    if (error) { setError(error.message); return; }
+    onLinked();
+  }
+
+  return (
+    <details open={!!linkedId || !!suggestion || guesses.length > 0} style={{ marginTop: 12 }}>
+      <summary>Koppeling met de shop{linkedId ? ` -- #${linkedId}` : ""}</summary>
+      {linkedId ? (
+        <p style={{ margin: "8px 0" }}>
+          {link ? "Gekoppeld aan" : "De agent vond dit product in de shop:"}{" "}
+          {(link?.woo_permalink || null) ? (
+            <a href={link!.woo_permalink} target="_blank" rel="noreferrer">#{linkedId} {link!.woo_name}</a>
+          ) : (
+            <b>#{linkedId} {link?.woo_name || suggestion?.name}</b>
+          )}
+          . Je maakt er dus geen nieuw product van; importeer het via Producten &gt; Import als je het in de beheertool wil.{" "}
+          {link ? (
+            <button type="button" className="btn secondary" onClick={reset}>Ontkoppelen</button>
+          ) : (
+            <>
+              <button type="button" className="btn secondary" onClick={() => save({ id: suggestion!.id, name: suggestion!.name, permalink: "" })}>Klopt</button>{" "}
+              <button type="button" className="btn secondary" onClick={() => save(null)}>Klopt niet</button>
+            </>
+          )}
+        </p>
+      ) : (
+        <>
+          <p className="muted" style={{ margin: "8px 0" }}>
+            {link && suggestion
+              ? <>Je gaf aan dat dit model niet in de shop staat (de agent stelde #{suggestion.id} voor). <button type="button" className="maker-name-btn" style={{ textDecoration: "underline" }} onClick={reset}>Terugzetten</button></>
+              : "Staat dit model al in je shop? Zoek het product en koppel het, dan maak je er geen dubbel product van."}
+          </p>
+          {!link && guesses.length > 0 && (
+            <p style={{ margin: "0 0 8px", color: "var(--yellow)" }}>
+              De agent vermoedt dat dit model al in de shop staat:{" "}
+              {guesses.map((g) => (
+                <button key={g} type="button" className="btn secondary" style={{ marginRight: 6 }} onClick={() => { setQuery(g); search(g); }}>Bekijk #{g}</button>
+              ))}
+            </p>
+          )}
+          <div style={{ display: "flex", gap: 8 }}>
+            <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && search()}
+              placeholder="naam, SKU of product-id in de shop" />
+            <button type="button" className="btn secondary" disabled={searching || !query.trim()} onClick={() => search()}>{searching ? "Zoeken..." : "Zoeken"}</button>
+          </div>
+          {hits && (hits.length === 0 ? <p className="muted">Niets gevonden.</p> : (
+            <ul style={{ listStyle: "none", padding: 0, margin: "8px 0" }}>
+              {hits.map((h) => (
+                <li key={h.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 0" }}>
+                  {h.image ? <img src={h.image} alt="" style={{ width: 40, height: 40, objectFit: "cover" }} /> : <span style={{ width: 40 }} />}
+                  <span style={{ flex: 1 }}>
+                    <a href={h.permalink} target="_blank" rel="noreferrer">#{h.id} {h.name}</a>{" "}
+                    <span className="muted">{h.sku}{h.status !== "publish" ? ` · ${h.status}` : ""}</span>
+                  </span>
+                  <button type="button" className="btn" onClick={() => save(h)}>Koppel</button>
+                </li>
+              ))}
+            </ul>
+          ))}
+        </>
+      )}
+      {error && <p className="warning">{error}</p>}
+    </details>
+  );
+}
+
 function formatSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} kB`;
   if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
@@ -613,13 +729,15 @@ function timeAgo(iso: string): string {
   return h < 48 ? `${h} u geleden` : `${Math.round(h / 24)} dagen geleden`;
 }
 
-function ModelDetail({ model, pick, busy, onClose, onToggle, onMake, category, wcCategories, onCategory }: {
+function ModelDetail({ model, pick, busy, onClose, onToggle, onMake, link, onLinked, category, wcCategories, onCategory }: {
   model: MakerModel;
   pick: MakerPick | null;
   busy: boolean;
   onClose: () => void;
   onToggle: () => void;
   onMake: () => void;
+  link: MakerWooLink | undefined;
+  onLinked: () => void;
   /** zelf gekozen categorie; undefined = de voorgestelde uit het document */
   category: string | undefined;
   wcCategories: string[];
@@ -643,6 +761,7 @@ function ModelDetail({ model, pick, busy, onClose, onToggle, onMake, category, w
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  const shopId = shopProductId(model, link);
   const images = [...(doc?.product.image_urls ?? []), ...(model.thumb_url && !(doc?.product.image_urls ?? []).length ? [model.thumb_url] : [])];
 
   return (
@@ -694,7 +813,7 @@ function ModelDetail({ model, pick, busy, onClose, onToggle, onMake, category, w
                   <span className="pill">{doc.product.type === "simple" ? "simpel" : `${doc.variations.length} varianten`}</span>
                   <span className="pill mono">{doc.product.sku_base}</span>
                 </div>
-                {!pick?.product_id && !doc.woo_existing && (
+                {!pick?.product_id && !shopId && (
                   <div style={{ marginBottom: 12 }}>
                     <label>WooCommerce-categorie</label>
                     <input
@@ -716,12 +835,6 @@ function ModelDetail({ model, pick, busy, onClose, onToggle, onMake, category, w
                           </>}
                     </span>
                   </div>
-                )}
-                {doc.woo_existing && (
-                  <p className="warning">
-                    Staat al in WooCommerce als #{doc.woo_existing.id} &quot;{doc.woo_existing.name}&quot; ({doc.woo_existing.type}, €{doc.woo_existing.price}).
-                    Importeer het via Producten &gt; Import i.p.v. een nieuw product te maken; de varianten hieronder kan je daarna toevoegen.
-                  </p>
                 )}
                 <div className="maker-desc" dangerouslySetInnerHTML={{ __html: doc.product.short_description }} />
                 <details>
@@ -757,12 +870,14 @@ function ModelDetail({ model, pick, busy, onClose, onToggle, onMake, category, w
               </>
             )}
 
+            <ShopLink model={model} doc={doc} link={link} onLinked={onLinked} />
+
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 16 }}>
               {pick?.product_id ? (
                 <Link className="btn" href={`/products/${pick.product_id}`}>Open product</Link>
               ) : (
                 <>
-                  <button className="btn" disabled={busy || !doc || !!doc.woo_existing} onClick={onMake}>Maak product</button>
+                  <button className="btn" disabled={busy || !doc || !!shopId} title={shopId ? "Staat al in de shop -- ontkoppel eerst als je toch een nieuw product wil" : undefined} onClick={onMake}>Maak product</button>
                   {!doc && <button className="btn secondary" onClick={onToggle}>{pick ? "Uit selectie halen" : "Selecteren"}</button>}
                 </>
               )}
