@@ -25,10 +25,10 @@ const KIND_LABELS: Record<string, string> = { Lasercut: "Laser", "3D-Print": "3D
 const PAGE_SIZE = 120;
 
 /** Haalt alle rijen op in blokken van 1000 (PostgREST geeft er standaard maximaal 1000 per keer). */
-async function fetchAll<T>(table: string, columns: string): Promise<T[]> {
+async function fetchAll<T>(table: string, columns: string, orderBy: string): Promise<T[]> {
   const out: T[] = [];
   for (let from = 0; ; from += 1000) {
-    const { data, error } = await supabase.from(table).select(columns).order("id").range(from, from + 999);
+    const { data, error } = await supabase.from(table).select(columns).order(orderBy).range(from, from + 999);
     if (error) throw error;
     out.push(...((data ?? []) as T[]));
     if (!data || data.length < 1000) return out;
@@ -54,8 +54,8 @@ export default function CatalogPage() {
     setLoading(true);
     try {
       const [m, p] = await Promise.all([
-        fetchAll<MakerModel>("maker_models", MAKER_MODEL_COLUMNS),
-        fetchAll<MakerPick>("maker_picks", "model_id, product_id, created_at"),
+        fetchAll<MakerModel>("maker_models", MAKER_MODEL_COLUMNS, "id"),
+        fetchAll<MakerPick>("maker_picks", "model_id, product_id, created_at", "model_id"),
       ]);
       setModels(m.sort((a, b) => a.title.localeCompare(b.title)));
       setPicks(new Map(p.map((x) => [x.model_id, x])));
