@@ -174,11 +174,20 @@ export function canSplit(m: MakerModel): boolean {
   return !m.bundle && m.collection !== "Heads AAS26" && (m.designs ?? 0) >= min;
 }
 
-/** Label op een catalogus-kaartje: de techniek als die gekend is, anders de plaats in de bibliotheek. */
+/**
+ * Techniek in de Catalogus: "laser", "resin" of "fdm". 3D-print = FDM (gebruikerskeuze 2026-10-26); een 3D-model is
+ * enkel Resin als dat gemarkeerd of herkend is (technique "resin").
+ */
+export function techniqueOf(m: Pick<MakerModel, "kind" | "technique">): "laser" | "resin" | "fdm" {
+  if (m.kind === "Lasercut") return "laser";
+  return m.technique === "resin" ? "resin" : "fdm";
+}
+
+export const TECHNIQUE_LABELS = { laser: "Laser", fdm: "3D-print", resin: "Resin" } as const;
+
+/** Label op een catalogus-kaartje. */
 export function techniqueLabel(m: Pick<MakerModel, "kind" | "technique">): string {
-  if (m.technique === "resin") return "Resin";
-  if (m.technique === "fdm") return "3D-print FDM";
-  return m.kind === "Lasercut" ? "Laser" : m.kind === "3D-Print" ? "3D-print" : m.kind;
+  return TECHNIQUE_LABELS[techniqueOf(m)];
 }
 
 /** Opdracht voor de MakerProducts-agent op de NAS (tabel maker_jobs, zie maker-agent/). */
