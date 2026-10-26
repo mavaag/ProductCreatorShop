@@ -80,7 +80,7 @@ const SECTIONS: Section[] = [
         <h3>Filters en labels op de kaartjes</h3>
         <ul>
           <li><b>Snijklaar</b>: er zijn al snijplaten (LaserReady). <b>Document</b>: productdocument klaar. <b>Merk</b>: figuur of merk van iemand anders (bv. Marvel) - licentie nakijken voor je verkoopt. <b>In shop #...</b>: gekoppeld aan dat shopproduct.</li>
-          <li><b>⧉ Bundel · ~N</b>: de map bevat ongeveer N verschillende ontwerpen. Klik erop om hem te laten <b>opsplitsen</b> (zie hieronder).</li>
+          <li><b>⧉ Bundel · ~N</b>: de map bevat ongeveer N verschillende modellen (laser: verschillende ontwerpen; 3D-print: submappen met elk een eigen figuur, maat- en supportmappen tellen niet). Klik erop om hem te laten <b>opsplitsen</b> (zie hieronder).</li>
           <li>Vinkjes <i>Enkel snijklaar</i>, <i>Enkel merkfiguren</i> en <i>Enkel bundels</i> om snel te filteren.</li>
         </ul>
         <h3>Koppeling met de shop</h3>
