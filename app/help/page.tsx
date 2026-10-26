@@ -164,7 +164,7 @@ const SECTIONS: Section[] = [
         <p>Waar komen de bestanden vandaan?</p>
         <ul>
           <li>Product gemaakt vanuit de <b>Catalogus</b>: het model met zijn LaserReady- of PrintReady-sets.</li>
-          <li>Je bestaande producten: je map <code>PRODUCTS</code> op de pc wordt elke nacht naar de NAS gekopieerd (<code>_Shop</code>). De agent stelt per product een map voor; op de productpagina onder <i>Productiebestanden</i> bevestig je het voorstel, wijs je het af, of plak je zelf het pad van de juiste map.</li>
+          <li>Je bestaande producten: hun bestanden staan op de NAS in <code>\NASMAT\MakerProducts\_Shop</code> (per techniek en categorie, zoals vroeger de map PRODUCTS op de pc); nieuwe producten zet je daar ook. De agent stelt per product een map voor; op de productpagina onder <i>Productiebestanden</i> bevestig je het voorstel, wijs je het af, of plak je zelf het pad van de juiste map.</li>
         </ul>
       </>
     ),

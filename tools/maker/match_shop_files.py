@@ -1,6 +1,6 @@
 """match_shop_files.py - stelt per product in de beheertool voor welke map in _Shop de productiebestanden bevat.
 
-_Shop is een kopie van de PRODUCTS-map van de pc (sync_shop_to_nas.ps1): 3DPrinting, LaserCutting, UVPrinting,
+_Shop bevat de productiebestanden van de shopproducten (vroeger de PRODUCTS-map op de pc): 3DPrinting, LaserCutting, UVPrinting,
 Engraving en Sublimatie, met per product een map. Dit script vergelijkt elk product met die mappen:
   - dezelfde foto: een afbeelding van het product in de shop (bv. Kirby_base.png) staat ook in de map (sterk);
   - de naam: woorden van de productnaam in de mapnaam (en de bovenliggende map);
