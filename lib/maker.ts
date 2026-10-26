@@ -109,7 +109,11 @@ export function licenseWarning(doc: MakerDoc | null | undefined): string | null 
 export type MakerJob = {
   id: string;
   status: "queued" | "running" | "done" | "failed" | "cancelled";
+  /** models = geselecteerde modellen verwerken; inbox = nieuwe bestanden uit _Inbox in de bibliotheek zetten */
+  kind?: "models" | "inbox";
   model_ids: string[];
+  items?: string[];
+  then_process?: boolean;
   note: string;
   progress: string;
   results: Record<string, { status: "ok" | "failed" | "skipped"; note: string }>;
@@ -120,7 +124,14 @@ export type MakerJob = {
 };
 
 /** Hartslag van de agent (tabel maker_agent, één rij). */
-export type MakerAgent = { seen_at: string | null; status: string; version: string };
+export type MakerAgent = {
+  seen_at: string | null;
+  status: string;
+  version: string;
+  /** inhoud van \\NASMAT\MakerProducts\_Inbox; ready = de laatste 2 minuten niet meer gewijzigd (kopiëren klaar) */
+  inbox?: { name: string; kind: "file" | "folder"; files: number; size: number; ready: boolean }[];
+  inbox_info?: string;
+};
 
 /** De agent schrijft elke minuut een hartslag; langer dan 5 minuten stil = waarschijnlijk niet actief. */
 export const AGENT_ONLINE_MS = 5 * 60 * 1000;

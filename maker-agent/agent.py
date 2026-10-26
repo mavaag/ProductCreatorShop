@@ -1,13 +1,16 @@
 """agent.py - MakerProducts-agent (draait in de maker-agent container op de NAS).
 
-Schrijft elke minuut een hartslag in maker_agent, wacht op een opdracht in maker_jobs (knop "Laat de agent dit
-verwerken" in de Catalogus), en laat Claude Code die opdracht afwerken volgens AGENT_PROMPT.md: lasermodellen
-zonder snijklare platen eerst 3 mm-platen geven, dan per model een productdocument schrijven en publiceren.
-Claude draait in de modus "dontAsk": alleen wat in claude-settings.json toegelaten is mag, de rest wordt geweigerd
-(geen bestanden verwijderen/verplaatsen, geen netwerk, geen toegang tot /volume1/Docker).
+Schrijft elke minuut een hartslag in maker_agent (met de inhoud van de Inbox), wacht op een opdracht in maker_jobs
+en laat Claude Code die afwerken:
+  - soort 'models' (knop "Laat de agent dit verwerken"): volgens AGENT_PROMPT.md lasermodellen zonder snijklare platen
+    eerst 3 mm-platen geven, dan per model een productdocument schrijven en publiceren;
+  - soort 'inbox' (knop "Inbox verwerken"): volgens INBOX_PROMPT.md nieuwe bestanden uit _Inbox in de bibliotheek
+    zetten. Wat lukte, verplaatst dit script daarna naar _Inbox/_verwerkt; dat wordt na INBOX_RETENTION_DAYS dagen
+    automatisch leeggemaakt (Claude zelf mag niets verplaatsen of verwijderen).
+Claude draait in de modus "dontAsk": alleen wat in claude-settings.json toegelaten is mag, de rest wordt geweigerd.
 Na één opdracht (of na een uur zonder opdracht) stopt het script; de container start het opnieuw, zodat een
 nieuwe versie uit de repo (/src, bijgehouden door auto-deploy) vanzelf gebruikt wordt."""
-import datetime, json, os, subprocess, sys, threading, time
+import datetime, json, os, shutil, subprocess, sys, threading, time
 sys.path.insert(0, '/src/tools/maker')
 import supa
 
@@ -15,11 +18,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 HOME = os.path.expanduser('~')
 WORK = os.path.join(HOME, 'work')
 LOGS = os.path.join(HOME, 'logs')
+INBOX = os.path.join(supa.MAKER_ROOT, '_Inbox')
+DONE = os.path.join(INBOX, '_verwerkt')
+RETENTION_DAYS = int(os.environ.get('INBOX_RETENTION_DAYS', '14'))
+SETTLE_S = 120          # een item dat de laatste 2 minuten nog veranderde, wordt waarschijnlijk nog gekopieerd
 POLL_S = 30
 IDLE_EXIT_S = 3600
 JOB_TIMEOUT_S = 6 * 3600
 TAIL_LINES = 60
-VERSION = '4'
+VERSION = '5'
 
 status = {'text': 'wacht op opdrachten'}
 
@@ -28,11 +35,78 @@ def now():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
+def tree_stats(path):
+    """(aantal bestanden, totale grootte, laatste wijziging) van een bestand of map."""
+    if os.path.isfile(path):
+        st = os.stat(path); return 1, st.st_size, st.st_mtime
+    n = size = 0; newest = os.stat(path).st_mtime
+    for dp, dn, fn in os.walk(path):
+        for f in fn:
+            try: st = os.stat(os.path.join(dp, f))
+            except OSError: continue
+            n += 1; size += st.st_size; newest = max(newest, st.st_mtime)
+    return n, size, newest
+
+
+def scan_inbox():
+    """Items in _Inbox (alles behalve _verwerkt en verborgen bestanden), voor de Catalogus."""
+    if not os.path.isdir(INBOX): return []
+    out = []
+    for name in sorted(os.listdir(INBOX)):
+        if name.startswith(('.', '_', '#')): continue
+        p = os.path.join(INBOX, name)
+        n, size, newest = tree_stats(p)
+        out.append({'name': name, 'kind': 'folder' if os.path.isdir(p) else 'file', 'files': n, 'size': size,
+                    'ready': time.time() - newest > SETTLE_S})
+    return out
+
+
+def cleanup_done():
+    """Items in _Inbox/_verwerkt die langer dan RETENTION_DAYS dagen geleden verwerkt zijn, definitief verwijderen."""
+    if not os.path.isdir(DONE): return 0
+    removed, limit = 0, time.time() - RETENTION_DAYS * 86400
+    for name in os.listdir(DONE):
+        p = os.path.join(DONE, name)
+        if os.path.realpath(os.path.dirname(p)) != os.path.realpath(DONE): continue   # nooit buiten _verwerkt
+        try:
+            if os.lstat(p).st_mtime > limit: continue          # mtime = moment van verplaatsen (zie move_done)
+            if os.path.isdir(p) and not os.path.islink(p): shutil.rmtree(p)
+            else: os.remove(p)
+            removed += 1
+        except OSError as e:
+            print(f'opruimen mislukt voor {name}: {e}', flush=True)
+    return removed
+
+
+def move_done(name):
+    """Verwerkt inbox-item naar _Inbox/_verwerkt/<datum>_<naam> (mtime = nu, zodat het opruimen vanaf nu telt)."""
+    src = os.path.join(INBOX, name)
+    if not os.path.exists(src) or os.path.realpath(os.path.dirname(src)) != os.path.realpath(INBOX): return False
+    os.makedirs(DONE, exist_ok=True)
+    dst = os.path.join(DONE, f'{datetime.date.today().isoformat()}_{name}')
+    k = 2
+    while os.path.exists(dst):
+        dst = os.path.join(DONE, f'{datetime.date.today().isoformat()}_{k}_{name}'); k += 1
+    shutil.move(src, dst)
+    os.utime(dst, None)
+    return True
+
+
 def heartbeat_loop():
+    last_cleanup = 0
     while True:
         try:
-            supa.rest('POST', 'maker_agent', {'id': 1, 'seen_at': now(), 'status': status['text'], 'version': VERSION},
-                      prefer='resolution=merge-duplicates,return=minimal')
+            if time.time() - last_cleanup > 6 * 3600:
+                n = cleanup_done(); last_cleanup = time.time()
+                if n: print(f'_verwerkt: {n} items ouder dan {RETENTION_DAYS} dagen verwijderd', flush=True)
+            done = len(os.listdir(DONE)) if os.path.isdir(DONE) else 0
+            info = f'_verwerkt: {done} item{"" if done == 1 else "s"}, worden na {RETENTION_DAYS} dagen automatisch verwijderd'
+            beat = {'id': 1, 'seen_at': now(), 'status': status['text'], 'version': VERSION}
+            try:
+                supa.rest('POST', 'maker_agent', {**beat, 'inbox': scan_inbox(), 'inbox_info': info},
+                          prefer='resolution=merge-duplicates,return=minimal')
+            except RuntimeError:   # migratie 020 nog niet uitgevoerd: hartslag zonder inbox
+                supa.rest('POST', 'maker_agent', beat, prefer='resolution=merge-duplicates,return=minimal')
         except Exception as e:
             print(f'hartslag mislukt: {e}', flush=True)
         time.sleep(60)
@@ -70,26 +144,41 @@ def describe(event):
     return None
 
 
-def run_job(job):
+def build_prompt(job, shop_note):
+    """(prompt, aantal, 'item'/'model') voor deze opdracht."""
     jid = job['id']
-    os.makedirs(WORK, exist_ok=True); os.makedirs(LOGS, exist_ok=True)
+    if job.get('kind') == 'inbox':
+        items = [i for i in scan_inbox() if i['name'] in job['items']]
+        missing = [n for n in job['items'] if n not in {i['name'] for i in items}]
+        prompt = open(os.path.join(HERE, 'INBOX_PROMPT.md'), encoding='utf-8').read()
+        if job.get('then_process'):
+            prompt += '\n\n---\n\n' + open(os.path.join(HERE, 'AGENT_PROMPT.md'), encoding='utf-8').read()
+        data = {'job_id': jid, 'note': job['note'], 'then_process': job.get('then_process', False), 'inbox': INBOX,
+                'shop_export': shop_note, 'items': items, 'missing_items': missing}
+        return prompt + '\n\n## This job\n```json\n' + json.dumps(data, indent=2, ensure_ascii=False) + '\n```\n', len(items), 'item'
     rows = supa.rest('GET', 'maker_models?select=id,title,kind,path,laser_ready,has_doc&id=in.('
                      + ','.join(f'"{m}"' for m in job['model_ids']) + ')') or []
     info = {r['id']: r for r in rows}
     models = [info.get(m, {'id': m}) for m in job['model_ids']]
+    prompt = open(os.path.join(HERE, 'AGENT_PROMPT.md'), encoding='utf-8').read()
+    data = {'job_id': jid, 'note': job['note'], 'shop_export': shop_note, 'models': models}
+    return prompt + '\n\n## This job\n```json\n' + json.dumps(data, indent=2, ensure_ascii=False) + '\n```\n', len(models), 'model'
+
+
+def run_job(job):
+    jid = job['id']; inbox_job = job.get('kind') == 'inbox'
+    os.makedirs(WORK, exist_ok=True); os.makedirs(LOGS, exist_ok=True)
     # actuele shoplijst, zodat de agent kan nakijken of een model al in de shop staat
     r = subprocess.run(['python3', os.path.join(HERE, 'woo_export.py')], capture_output=True, text=True)
-    shop_note = (r.stdout + r.stderr).strip().splitlines()[-1:] or ['woo_export: geen uitvoer']
-    prompt = open(os.path.join(HERE, 'AGENT_PROMPT.md'), encoding='utf-8').read()
-    prompt += '\n\n## This job\n```json\n' + json.dumps({'job_id': jid, 'note': job['note'], 'shop_export': shop_note[0], 'models': models},
-                                                       indent=2, ensure_ascii=False) + '\n```\n'
-    status['text'] = f'bezig met opdracht van {len(models)} model{"" if len(models) == 1 else "len"}'
+    shop_note = ((r.stdout + r.stderr).strip().splitlines()[-1:] or ['woo_export: geen uitvoer'])[0]
+    prompt, n, what = build_prompt(job, shop_note)
+    status['text'] = f'bezig met {"inbox-" if inbox_job else ""}opdracht ({n} {what}{"" if n == 1 else "s"})'
     tail = []
     cmd = ['claude', '-p', prompt, '--output-format', 'stream-json', '--verbose',
            '--model', os.environ.get('MAKER_AGENT_MODEL', 'opus'), '--permission-mode', 'dontAsk',
            '--add-dir', '/volume1/MakerProducts', '--add-dir', '/src', '--settings', os.path.join(HERE, 'claude-settings.json')]
     env = dict(os.environ, MAKER_JOB_ID=jid)
-    print(f'opdracht {jid}: {len(models)} modellen', flush=True)
+    print(f'opdracht {jid} ({job.get("kind", "models")}): {n} {what}s', flush=True)
     started = time.time(); last_push = 0
     with open(os.path.join(LOGS, f'{jid}.log'), 'a', encoding='utf-8') as log:
         p = subprocess.Popen(cmd, cwd=WORK, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -114,11 +203,21 @@ def run_job(job):
     cur = supa.rest('GET', f'maker_jobs?id=eq.{jid}&select=results,status')[0]
     if cur['status'] == 'cancelled': return
     results = cur['results'] or {}
-    ok = sum(1 for r in results.values() if r.get('status') == 'ok')
+
+    if inbox_job:   # gelukte inbox-items naar _verwerkt; mislukte blijven staan zodat je ze kan nakijken
+        moved = 0
+        for name in job['items']:
+            if results.get(name, {}).get('status') == 'ok':
+                try: moved += move_done(name)
+                except OSError as e: tail.append(f'verplaatsen van {name} mislukt: {e}')
+        tail.append(f'{moved} inbox-item{"" if moved == 1 else "s"} verplaatst naar _Inbox/_verwerkt')
+
+    keys = job['items'] if inbox_job else job['model_ids']
+    ok = sum(1 for k in keys if results.get(k, {}).get('status') == 'ok')
     failed = code != 0 or not results
-    patch_job(jid, status='failed' if failed else 'done', finished_at=now(), log_tail='\n'.join(tail),
+    patch_job(jid, status='failed' if failed else 'done', finished_at=now(), log_tail='\n'.join(tail[-TAIL_LINES:]),
               progress=(f'Claude stopte met code {code}' if code else 'Claude gaf geen resultaten terug') if failed
-              else f'klaar: {ok} van {len(job["model_ids"])} gelukt')
+              else f'klaar: {ok} van {len(keys)} gelukt')
 
 
 def main():
