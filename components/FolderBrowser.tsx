@@ -6,14 +6,17 @@ import { FolderListing, downloadPath, formatBytes, listFolder, nasPath } from "@
 
 /**
  * Een map met productiebestanden op de NAS: openklappen, bestanden of de hele map (zip) downloaden, NAS-pad kopiëren.
- * Submappen (bv. LaserReady/<set>, PrintReady/<printer>) klap je op dezelfde manier open.
+ * Submappen (bv. LaserReady/<set>, PrintReady/<printer>) klap je op dezelfde manier open. Een gekoppeld bestand
+ * (pad met extensie, bv. .../BoyDont.jpg) toont meteen een Download-knop.
  */
+const IS_FILE = /\.[a-z0-9]{2,5}$/i;
+
 export default function FolderBrowser({ path, title }: { path: string; title?: string }) {
   const [open, setOpen] = useState(false);
   const [listing, setListing] = useState<FolderListing | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const name = path.split("/").pop();
+  const name = path.split("/").pop() ?? path;
 
   async function toggle() {
     if (!open && !listing) {
@@ -27,19 +30,40 @@ export default function FolderBrowser({ path, title }: { path: string; title?: s
     setBusy(null);
   }
 
+  const copyButton = (
+    <button type="button" className="btn secondary" onClick={() => navigator.clipboard?.writeText(nasPath(path))} title={nasPath(path)}>
+      Kopieer NAS-pad
+    </button>
+  );
+
+  if (IS_FILE.test(name)) {
+    return (
+      <div className="folder-browser">
+        <div className="folder-row">
+          <span className="folder-link">{title ?? name}</span>
+          <span className="folder-actions">
+            <button type="button" className="btn secondary" disabled={busy === path} onClick={() => download(path, "file")}>
+              {busy === path ? "Bezig..." : "Download"}
+            </button>
+            {copyButton}
+          </span>
+        </div>
+        {error && <p className="warning" style={{ margin: "4px 0" }}>{error}</p>}
+      </div>
+    );
+  }
+
   return (
     <div className="folder-browser">
       <div className="folder-row">
-        <button type="button" className="maker-name-btn" onClick={toggle} aria-expanded={open}>
+        <button type="button" className="folder-link" onClick={toggle} aria-expanded={open}>
           {open ? "▾" : "▸"} {title ?? name}
         </button>
         <span className="folder-actions">
           <button type="button" className="btn secondary" disabled={busy === path} onClick={() => download(path, "zip")}>
             {busy === path ? "Bezig..." : "Download map (zip)"}
           </button>
-          <button type="button" className="btn secondary" onClick={() => navigator.clipboard?.writeText(nasPath(path))} title={nasPath(path)}>
-            Kopieer NAS-pad
-          </button>
+          {copyButton}
         </span>
       </div>
       {error && <p className="warning" style={{ margin: "4px 0" }}>{error}</p>}
