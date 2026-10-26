@@ -244,8 +244,8 @@ export default function CatalogPage() {
           <select value={kind} onChange={(e) => { setKind(e.target.value); setCategory(""); }}>
             <option value="">Alle</option>
             <option value="laser">Laser</option>
-            <option value="fdm">3D-print</option>
-            <option value="resin">Resin</option>
+            <option value="fdm">3D-print FDM</option>
+            <option value="resin">3D-print Resin</option>
           </select>
         </div>
         <div style={{ flex: 1, minWidth: 160 }}>
@@ -549,7 +549,7 @@ function AgentPanel({ waiting, titles, onJobFinished }: {
               {inbox.map((i) => (
                 <li key={i.name}>
                   <span className="mono">{i.name}</span>{" "}
-                  {i.technique && <span className="pill cyan" style={{ marginRight: 6 }}>{i.technique === "fdm" ? "FDM" : i.technique === "resin" ? "Resin" : "Laser"}</span>}
+                  {i.technique && <span className="pill cyan" style={{ marginRight: 6 }}>{i.technique === "fdm" ? "3D-print FDM" : i.technique === "resin" ? "3D-print Resin" : "Laser"}</span>}
                   <span className="muted">
                     ({i.kind === "folder" ? `map, ${i.files} bestand${i.files === 1 ? "" : "en"}` : "bestand"}, {formatSize(i.size)})
                     {!i.ready && " -- wordt nog gekopieerd..."}

@@ -183,7 +183,7 @@ export function techniqueOf(m: Pick<MakerModel, "kind" | "technique">): "laser" 
   return m.technique === "resin" ? "resin" : "fdm";
 }
 
-export const TECHNIQUE_LABELS = { laser: "Laser", fdm: "3D-print", resin: "Resin" } as const;
+export const TECHNIQUE_LABELS = { laser: "Laser", fdm: "3D-print FDM", resin: "3D-print Resin" } as const;
 
 /** Label op een catalogus-kaartje. */
 export function techniqueLabel(m: Pick<MakerModel, "kind" | "technique">): string {
