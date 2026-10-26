@@ -43,6 +43,7 @@ export type MakerDoc = {
   attributes: { name: string; default: string; options: string[] }[];
   variations: { attributes: Record<string, string>; production: Record<string, any> }[];
   notes_internal: string[];
+  /** status "non-commercial" = de ontwerper verbiedt verkoop (bv. CC BY-NC): eerst toestemming vragen. */
   license: { status: string; note: string; trademark?: boolean };
 };
 
@@ -95,6 +96,13 @@ export async function createProductFromDoc(supabase: SupabaseClient, doc: MakerD
   const { error: pickError } = await supabase.from("maker_picks").upsert({ model_id: doc.catalog_id, product_id: product.id });
   if (pickError) throw pickError;
   return product.id as string;
+}
+
+/** Licentie die verkoop niet zomaar toelaat (bv. CC BY-NC): de Catalogus waarschuwt voor je een product maakt. */
+export function licenseWarning(doc: MakerDoc | null | undefined): string | null {
+  if (!doc?.license) return null;
+  if (doc.license.status === "non-commercial") return doc.license.note || "Niet-commerciële licentie.";
+  return null;
 }
 
 /** Opdracht voor de MakerProducts-agent op de NAS (tabel maker_jobs, zie maker-agent/). */
