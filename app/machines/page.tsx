@@ -11,6 +11,7 @@ import { confirmDialog } from "@/components/DialogHost";
 
 const CATEGORIES = [
   { value: "3d_printer", label: "3D-printer" },
+  { value: "resin_printer", label: "Resin-printer" },
   { value: "uv_printer", label: "UV-printer" },
   { value: "laser", label: "Laser" },
   { value: "sublimation_printer", label: "Sublimatieprinter" },
@@ -29,6 +30,7 @@ const BLANK_FORM = {
 
 const CATEGORY_COLORS: Record<string, string> = {
   "3d_printer": "var(--cyan)",
+  resin_printer: "#3dffc5",
   uv_printer: "#b56bff",
   laser: "#ff8a3d",
   sublimation_printer: "var(--magenta)",
@@ -43,6 +45,19 @@ function categoryColor(category: string) {
 function MachineIllustration({ category, size = 48 }: { category: string; size?: number }) {
   const common = { width: size, height: size, viewBox: "0 0 48 48", fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
   switch (category) {
+    case "resin_printer":
+      // Resinprinter: kap, bouwplaat aan de Z-as, figuurtje dat ondersteboven aan de plaat hangt, kuip met resin
+      return (
+        <svg {...common}>
+          <path d="M10 26V8a4 4 0 0 1 4-4h20a4 4 0 0 1 4 4v18" />
+          <path d="M24 4v6" opacity="0.6" />
+          <rect x="15" y="10" width="18" height="3" />
+          <path d="M21 13v4l-2 3h10l-2-3v-4" opacity="0.85" />
+          <path d="M8 30h32v6H8z" />
+          <path d="M11 33h26" opacity="0.5" />
+          <path d="M6 40h36v4H6z" />
+        </svg>
+      );
     case "3d_printer":
       // Gesloten printer: frame, gantry met printkop, bed met een half geprint object
       return (

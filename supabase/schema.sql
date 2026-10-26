@@ -9,7 +9,7 @@ create extension if not exists "pgcrypto";
 create table if not exists machines (
   id uuid primary key default gen_random_uuid(),
   name text not null,
-  category text not null default 'overig', -- '3d_printer' | 'uv_printer' | 'laser' | 'sublimation_printer' | 'heat_press' | 'overig'
+  category text not null default 'overig', -- '3d_printer' | 'resin_printer' | 'uv_printer' | 'laser' | 'sublimation_printer' | 'heat_press' | 'overig'
   purchase_price numeric not null default 0,
   expected_lifetime_hours numeric not null default 4000,
   avg_power_w numeric not null default 0,
@@ -82,7 +82,7 @@ create table if not exists products (
   id uuid primary key default gen_random_uuid(),
   sku text not null unique,
   name text not null,
-  process_type text not null default '3d_print', -- '3d_print' | 'uv_print' | 'laser_engraving' | 'laser_cutting' | 'sublimation'
+  process_type text not null default '3d_print', -- '3d_print' | 'resin_print' | 'uv_print' | 'laser_engraving' | 'laser_cutting' | 'sublimation'
   published boolean not null default true,
   attribute_names text[] not null default '{}', -- bv. ARRAY['Grootte','Kleur'] -- volgorde bepaalt Attribute 1/2/3 in de export
   default_attribute_values jsonb not null default '{}'::jsonb, -- bv. {"Grootte":"M"} -- vooraf geselecteerde waarde per attribuut op de productpagina (WooCommerce "Default Form Values")

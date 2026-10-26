@@ -17,6 +17,7 @@ function guessProcessType(categories: string): string {
   if (c.includes("laser")) return "laser_cutting";
   if (c.includes("sublim")) return "sublimation";
   if (c.includes("uv")) return "uv_print";
+  if (c.includes("resin")) return "resin_print";
   return "3d_print";
 }
 

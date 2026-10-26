@@ -18,6 +18,7 @@ type ProductWithVariations = Product & { product_variations: ProductVariation[] 
 const TABS: { value: ProcessType | "all"; label: string }[] = [
   { value: "all", label: "Alle" },
   { value: "3d_print", label: PROCESS_TYPE_LABELS["3d_print"] },
+  { value: "resin_print", label: PROCESS_TYPE_LABELS["resin_print"] },
   { value: "uv_print", label: PROCESS_TYPE_LABELS["uv_print"] },
   { value: "laser_engraving", label: PROCESS_TYPE_LABELS["laser_engraving"] },
   { value: "laser_cutting", label: PROCESS_TYPE_LABELS["laser_cutting"] },
@@ -84,6 +85,7 @@ type ViewMode = "cards" | "list";
 
 const PROCESS_COLORS: Record<ProcessType, string> = {
   "3d_print": "var(--cyan)",
+  resin_print: "#3dffc5",
   uv_print: "#b56bff",
   laser_engraving: "#ff8a3d",
   laser_cutting: "#ff5a5a",
