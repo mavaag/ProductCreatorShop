@@ -14,9 +14,11 @@ export type MakerModel = {
   thumb_url: string | null;
   has_doc: boolean;
   woo_product_id: number | null;
+  /** merk/personage van iemand anders (doc.license.trademark): kan later verwijderd moeten worden */
+  is_trademark: boolean;
 };
 
-export const MAKER_MODEL_COLUMNS = "id, title, kind, collection, category, path, laser_ready, thumb_url, has_doc, woo_product_id";
+export const MAKER_MODEL_COLUMNS = "id, title, kind, collection, category, path, laser_ready, thumb_url, has_doc, woo_product_id, is_trademark";
 
 export type MakerPick = { model_id: string; product_id: string | null; created_at: string };
 
