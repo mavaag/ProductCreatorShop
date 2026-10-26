@@ -30,7 +30,8 @@ POLL_S = 30
 IDLE_EXIT_S = 3600
 JOB_TIMEOUT_S = 6 * 3600
 TAIL_LINES = 60
-VERSION = '7'
+VERSION = '8'
+WORK_KEEP_DAYS = 2   # uitgepakte inbox-archieven in ~/work/inbox (enkel tijdelijk werk van de agent)
 CATALOG = os.path.join(supa.MAKER_ROOT, '_catalog')
 
 status = {'text': 'wacht op opdrachten'}
@@ -84,6 +85,25 @@ def cleanup_done():
     return removed
 
 
+def cleanup_work(names=None):
+    """Uitgepakte inbox-items in ~/work/inbox weggooien: de opgegeven namen meteen, de rest na WORK_KEEP_DAYS dagen.
+    Dat is enkel tijdelijk werk van de agent (de bibliotheek en _Inbox blijven onaangeroerd)."""
+    base = os.path.join(WORK, 'inbox')
+    if not os.path.isdir(base): return 0
+    removed, limit = 0, time.time() - WORK_KEEP_DAYS * 86400
+    for name in os.listdir(base):
+        p = os.path.join(base, name)
+        if os.path.realpath(os.path.dirname(p)) != os.path.realpath(base): continue   # nooit buiten ~/work/inbox
+        try:
+            if not (names and name in names) and os.lstat(p).st_mtime > limit: continue
+            if os.path.isdir(p) and not os.path.islink(p): shutil.rmtree(p)
+            else: os.remove(p)
+            removed += 1
+        except OSError as e:
+            print(f'werkmap opruimen mislukt voor {name}: {e}', flush=True)
+    return removed
+
+
 def move_done(name):
     """Verwerkt inbox-item naar _Inbox/_verwerkt/<datum>_<naam> (mtime = nu, zodat het opruimen vanaf nu telt)."""
     src = os.path.join(INBOX, name)
@@ -105,6 +125,8 @@ def heartbeat_loop():
             if time.time() - last_cleanup > 6 * 3600:
                 n = cleanup_done(); last_cleanup = time.time()
                 if n: print(f'_verwerkt: {n} items ouder dan {RETENTION_DAYS} dagen verwijderd', flush=True)
+                w = cleanup_work()
+                if w: print(f'~/work/inbox: {w} uitgepakte items ouder dan {WORK_KEEP_DAYS} dagen verwijderd', flush=True)
             done = len(os.listdir(DONE)) if os.path.isdir(DONE) else 0
             info = f'_verwerkt: {done} item{"" if done == 1 else "s"}, worden na {RETENTION_DAYS} dagen automatisch verwijderd'
             beat = {'id': 1, 'seen_at': now(), 'status': status['text'], 'version': VERSION}
@@ -260,6 +282,8 @@ def run_job(job):
                 try: moved += move_done(name)
                 except OSError as e: tail.append(f'verplaatsen van {name} mislukt: {e}')
         tail.append(f'{moved} inbox-item{"" if moved == 1 else "s"} verplaatst naar _Inbox/_verwerkt')
+        done_names = [n for n in job['items'] if results.get(n, {}).get('status') == 'ok']
+        cleanup_work(done_names)   # uitgepakte kopie in ~/work/inbox is niet meer nodig
 
     keys = job['items'] if inbox_job else job['model_ids']
     ok = sum(1 for k in keys if results.get(k, {}).get('status') == 'ok')
