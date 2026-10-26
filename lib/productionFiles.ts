@@ -3,7 +3,7 @@ import { SupabaseClient } from "@supabase/supabase-js";
 /**
  * Productiebestanden van een product: mappen op de NAS (relatief t.o.v. MakerProducts).
  *  - catalog: het catalogusmodel waaruit het product gemaakt is (maker_picks) -> zijn LaserReady/PrintReady-sets;
- *  - shop / manual: de map in _Shop (kopie van de PRODUCTS-map op de pc) uit product_files.
+ *  - shop / manual: de map in _Shop (productiebestanden van de shopproducten) uit product_files.
  * Downloaden gaat via /api/files (zie app/api/files/route.ts).
  */
 export type ProductFolder = { path: string; label: string; source: "catalog" | "shop" | "manual"; confirmed: boolean; score?: number };
