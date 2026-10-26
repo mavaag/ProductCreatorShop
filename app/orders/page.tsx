@@ -6,6 +6,7 @@ import { useAuthGuard } from "@/lib/useAuthGuard";
 import { confirmDialog } from "@/components/DialogHost";
 import { calculatePrice } from "@/lib/pricing";
 import { CostInputs, EMPTY_COST_INPUTS, Machine, Material } from "@/lib/types";
+import ProductionQueue from "@/components/ProductionQueue";
 
 type Period = "12m" | "this_year" | "last_year" | "all";
 
@@ -85,6 +86,8 @@ function eurCompact(n: number): string {
 export default function OrdersPage() {
   const ready = useAuthGuard();
   const [configured, setConfigured] = useState(true);
+  const [tab, setTab] = useState<"overzicht" | "productie">(() =>
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("tab") === "productie" ? "productie" : "overzicht");
   const [period, setPeriod] = useState<Period>("12m");
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [items, setItems] = useState<ItemRow[]>([]);
@@ -262,10 +265,29 @@ export default function OrdersPage() {
 
   if (!ready) return null;
 
+  const tabs = (
+    <div className="tabs">
+      <button type="button" className={`tab${tab === "overzicht" ? " active" : ""}`} onClick={() => setTab("overzicht")}>Overzicht</button>
+      <button type="button" className={`tab${tab === "productie" ? " active" : ""}`} onClick={() => setTab("productie")}>Productie</button>
+    </div>
+  );
+
+  if (tab === "productie") {
+    return (
+      <div>
+        <h1>Bestellingen</h1>
+        <p className="sub">Wat moet er nog gemaakt worden: de open bestellingen met per regel de productiebestanden op de NAS. Vink een regel af als hij gemaakt is.</p>
+        {tabs}
+        <ProductionQueue />
+      </div>
+    );
+  }
+
   return (
     <div>
       <h1>Bestellingen</h1>
       <p className="sub">Overzicht van je WooCommerce-bestellingen: omzet en aantal per maand, en de meest verkochte producten. De cijfers komen uit de lokale kopie hieronder -- synchroniseer om ze bij te werken.</p>
+      {tabs}
 
       {!configured && (
         <div className="warning" style={{ marginBottom: 16 }}>

@@ -22,6 +22,16 @@ export const maxDuration = 300; // een volledige historiek kan even duren -- vra
 
 const SYNC_CURSOR_KEY = "last_order_sync_at";
 
+/** Zichtbare opties van een bestelregel (variant, personalisatie); interne sleutels (_...) niet. Zelfde als tools/maker/orders_sync.py. */
+function lineMeta(li: any): { key: string; value: string }[] {
+  return (li.meta_data ?? [])
+    .filter((m: any) => !String(m.key ?? "").startsWith("_"))
+    .map((m: any) => {
+      const v = m.display_value ?? m.value;
+      return { key: String(m.display_key || m.key), value: typeof v === "object" ? JSON.stringify(v) : String(v) };
+    });
+}
+
 type Report = {
   fetched: number;
   upserted: number;
@@ -97,6 +107,9 @@ export async function POST(request: Request) {
       total: parseFloat(o.total) || 0,
       date_created: `${o.date_created_gmt}Z`,
       date_modified: `${o.date_modified_gmt}Z`,
+      customer_name: [o.shipping?.first_name || o.billing?.first_name, o.shipping?.last_name || o.billing?.last_name].filter(Boolean).join(" "),
+      customer_note: o.customer_note ?? "",
+      shipping_method: (o.shipping_lines ?? []).map((s: any) => s.method_title).join(", "),
     }));
 
     const { data: upserted, error: upsertError } = await supabase
@@ -119,12 +132,14 @@ export async function POST(request: Request) {
         if (!orderId) return [];
         return (o.line_items ?? []).map((li: any) => ({
           order_id: orderId,
+          wc_line_id: li.id ?? null,
           wc_product_id: li.product_id || null,
           wc_variation_id: li.variation_id || null,
           sku: li.sku || null,
           name: li.name,
           quantity: li.quantity,
           total: parseFloat(li.total) || 0,
+          meta: lineMeta(li),
         }));
       });
       if (itemRows.length > 0) {
