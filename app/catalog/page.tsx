@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
 import { PROCESS_TYPE_LABELS } from "@/lib/types";
 import { alertDialog, confirmDialog } from "@/components/DialogHost";
-import { AGENT_ONLINE_MS, MAKER_MODEL_COLUMNS, MakerAgent, MakerDoc, MakerJob, MakerModel, MakerPick, MakerWooLink, createProductFromDoc, licenseWarning, shopProductId } from "@/lib/maker";
+import { AGENT_ONLINE_MS, MAKER_MODEL_COLUMNS, MakerAgent, MakerDoc, MakerJob, MakerModel, MakerPick, MakerWooLink, canSplit, createProductFromDoc, licenseWarning, shopProductId } from "@/lib/maker";
 
 /** Stappen van een model: kiezen -> document (beschrijving, foto's, varianten) -> product in de beheertool. */
 type Stage = "all" | "picked" | "doc" | "ready" | "created" | "shop";
@@ -52,6 +52,8 @@ export default function CatalogPage() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [jobsKey, setJobsKey] = useState(0);
+  // modellen waarvoor al een opsplits-opdracht loopt of die de agent als "één model" terugstuurde: geen knop meer
+  const [splitDone, setSplitDone] = useState<Set<string>>(new Set());
   // tab "Klaar om aan te maken": welke modellen je nu als product wil aanmaken (niet bewaard)
   const [toMake, setToMake] = useState<Set<string>>(new Set());
   // per model zelf gekozen WooCommerce-categorie (anders de voorgestelde uit het document); geldt bij "Maak product"
@@ -69,6 +71,9 @@ export default function CatalogPage() {
       setModels(m.sort((a, b) => a.title.localeCompare(b.title)));
       setPicks(new Map(p.map((x) => [x.model_id, x])));
       setLinks(new Map(l.map((x) => [x.model_id, x])));
+      const { data: splits } = await supabase.from("maker_jobs").select("model_ids, status, results").eq("kind", "split");
+      setSplitDone(new Set((splits ?? []).flatMap((j) => (j.model_ids as string[]).filter((id) =>
+        j.status === "queued" || j.status === "running" || (j.results as Record<string, { status: string }> | null)?.[id]?.status === "skipped"))));
       setError(null);
     } catch (e: any) {
       setError(e.message ?? String(e));
@@ -169,6 +174,7 @@ export default function CatalogPage() {
     if (error) { setError(error.message); return; }
     setOpenId(null);
     setJobsKey((k) => k + 1);   // agentpaneel meteen herladen, zodat de opdracht er staat
+    setSplitDone(new Set(splitDone).add(m.id));
   }
 
   async function makeProducts(ids: string[]) {
@@ -367,6 +373,7 @@ export default function CatalogPage() {
           onToggle={() => togglePick(models.find((m) => m.id === openId)!)}
           onMake={() => makeProducts([openId])}
           onSplit={() => splitBundle(models.find((m) => m.id === openId)!)}
+          splittable={canSplit(models.find((m) => m.id === openId)!) && !splitDone.has(openId)}
           link={links.get(openId)}
           onLinked={load}
           category={categoryChoice.get(openId)}
@@ -744,7 +751,7 @@ function timeAgo(iso: string): string {
   return h < 48 ? `${h} u geleden` : `${Math.round(h / 24)} dagen geleden`;
 }
 
-function ModelDetail({ model, pick, busy, onClose, onToggle, onMake, onSplit, link, onLinked, category, wcCategories, onCategory }: {
+function ModelDetail({ model, pick, busy, onClose, onToggle, onMake, onSplit, splittable, link, onLinked, category, wcCategories, onCategory }: {
   model: MakerModel;
   pick: MakerPick | null;
   busy: boolean;
@@ -752,6 +759,8 @@ function ModelDetail({ model, pick, busy, onClose, onToggle, onMake, onSplit, li
   onToggle: () => void;
   onMake: () => void;
   onSplit: () => void;
+  /** "Bundel opsplitsen" tonen: veel verschillende ontwerpen, nog niet opgesplitst */
+  splittable: boolean;
   link: MakerWooLink | undefined;
   onLinked: () => void;
   /** zelf gekozen categorie; undefined = de voorgestelde uit het document */
@@ -787,7 +796,7 @@ function ModelDetail({ model, pick, busy, onClose, onToggle, onMake, onSplit, li
           <div>
             <h2 style={{ marginTop: 0 }}>{doc?.product.name ?? model.title}</h2>
             <p className="muted" style={{ margin: 0 }}>
-              {KIND_LABELS[model.kind] ?? model.kind} · {[model.collection, model.category].filter(Boolean).join(" · ")} · <span className="mono">{model.path}</span>
+              {KIND_LABELS[model.kind] ?? model.kind} · {[model.collection, model.category, model.bundle && `uit bundel ${model.bundle}`].filter(Boolean).join(" · ")} · <span className="mono">{model.path}</span>
             </p>
           </div>
           <button className="icon-btn" onClick={onClose} aria-label="Sluiten">
@@ -895,7 +904,7 @@ function ModelDetail({ model, pick, busy, onClose, onToggle, onMake, onSplit, li
                 <>
                   <button className="btn" disabled={busy || !doc || !!shopId} title={shopId ? "Staat al in de shop -- ontkoppel eerst als je toch een nieuw product wil" : undefined} onClick={onMake}>Maak product</button>
                   {!doc && <button className="btn secondary" onClick={onToggle}>{pick ? "Uit selectie halen" : "Selecteren"}</button>}
-                  {!doc && (
+                  {!doc && splittable && (
                     <button className="btn secondary" onClick={onSplit} title="Map met veel verschillende modellen? Laat de agent ze in aparte submappen zetten.">
                       Bundel opsplitsen
                     </button>
