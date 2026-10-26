@@ -158,7 +158,15 @@ const SECTIONS: Section[] = [
     title: "Bestellingen",
     href: "/orders",
     body: (
-      <p>Verkoopcijfers uit WooCommerce: omzet en aantal bestellingen per maand, per status en de meest verkochte producten, voor een gekozen periode. De eerste keer <b>Volledige historiek importeren</b>; daarna haalt <i>Synchroniseer bestellingen</i> enkel de nieuwe op.</p>
+      <>
+        <p><b>Overzicht:</b> verkoopcijfers uit WooCommerce: omzet en aantal bestellingen per maand, per status en de meest verkochte producten, voor een gekozen periode. Nieuwe bestellingen komen <b>automatisch elke 10 minuten</b> binnen (de agent op de NAS haalt ze op); met <i>Synchroniseer bestellingen</i> haal je ze meteen op.</p>
+        <p><b>Productie:</b> de open bestellingen (in verwerking / on hold), oudste eerst. Per regel zie je het aantal, de gekozen opties (maat, kleur, personalisatie), de opmerking van de klant en de <b>productiebestanden</b>: klap de map open en download een bestand of de hele map als zip, of kopieer het NAS-pad. Vink een regel af als hij gemaakt is.</p>
+        <p>Waar komen de bestanden vandaan?</p>
+        <ul>
+          <li>Product gemaakt vanuit de <b>Catalogus</b>: het model met zijn LaserReady- of PrintReady-sets.</li>
+          <li>Je bestaande producten: je map <code>PRODUCTS</code> op de pc wordt elke nacht naar de NAS gekopieerd (<code>_Shop</code>). De agent stelt per product een map voor; op de productpagina onder <i>Productiebestanden</i> bevestig je het voorstel, wijs je het af, of plak je zelf het pad van de juiste map.</li>
+        </ul>
+      </>
     ),
   },
   {

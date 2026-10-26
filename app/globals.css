@@ -704,3 +704,16 @@ input[type="checkbox"] { accent-color: var(--magenta); }
 .help-toc { columns: 2; margin: 0; padding-left: 20px; }
 .help-top { text-align: right; margin: 8px 0 0; font-size: 12px; }
 @media (max-width: 640px) { .help-toc { columns: 1; } }
+
+/* ---------- Productie (Bestellingen > Productie, productiebestanden) ---------- */
+.production-line { display: flex; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+.production-line:first-of-type { border-top: none; }
+.production-check { margin: 2px 0 0; }
+.folder-browser { margin: 4px 0; }
+.folder-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: space-between; }
+.folder-row .maker-name-btn { font-family: var(--font-mono), monospace; font-size: 12.5px; text-align: left; word-break: break-all; }
+.folder-actions { display: flex; gap: 6px; }
+.folder-actions .btn, .folder-file .btn { padding: 3px 10px; font-size: 12px; }
+.folder-children { margin-left: 16px; padding-left: 10px; border-left: 1px dashed var(--line); }
+.folder-file { display: flex; align-items: center; gap: 10px; padding: 2px 0; font-size: 12.5px; }
+.folder-file .mono { flex: 1; min-width: 0; word-break: break-all; }

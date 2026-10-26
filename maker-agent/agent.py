@@ -7,6 +7,8 @@ en laat Claude Code die afwerken:
   - soort 'inbox' (knop "Inbox verwerken"): volgens INBOX_PROMPT.md nieuwe bestanden uit _Inbox in de bibliotheek
     zetten. Wat lukte, verplaatst dit script daarna naar _Inbox/_verwerkt; dat wordt na INBOX_RETENTION_DAYS dagen
     automatisch leeggemaakt (Claude zelf mag niets verplaatsen of verwijderen);
+  - daarnaast, los van de opdrachten: elke 10 minuten de WooCommerce-bestellingen ophalen (orders_sync.py) en elke dag
+    voorstellen welke map in _Shop bij welk shopproduct hoort (match_shop_files.py);
   - soort 'split' (knop "Bundel opsplitsen"): volgens SPLIT_PROMPT.md een model dat eigenlijk een map met veel losse
     modellen is, opsplitsen in submappen (Claude kopieert enkel). Lukte dat, dan zet dit script de bundel als
     verzamelmap in _catalog/sources.json (met backup), bouwt de catalogus opnieuw en haalt het bundelkaartje weg.
@@ -30,7 +32,9 @@ POLL_S = 30
 IDLE_EXIT_S = 3600
 JOB_TIMEOUT_S = 6 * 3600
 TAIL_LINES = 60
-VERSION = '9'
+VERSION = '10'
+ORDERS_SYNC_MIN = 10          # bestellingen uit WooCommerce ophalen (orders_sync.py)
+MATCH_EVERY_H = 24            # shopproducten <-> mappen in _Shop voorstellen (match_shop_files.py)
 # Techniekmappen in de Inbox: zet je iets in _Inbox/Resin, dan weet de agent dat het een resinprint is (enz.).
 # Items los in _Inbox blijven werken: dan beslist de agent zelf.
 TECH_DIRS = {'fdm': 'fdm', 'resin': 'resin', 'laser': 'laser'}
@@ -131,6 +135,24 @@ def move_done(name):
     shutil.move(src, dst)
     os.utime(dst, None)
     return True
+
+
+def background_loop():
+    """Los van de opdrachten: bestellingen synchroniseren en (dagelijks) bestanden bij shopproducten voorstellen."""
+    stamp = os.path.join(LOGS, 'last_match_shop_files')
+    while True:
+        for script, due in (('orders_sync.py', True),
+                            ('match_shop_files.py', not os.path.exists(stamp) or time.time() - os.path.getmtime(stamp) > MATCH_EVERY_H * 3600)):
+            if not due: continue
+            try:
+                r = subprocess.run(['python3', f'/src/tools/maker/{script}'], capture_output=True, text=True, timeout=1800)
+                out = (r.stdout + r.stderr).strip().splitlines()
+                if out: print(f'{script}: {out[-1]}', flush=True)
+                if script == 'match_shop_files.py' and r.returncode == 0:
+                    os.makedirs(LOGS, exist_ok=True); open(stamp, 'w').close()
+            except Exception as e:
+                print(f'{script} mislukt: {e}', flush=True)
+        time.sleep(ORDERS_SYNC_MIN * 60)
 
 
 def heartbeat_loop():
@@ -310,6 +332,7 @@ def run_job(job):
 
 def main():
     threading.Thread(target=heartbeat_loop, daemon=True).start()
+    threading.Thread(target=background_loop, daemon=True).start()
     if not os.environ.get('CLAUDE_CODE_OAUTH_TOKEN') and not os.environ.get('ANTHROPIC_API_KEY'):
         status['text'] = 'geen CLAUDE_CODE_OAUTH_TOKEN ingesteld (zie maker-agent/README.md)'
         time.sleep(300); return

@@ -15,6 +15,7 @@ import { toHours } from "@/lib/types";
 import { slugifyForSku, nextAvailableSku, skuExists } from "@/lib/sku";
 import { uploadProductImage } from "@/lib/uploadImage";
 import { GravureSettingsEditor } from "@/components/GravureSettingsEditor";
+import ProductFilesCard from "@/components/ProductFilesCard";
 import { DEFAULT_GRAVURE_SETTINGS, splitImageUrls, stableStringify } from "@/lib/gravure";
 import {
   Product,
@@ -991,6 +992,8 @@ export default function ProductEditPage() {
       {(!isSimple || variations.length === 0) && (
         <button className="btn" onClick={addVariation}>{isSimple ? "+ Prijsberekening toevoegen" : "+ Variant toevoegen"}</button>
       )}
+
+      <ProductFilesCard productId={product.id} />
 
       <PromptModal
         open={duplicateSkuPrompt != null}
