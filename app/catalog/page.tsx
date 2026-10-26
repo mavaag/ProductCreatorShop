@@ -379,8 +379,6 @@ function AgentPanel({ waiting, titles, onJobFinished }: {
     loadJobs();
   }
 
-  if (todo.length === 0 && jobs.length === 0) return null;
-
   return (
     <div className="card" style={{ marginBottom: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
@@ -394,6 +392,13 @@ function AgentPanel({ waiting, titles, onJobFinished }: {
               : "Agent nog nooit gezien -- start de maker-agent container op de NAS"}
         </span>
       </div>
+
+      {todo.length === 0 && jobs.length === 0 && (
+        <p className="muted" style={{ margin: "8px 0 0" }}>
+          Vink modellen aan die nog geen productdocument hebben; dan kan de agent ze hier voor je verwerken
+          (3 mm-platen voor lasermodellen, shoptekst, varianten en foto&apos;s).
+        </p>
+      )}
 
       {todo.length > 0 && (
         <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap", marginTop: 12 }}>
