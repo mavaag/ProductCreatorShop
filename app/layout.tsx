@@ -50,6 +50,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Link href="/prices">Prijzen</Link>
             <Link href="/orders">Bestellingen</Link>
             <Link href="/mockup">Mockup</Link>
+            <Link href="/help" title="Handleiding">Help</Link>
           </div>
         </nav>
         <main className="container">{children}</main>
