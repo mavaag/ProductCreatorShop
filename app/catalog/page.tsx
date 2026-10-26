@@ -46,6 +46,7 @@ export default function CatalogPage() {
   const [category, setCategory] = useState("");
   const [search, setSearch] = useState("");
   const [onlyReady, setOnlyReady] = useState(false);
+  const [onlyTrademark, setOnlyTrademark] = useState(false);
   const [shown, setShown] = useState(PAGE_SIZE);
   const [openId, setOpenId] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -72,7 +73,7 @@ export default function CatalogPage() {
     if (ready) load();
   }, [ready]);
 
-  useEffect(() => setShown(PAGE_SIZE), [stage, kind, category, search, onlyReady]);
+  useEffect(() => setShown(PAGE_SIZE), [stage, kind, category, search, onlyReady, onlyTrademark]);
 
   function stageOf(m: MakerModel): Exclude<Stage, "all" | "picked"> | null {
     const pick = picks.get(m.id);
@@ -104,13 +105,14 @@ export default function CatalogPage() {
       if (kind && m.kind !== kind) return false;
       if (category && (m.category || "(geen)") !== category) return false;
       if (onlyReady && m.kind === "Lasercut" && m.laser_ready.length === 0) return false;
+      if (onlyTrademark && !m.is_trademark) return false;
       if (stage === "picked" && !picks.has(m.id)) return false;
       if (stage !== "all" && stage !== "picked" && stageOf(m) !== stage) return false;
       if (q && !`${m.title} ${m.collection} ${m.category} ${m.path}`.toLowerCase().includes(q)) return false;
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [models, picks, stage, kind, category, search, onlyReady]);
+  }, [models, picks, stage, kind, category, search, onlyReady, onlyTrademark]);
 
   async function togglePick(m: MakerModel) {
     const pick = picks.get(m.id);
@@ -221,6 +223,10 @@ export default function CatalogPage() {
           <input type="checkbox" style={{ width: "auto" }} checked={onlyReady} onChange={(e) => setOnlyReady(e.target.checked)} />
           Enkel snijklaar
         </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 0 10px" }} title="Modellen met een merk of personage van iemand anders (bv. Marvel), om ze later snel terug te vinden">
+          <input type="checkbox" style={{ width: "auto" }} checked={onlyTrademark} onChange={(e) => setOnlyTrademark(e.target.checked)} />
+          Enkel merkfiguren
+        </label>
       </div>
 
       {inReadyTab ? (
@@ -300,6 +306,7 @@ export default function CatalogPage() {
                   <div className="prod-cats">
                     {m.kind === "Lasercut" && m.laser_ready.length > 0 && <span className="pill cyan">Snijklaar</span>}
                     {m.has_doc && <span className="pill cyan">Document</span>}
+                    {m.is_trademark && <span className="pill" style={{ color: "var(--yellow)", borderColor: "var(--yellow)" }} title="Merk/personage van iemand anders">Merk</span>}
                     {m.woo_product_id && <span className="pill">In shop #{m.woo_product_id}</span>}
                   </div>
                 </div>
