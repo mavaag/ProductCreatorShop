@@ -16,9 +16,13 @@ export type MakerModel = {
   woo_product_id: number | null;
   /** merk/personage van iemand anders (doc.license.trademark): kan later verwijderd moeten worden */
   is_trademark: boolean;
+  /** geschat aantal verschillende ontwerpen in de map (build_catalog.py) */
+  designs: number;
+  /** bundel waaruit dit model kwam ("" = geen) */
+  bundle: string;
 };
 
-export const MAKER_MODEL_COLUMNS = "id, title, kind, collection, category, path, laser_ready, thumb_url, has_doc, woo_product_id, is_trademark";
+export const MAKER_MODEL_COLUMNS = "id, title, kind, collection, category, path, laser_ready, thumb_url, has_doc, woo_product_id, is_trademark, designs, bundle";
 
 export type MakerPick = { model_id: string; product_id: string | null; created_at: string };
 
@@ -114,6 +118,14 @@ export type MakerWooLink = { model_id: string; woo_product_id: number | null; wo
 /** Shopproduct van een model: jouw koppeling gaat voor op de suggestie van de agent (doc.woo_existing). */
 export function shopProductId(m: MakerModel, link: MakerWooLink | undefined): number | null {
   return link ? link.woo_product_id : m.woo_product_id;
+}
+
+/** Vanaf zoveel verschillende ontwerpen is een map waarschijnlijk een bundel van losse modellen. */
+export const BUNDLE_MIN_DESIGNS = 8;
+
+/** Mag "Bundel opsplitsen" bij dit model? Niet bij een al opgesplitst model, een vaste collectie of te weinig ontwerpen. */
+export function canSplit(m: MakerModel): boolean {
+  return !m.bundle && m.collection !== "Heads AAS26" && (m.designs ?? 0) >= BUNDLE_MIN_DESIGNS;
 }
 
 /** Opdracht voor de MakerProducts-agent op de NAS (tabel maker_jobs, zie maker-agent/). */
