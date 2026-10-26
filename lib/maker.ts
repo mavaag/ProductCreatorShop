@@ -120,12 +120,18 @@ export function shopProductId(m: MakerModel, link: MakerWooLink | undefined): nu
   return link ? link.woo_product_id : m.woo_product_id;
 }
 
-/** Vanaf zoveel verschillende ontwerpen is een map waarschijnlijk een bundel van losse modellen. */
+/**
+ * Vanaf zoveel ontwerpen is een map waarschijnlijk een bundel van losse modellen. Laser: verschillende bestandsnamen
+ * (zonder dikte/maat), dus pas vanaf 8. 3D-print: submappen met elk een eigen model (maat- en supportmappen tellen
+ * niet), dus vanaf 2.
+ */
 export const BUNDLE_MIN_DESIGNS = 8;
+export const BUNDLE_MIN_DESIGNS_3D = 2;
 
 /** Mag "Bundel opsplitsen" bij dit model? Niet bij een al opgesplitst model, een vaste collectie of te weinig ontwerpen. */
 export function canSplit(m: MakerModel): boolean {
-  return !m.bundle && m.collection !== "Heads AAS26" && (m.designs ?? 0) >= BUNDLE_MIN_DESIGNS;
+  const min = m.kind === "3D-Print" ? BUNDLE_MIN_DESIGNS_3D : BUNDLE_MIN_DESIGNS;
+  return !m.bundle && m.collection !== "Heads AAS26" && (m.designs ?? 0) >= min;
 }
 
 /** Opdracht voor de MakerProducts-agent op de NAS (tabel maker_jobs, zie maker-agent/). */

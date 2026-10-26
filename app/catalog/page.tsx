@@ -127,7 +127,7 @@ export default function CatalogPage() {
     return models.filter((m) => {
       if (kind && m.kind !== kind) return false;
       if (category && (m.category || "(geen)") !== category) return false;
-      if (onlyReady && m.kind === "Lasercut" && m.laser_ready.length === 0) return false;
+      if (onlyReady && (m.kind !== "Lasercut" || m.laser_ready.length === 0)) return false;   // snijklaar = enkel lasermodellen met platen
       if (onlyTrademark && !m.is_trademark) return false;
       if (onlyBundles && !canSplit(m)) return false;
       if (stage === "picked" && !picks.has(m.id)) return false;
