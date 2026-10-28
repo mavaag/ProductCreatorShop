@@ -164,7 +164,8 @@ const SECTIONS: Section[] = [
         <p>Waar komen de bestanden vandaan?</p>
         <ul>
           <li>Product gemaakt vanuit de <b>Catalogus</b>: het model met zijn LaserReady- of PrintReady-sets.</li>
-          <li>Je bestaande producten: hun bestanden staan op de NAS in <code>{"\\\\NASMAT\\MakerProducts\\_Shop"}</code> (per techniek en categorie, zoals vroeger de map PRODUCTS op de pc); nieuwe producten zet je daar ook. De agent stelt per product een map voor; op de productpagina onder <i>Productiebestanden</i> bevestig je het voorstel, wijs je het af, of plak je zelf het pad van de juiste map.</li>
+          <li>Op <b>Producten</b> zie je per product (kaartjes én lijst) waar de bestanden staan: <i>Catalogus</i> (klik = model openen in de Catalogus), <i>Map</i>, <i>Voorstel?</i> (nog te bevestigen) of <i>Geen bestanden</i>. Met het filter <i>Bestanden</i> zoek je bv. alle producten zonder bestanden.</li>
+          <li>Je bestaande producten: hun bestanden staan op de NAS in <code>{"\\\\NASMAT\\MakerProducts\\_Shop"}</code> (per techniek en categorie, zoals vroeger de map PRODUCTS op de pc); nieuwe producten zet je daar ook. Producten uit de Catalogus (aangemaakt of gekoppeld aan een bestaand shopproduct) kopieert de agent automatisch naar <code>_Shop/&lt;techniek&gt;/&lt;categorie&gt;/&lt;naam&gt;</code>, zodat alle shopproducten op één plek staan; het origineel blijft in de catalogus. Voor de andere producten stelt de agent een map voor; op de productpagina onder <i>Productiebestanden</i> bevestig je het voorstel, wijs je het af, of plak je zelf het pad van de juiste map.</li>
         </ul>
       </>
     ),

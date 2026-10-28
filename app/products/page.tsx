@@ -11,6 +11,8 @@ import { setMarginForProducts } from "@/lib/recalc";
 import { nextAvailableSku, skuExists } from "@/lib/sku";
 import { PromptModal } from "@/components/PromptModal";
 import { confirmDialog } from "@/components/DialogHost";
+import FileBadges from "@/components/FileBadges";
+import { FileFilter, FileStatus, loadFileStatus, matchesFileFilter } from "@/lib/productionFiles";
 
 type ProcessType = Product["process_type"];
 type ProductWithVariations = Product & { product_variations: ProductVariation[] };
@@ -151,6 +153,8 @@ export default function ProductsPage() {
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [publishFilter, setPublishFilter] = useState<PublishFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [fileFilter, setFileFilter] = useState<FileFilter>("all");
+  const [fileStatus, setFileStatus] = useState<Map<string, FileStatus>>(new Map());
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkMargin, setBulkMargin] = useState("");
   const [bulkCategory, setBulkCategory] = useState("");
@@ -171,6 +175,7 @@ export default function ProductsPage() {
       .select("*, product_variations(*)")
       .order("name");
     setProducts((data as ProductWithVariations[]) ?? []);
+    setFileStatus(await loadFileStatus(supabase));
   }
 
   useEffect(() => {
@@ -601,6 +606,7 @@ export default function ProductsPage() {
     if (activeTab !== "all") list = list.filter((p) => p.process_type === activeTab);
     if (publishFilter !== "all") list = list.filter((p) => (publishFilter === "published" ? p.published : !p.published));
     if (categoryFilter !== "all") list = list.filter((p) => productCategories(p).includes(categoryFilter));
+    if (fileFilter !== "all") list = list.filter((p) => matchesFileFilter(fileStatus.get(p.id), fileFilter));
     const q = search.trim().toLowerCase();
     if (q) list = list.filter((p) => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q));
 
@@ -621,7 +627,7 @@ export default function ProductsPage() {
       }
     });
     return withPrices.map((x) => x.p);
-  }, [products, activeTab, publishFilter, categoryFilter, search, sortKey]);
+  }, [products, activeTab, publishFilter, categoryFilter, fileFilter, fileStatus, search, sortKey]);
 
   if (!ready) return null;
 
@@ -843,6 +849,16 @@ export default function ProductsPage() {
             {categoryOptions.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
           </select>
         </div>
+        <div style={{ flex: 1, minWidth: 160 }}>
+          <label>Bestanden</label>
+          <select value={fileFilter} onChange={(e) => setFileFilter(e.target.value as FileFilter)}>
+            <option value="all">Alles</option>
+            <option value="catalog">Uit de catalogus</option>
+            <option value="folder">Met bestanden</option>
+            <option value="suggestion">Voorstel te bevestigen</option>
+            <option value="none">Zonder bestanden</option>
+          </select>
+        </div>
       </div>
 
       {selected.size > 0 && (
@@ -957,6 +973,7 @@ export default function ProductsPage() {
                         {categories.length > 2 && <span className="muted" style={{ fontSize: 12 }}>+{categories.length - 2}</span>}
                       </div>
                     )}
+                    <div className="prod-files"><FileBadges productId={p.id} status={fileStatus.get(p.id)} /></div>
                   </div>
 
                   <div className="prod-foot">
@@ -988,7 +1005,7 @@ export default function ProductsPage() {
                   onChange={(e) => setSelected(e.target.checked ? new Set(filtered.map((p) => p.id)) : new Set())}
                 />
               </th>
-              <th>Naam</th><th>Techniek</th><th>Categorie</th><th>SKU</th><th>Attributen</th><th>Varianten</th><th>Verkoopprijs</th><th>Gepubliceerd</th><th>Export</th><th></th></tr>
+              <th>Naam</th><th>Techniek</th><th>Categorie</th><th>SKU</th><th>Attributen</th><th>Varianten</th><th>Verkoopprijs</th><th>Gepubliceerd</th><th>Export</th><th>Bestanden</th><th></th></tr>
           </thead>
           <tbody>
             {filtered.map((p) => {
@@ -1020,6 +1037,7 @@ export default function ProductsPage() {
                   <td className="mono">{priceLabel}</td>
                   <td>{p.published ? "Ja" : "Nee"}</td>
                   <td>{isChanged(p) ? <span className="pill">{p.last_exported_at ? "Gewijzigd" : "Nieuw"}</span> : <span className="muted">Up-to-date</span>}</td>
+                  <td><FileBadges productId={p.id} status={fileStatus.get(p.id)} /></td>
                   <td>
                     <RowActionsMenu
                       product={p}
@@ -1032,7 +1050,7 @@ export default function ProductsPage() {
               );
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={11} className="muted">
+              <tr><td colSpan={12} className="muted">
                 {products.length === 0
                   ? 'Nog geen producten -- klik op "+ Nieuw product" om te starten.'
                   : "Geen producten gevonden voor deze filter/zoekopdracht."}

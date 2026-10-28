@@ -20,6 +20,12 @@ export default function ProductFilesCard({ productId }: { productId: string }) {
     setFolders(m.get(productId) ?? []);
   }
   useEffect(() => { load(); }, [productId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // vanuit de productenlijst (label Map / Voorstel? / Geen bestanden): naar dit blok scrollen zodra het geladen is
+  useEffect(() => {
+    if (folders !== null && window.location.hash === "#productiebestanden") {
+      document.getElementById("productiebestanden")?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [folders]);
 
   async function confirm(path: string) {
     const { error } = await supabase.from("product_files").update({ confirmed: true }).eq("product_id", productId).eq("path", path);
@@ -38,7 +44,7 @@ export default function ProductFilesCard({ productId }: { productId: string }) {
   }
 
   return (
-    <div className="card" style={{ marginTop: 16 }}>
+    <div className="card" id="productiebestanden" style={{ marginTop: 16, scrollMarginTop: 16 }}>
       <h2>Productiebestanden</h2>
       {folders === null ? <p className="muted">Laden...</p> : folders.length === 0 ? (
         <p className="muted">Nog geen map gekoppeld. Plak hieronder het pad van de map (of van één bestand) op de NAS.</p>
@@ -53,6 +59,7 @@ export default function ProductFilesCard({ productId }: { productId: string }) {
                 <button type="button" className="btn secondary" onClick={() => remove(f.path)}>Nee</button>
               </>
             )}
+            {f.modelId && <> {" "}<a className="link-btn" href={`/catalog?model=${f.modelId}`}>model in de catalogus</a></>}
             {f.confirmed && f.source !== "catalog" && (
               <> {" "}<button type="button" className="link-btn" onClick={() => remove(f.path)}>ontkoppelen</button></>
             )}

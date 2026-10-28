@@ -69,6 +69,9 @@ export default function CatalogPage() {
         fetchAll<MakerWooLink>("maker_woo_links", "model_id, woo_product_id, woo_name, woo_permalink", "model_id"),
       ]);
       setModels(m.sort((a, b) => a.title.localeCompare(b.title)));
+      // /catalog?model=<id> (label "Catalogus" op de productenlijst): dat model meteen openen
+      const want = new URLSearchParams(window.location.search).get("model");
+      if (want && m.some((x) => x.id === want)) setOpenId(want);
       setPicks(new Map(p.map((x) => [x.model_id, x])));
       setLinks(new Map(l.map((x) => [x.model_id, x])));
       const { data: splits } = await supabase.from("maker_jobs").select("model_ids, status, results").eq("kind", "split");

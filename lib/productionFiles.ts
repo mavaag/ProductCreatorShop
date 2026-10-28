@@ -2,11 +2,12 @@ import { SupabaseClient } from "@supabase/supabase-js";
 
 /**
  * Productiebestanden van een product: mappen op de NAS (relatief t.o.v. MakerProducts).
- *  - catalog: het catalogusmodel waaruit het product gemaakt is (maker_picks) -> zijn LaserReady/PrintReady-sets;
+ *  - catalog: het catalogusmodel van het product. tools/maker/shop_links.py kopieert het naar _Shop en schrijft een
+ *    product_files-rij (source 'catalog', model_id); tot dan tonen we de modelmap zelf (via maker_picks);
  *  - shop / manual: de map in _Shop (productiebestanden van de shopproducten) uit product_files.
  * Downloaden gaat via /api/files (zie app/api/files/route.ts).
  */
-export type ProductFolder = { path: string; label: string; source: "catalog" | "shop" | "manual"; confirmed: boolean; score?: number };
+export type ProductFolder = { path: string; label: string; source: "catalog" | "shop" | "manual"; confirmed: boolean; score?: number; modelId?: string };
 
 export const NAS_SHARE = "\\\\NASMAT\\MakerProducts";
 
@@ -14,7 +15,7 @@ export function nasPath(rel: string): string {
   return `${NAS_SHARE}\\${rel.replace(/\//g, "\\")}`;
 }
 
-/** Mappen per product-id. Onbevestigde voorstellen enkel als includeSuggestions (productpagina). */
+/** Mappen per product-id. Onbevestigde voorstellen enkel als includeSuggestions (productpagina, productenlijst). */
 export async function loadProductFolders(
   supabase: SupabaseClient, productIds: string[], includeSuggestions = false,
 ): Promise<Map<string, ProductFolder[]>> {
@@ -23,23 +24,26 @@ export async function loadProductFolders(
   const add = (id: string, f: ProductFolder) => out.set(id, [...(out.get(id) ?? []), f]);
   const [{ data: picks }, { data: files }] = await Promise.all([
     supabase.from("maker_picks").select("model_id, product_id").in("product_id", productIds),
-    supabase.from("product_files").select("product_id, path, source, confirmed, score").in("product_id", productIds),
+    supabase.from("product_files").select("product_id, path, source, confirmed, score, model_id").in("product_id", productIds),
   ]);
   const modelIds = (picks ?? []).map((p) => p.model_id);
   const { data: models } = modelIds.length
     ? await supabase.from("maker_models").select("id, path, laser_ready, technique").in("id", modelIds)
     : { data: [] as { id: string; path: string; laser_ready: string[]; technique: string }[] };
   const modelById = new Map((models ?? []).map((m) => [m.id, m]));
+  const copied = new Set((files ?? []).filter((f) => f.source === "catalog").map((f) => `${f.product_id}:${f.model_id}`));
   for (const p of picks ?? []) {
     const m = modelById.get(p.model_id);
-    if (!m) continue;
-    add(p.product_id, { path: m.path, label: "Catalogusmodel (met LaserReady/PrintReady)", source: "catalog", confirmed: true });
+    if (!m || copied.has(`${p.product_id}:${p.model_id}`)) continue;
+    add(p.product_id, { path: m.path, label: "Catalogusmodel (met LaserReady/PrintReady)", source: "catalog", confirmed: true, modelId: m.id });
   }
   for (const f of files ?? []) {
     if (!f.confirmed && !includeSuggestions) continue;
     add(f.product_id, {
-      path: f.path, source: f.source, confirmed: f.confirmed, score: f.score,
-      label: f.source === "manual" ? "Zelf gekozen map" : f.confirmed ? "Map uit je PRODUCTS-map" : "Voorstel uit je PRODUCTS-map",
+      path: f.path, source: f.source, confirmed: f.confirmed, score: f.score, modelId: f.model_id ?? undefined,
+      label: f.source === "catalog"
+        ? (f.path.startsWith("_Shop/") ? "Uit de catalogus (kopie in _Shop)" : "Catalogusmodel")
+        : f.source === "manual" ? "Zelf gekozen map" : f.confirmed ? "Map in _Shop" : "Voorstel uit _Shop",
     });
   }
   return out;
@@ -84,4 +88,38 @@ export function formatBytes(n: number): string {
   if (n < 1024 ** 2) return `${(n / 1024).toFixed(0)} kB`;
   if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(1)} MB`;
   return `${(n / 1024 ** 3).toFixed(2)} GB`;
+}
+
+/** Samenvatting per product voor de productenlijst: catalogusmodel, bevestigde map, open voorstel. */
+export type FileStatus = { modelId: string | null; hasFolder: boolean; hasSuggestion: boolean };
+export type FileFilter = "all" | "catalog" | "folder" | "suggestion" | "none";
+
+export async function loadFileStatus(supabase: SupabaseClient): Promise<Map<string, FileStatus>> {
+  const [{ data: picks }, { data: files }] = await Promise.all([
+    supabase.from("maker_picks").select("model_id, product_id").not("product_id", "is", null),
+    supabase.from("product_files").select("product_id, source, confirmed, model_id"),
+  ]);
+  const out = new Map<string, FileStatus>();
+  const get = (id: string) => {
+    let s = out.get(id);
+    if (!s) out.set(id, (s = { modelId: null, hasFolder: false, hasSuggestion: false }));
+    return s;
+  };
+  for (const p of picks ?? []) { const s = get(p.product_id); s.modelId ??= p.model_id; s.hasFolder = true; }
+  for (const f of files ?? []) {
+    const s = get(f.product_id);
+    if (f.source === "catalog" && f.model_id) s.modelId ??= f.model_id;
+    if (f.confirmed) s.hasFolder = true; else s.hasSuggestion = true;
+  }
+  return out;
+}
+
+export function matchesFileFilter(s: FileStatus | undefined, filter: FileFilter): boolean {
+  switch (filter) {
+    case "catalog": return !!s?.modelId;
+    case "folder": return !!s?.hasFolder;
+    case "suggestion": return !!s?.hasSuggestion && !s.hasFolder;
+    case "none": return !s?.hasFolder && !s?.hasSuggestion;
+    default: return true;
+  }
 }
