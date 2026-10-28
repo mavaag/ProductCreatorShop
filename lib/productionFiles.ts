@@ -32,23 +32,32 @@ export async function loadProductFolders(
     : { data: [] as { id: string; path: string; laser_ready: string[]; technique: string }[] };
   const modelById = new Map((models ?? []).map((m) => [m.id, m]));
   const copied = new Set((files ?? []).filter((f) => f.source === "catalog").map((f) => `${f.product_id}:${f.model_id}`));
+  // product met een eigen bevestigde map in _Shop: de modelmap in de catalogus is daar het origineel van -- niet als
+  // tweede pad tonen; de link "model in de catalogus" komt bij de _Shop-map
+  const ownFolder = new Set((files ?? []).filter((f) => f.confirmed && f.source !== "catalog").map((f) => f.product_id));
+  const hiddenModel = new Map<string, string>();
   for (const p of picks ?? []) {
     const m = modelById.get(p.model_id);
     if (!m || copied.has(`${p.product_id}:${p.model_id}`)) continue;
+    if (ownFolder.has(p.product_id)) { hiddenModel.set(p.product_id, m.id); continue; }
     add(p.product_id, { path: m.path, label: "Catalogusmodel (met LaserReady/PrintReady)", source: "catalog", confirmed: true, modelId: m.id });
   }
-  // product met een eigen bevestigde map in _Shop: de modelmap in de catalogus is daar een kopie van -- in Productie
-  // (zonder voorstellen) niet nog eens tonen; op de productpagina wel (met de link naar het model)
-  const ownFolder = new Set((files ?? []).filter((f) => f.confirmed && f.source !== "catalog").map((f) => f.product_id));
   for (const f of files ?? []) {
     if (!f.confirmed && !includeSuggestions) continue;
-    if (!includeSuggestions && f.source === "catalog" && !f.path.startsWith("_Shop/") && ownFolder.has(f.product_id)) continue;
+    if (f.source === "catalog" && !f.path.startsWith("_Shop/") && ownFolder.has(f.product_id)) {
+      if (f.model_id) hiddenModel.set(f.product_id, f.model_id);
+      continue;
+    }
     add(f.product_id, {
       path: f.path, source: f.source, confirmed: f.confirmed, score: f.score, modelId: f.model_id ?? undefined,
       label: f.source === "catalog"
         ? (f.path.startsWith("_Shop/") ? "Uit de catalogus (kopie in _Shop)" : "Catalogusmodel")
         : f.source === "manual" ? "Zelf gekozen map" : f.confirmed ? "Map in _Shop" : "Voorstel uit _Shop",
     });
+  }
+  for (const [pid, modelId] of hiddenModel) {
+    const own = out.get(pid)?.find((f) => f.confirmed && f.source !== "catalog");
+    if (own && !own.modelId) own.modelId = modelId;
   }
   return out;
 }
