@@ -226,7 +226,7 @@ export type MakerAgent = {
   status: string;
   version: string;
   /** inhoud van \\NASMAT\MakerProducts\_Inbox; ready = de laatste 2 minuten niet meer gewijzigd (kopiëren klaar) */
-  inbox?: { name: string; kind: "file" | "folder"; files: number; size: number; ready: boolean; technique?: string }[];
+  inbox?: { name: string; kind: "file" | "folder"; files: number; size: number; ready: boolean; technique?: string; wall_art?: boolean }[];
   inbox_info?: string;
 };
 

@@ -52,6 +52,14 @@ do not second-guess it:
 - `laser`: it goes to `Lasercut/Vectors/<Category>/<Model>/` (no `_technique.txt` needed).
 - `uv` / `engraving` / `sublimation`: it goes to `UV-Print/...`, `Engraving/...` or `Sublimation/...` as described
   above (the top folder sets the technique; no `_technique.txt` needed).
+- **Wall Art** (item `UV/Wall-Art/<name>`, field `wall_art: true`; user decision 2026-10-28): a UV-printed Wall Art
+  poster. Put it in `UV-Print/<Posters-...>/<Design>/` like any UV design (pick the existing `Posters-*` collection
+  that fits). Then make the mockups for every design folder you created:
+  `python3 /src/tools/maker/wallart_mockups.py "UV-Print/<Collection>/<Design>" --print "<print file name>"`
+  (`--print` is needed when the folder has more than one image; the print file is the poster itself, not a room
+  photo or preview). It places the poster in every mockup template the user marked "Gebruik voor Wall Art" and saves
+  `mockup_<template>.jpg` in the design folder; it never overwrites. Mention the number of mockups in the result note.
+  When it says there are no Wall Art templates, still report `ok` and add "geen Wall Art-templates aangeduid".
 - An item directly in `_Inbox` (technique ""): decide yourself as before. When the files make it certain that it
   is resin (pre-supported files or resin slicer projects), put it under `Resin-Print/`.
 Extract into `~/work/inbox/<last part of the item name>/` (without the technique folder).

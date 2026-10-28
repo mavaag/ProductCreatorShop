@@ -83,8 +83,9 @@ are designs (an image or vector set), not something to cut or print in 3D: never
   `process_type: "uv_print"`, category `UV Printing > Wall Decor > <CHARACTERS|FUNNY|GAMERS|...>` (pick the existing
   subcategory that fits; the library collection `Posters-<X>` is a hint), attributes **MATERIAL** (METAL, WOOD) x
   **Size** (M, XL) with the same variations and the same text structure as the existing Wall Art products. The print
-  file is the largest non-preview image in the folder; the previews/mockups (`*-1.png`, room photos) are the product
-  images. Put it in `variations[].production` as `{"technology": "uv", "files": ["<print file>"]}`. Many posters are
+  file is the poster image itself (not a room photo or preview; often, but not always, the largest file); the
+  previews/mockups (`mockup_*.jpg` made by wallart_mockups.py, `*-1.png`, room photos) are the product images --
+  `mockup_*.jpg` first when present, and a `mockup_*` file is never the print file. Put it in `variations[].production` as `{"technology": "uv", "files": ["<print file>"]}`. Many posters are
   already sold: check the shop export first and fill `woo_existing` when it matches.
 - **`engraving`** and **`sublimation`**: there is **no standard product yet** (user, 2026-10-28). Do not write a
   product document: report the model as skipped with the note "geen standaardproduct voor gravure/sublimatie --

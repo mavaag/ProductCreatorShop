@@ -33,12 +33,15 @@ POLL_S = 30
 IDLE_EXIT_S = 3600
 JOB_TIMEOUT_S = 6 * 3600
 TAIL_LINES = 60
-VERSION = '12'
+VERSION = '13'
 ORDERS_SYNC_MIN = 10          # bestellingen uit WooCommerce ophalen (orders_sync.py)
 MATCH_EVERY_H = 24            # shopproducten <-> mappen in _Shop voorstellen (match_shop_files.py)
 # Techniekmappen in de Inbox: zet je iets in _Inbox/Resin, dan weet de agent dat het een resinprint is (enz.).
 # Items los in _Inbox blijven werken: dan beslist de agent zelf. UV/Engraving/Sublimation: fase 2 (2026-10-28).
 TECH_DIRS = {'fdm': 'fdm', 'resin': 'resin', 'laser': 'laser', 'uv': 'uv', 'engraving': 'engraving', 'sublimation': 'sublimation'}
+# Submap _Inbox/UV/Wall-Art (2026-10-28): wat daar staat is een Wall Art-poster; de agent maakt er meteen mockups van
+# met de templates die in de mockup-generator op "Gebruik voor Wall Art" staan (tools/maker/wallart_mockups.py).
+WALL_ART_DIR = 'wall-art'
 WORK_KEEP_DAYS = 2   # uitgepakte inbox-archieven in ~/work/inbox (enkel tijdelijk werk van de agent)
 CATALOG = os.path.join(supa.MAKER_ROOT, '_catalog')
 
@@ -67,18 +70,33 @@ def _inbox_entries(folder):
     return [n for n in sorted(os.listdir(folder)) if not n.startswith(('.', '_', '#')) and n.lower() not in IGNORE]
 
 
+def _is_wall_art_dir(parent, name):
+    return TECH_DIRS.get(os.path.basename(parent).lower()) == 'uv' and name.lower() == WALL_ART_DIR \
+        and os.path.isdir(os.path.join(parent, name))
+
+
 def scan_inbox():
     """Items in _Inbox (alles behalve _verwerkt en verborgen bestanden), voor de Catalogus. Wat in een techniekmap
-    staat (_Inbox/FDM, _Inbox/Resin, _Inbox/Laser, _Inbox/UV, _Inbox/Engraving, _Inbox/Sublimation) heet "<map>/<naam>" en krijgt die techniek mee."""
+    staat (_Inbox/FDM, _Inbox/Resin, _Inbox/Laser, _Inbox/UV, _Inbox/Engraving, _Inbox/Sublimation) heet "<map>/<naam>" en krijgt die techniek mee.
+    Wat in _Inbox/UV/Wall-Art staat heet "UV/Wall-Art/<naam>" en krijgt wall_art mee."""
     if not os.path.isdir(INBOX): return []
     out = []
     for name in _inbox_entries(INBOX):
         p = os.path.join(INBOX, name)
         tech = TECH_DIRS.get(name.lower()) if os.path.isdir(p) else None
-        for item, path, t in ([(f'{name}/{c}', os.path.join(p, c), tech) for c in _inbox_entries(p)] if tech else [(name, p, '')]):
+        entries = []
+        if tech:
+            for c in _inbox_entries(p):
+                if _is_wall_art_dir(p, c):
+                    entries += [(f'{name}/{c}/{w}', os.path.join(p, c, w), tech, True) for w in _inbox_entries(os.path.join(p, c))]
+                else:
+                    entries.append((f'{name}/{c}', os.path.join(p, c), tech, False))
+        else:
+            entries = [(name, p, '', False)]
+        for item, path, t, wall_art in entries:
             n, size, newest = tree_stats(path)
             out.append({'name': item, 'kind': 'folder' if os.path.isdir(path) else 'file', 'files': n, 'size': size,
-                        'ready': time.time() - newest > SETTLE_S, 'technique': t})
+                        'ready': time.time() - newest > SETTLE_S, 'technique': t, 'wall_art': wall_art})
     return out
 
 
@@ -120,12 +138,14 @@ def cleanup_work(names=None):
 
 def move_done(name):
     """Verwerkt inbox-item naar _Inbox/_verwerkt/<datum>_<naam> (mtime = nu, zodat het opruimen vanaf nu telt).
-    name mag "<techniekmap>/<naam>" zijn; de techniekmap zelf blijft staan."""
+    name mag "<techniekmap>/<naam>" of "UV/Wall-Art/<naam>" zijn; de techniekmap en Wall-Art zelf blijven staan."""
     src = os.path.join(INBOX, name)
     parent = os.path.realpath(os.path.dirname(src))
-    allowed = {os.path.realpath(INBOX)} | {os.path.realpath(os.path.join(INBOX, d)) for d in os.listdir(INBOX)
-                                           if d.lower() in TECH_DIRS}
-    if not os.path.exists(src) or parent not in allowed or os.path.basename(src).lower() in TECH_DIRS and parent == os.path.realpath(INBOX):
+    tech_dirs = [os.path.join(INBOX, d) for d in os.listdir(INBOX) if d.lower() in TECH_DIRS]
+    wall_art = [os.path.realpath(os.path.join(t, c)) for t in tech_dirs for c in os.listdir(t) if _is_wall_art_dir(t, c)]
+    allowed = {os.path.realpath(INBOX)} | {os.path.realpath(t) for t in tech_dirs} | set(wall_art)
+    if not os.path.exists(src) or parent not in allowed or os.path.basename(src).lower() in TECH_DIRS and parent == os.path.realpath(INBOX) \
+            or os.path.realpath(src) in wall_art:
         return False
     base = os.path.basename(src)
     os.makedirs(DONE, exist_ok=True)
