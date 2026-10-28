@@ -74,8 +74,8 @@ const SECTIONS: Section[] = [
           <li><b>Geselecteerd</b> - alle modellen die je aanvinkte, in welke fase ook.</li>
           <li><b>Wacht op document</b> - geselecteerd, maar de agent heeft er nog geen productdocument voor gemaakt.</li>
           <li><b>Klaar om aan te maken</b> - document klaar, nog geen product. Vink aan en klik <i>Maak N producten</i>. In het detailvenster kan je eerst de <b>WooCommerce-categorie</b> aanpassen (standaard die van de agent).</li>
-          <li><b>Product gemaakt</b> - er bestaat al een product in de beheertool (<i>Open product</i>).</li>
-          <li><b>Al in de shop</b> - het model staat al in WooCommerce (gekoppeld of herkend).</li>
+          <li><b>Product gemaakt</b> - je hebt het product vanuit de Catalogus aangemaakt (<i>Open product</i>).</li>
+          <li><b>Al in de shop</b> - alle modellen die in de shop zitten: zelf aangemaakt (kaartje: <i>Product gemaakt</i>) én gekoppeld aan of herkend als een bestaand shopproduct (kaartje: <i>Gekoppeld aan shopproduct</i>). Je andere shopproducten (die niet uit de bibliotheek komen) staan enkel op <b>Producten</b>.</li>
         </ul>
         <h3>Filters en labels op de kaartjes</h3>
         <ul>
