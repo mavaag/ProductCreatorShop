@@ -80,8 +80,11 @@ Models with `technique` `uv`, `engraving` or `sublimation` (top folders `UV-Prin
 are designs (an image or vector set), not something to cut or print in 3D: never make LaserReady plates for them.
 - **`uv`**: the shop sells these as UV-printed **Wall Art** posters. Copy the structure of an existing one from
   `woo_products.json` (search "Wall Art –"): name `Wall Art – <Character/Subject> (<Short Edition Name>)`,
-  `process_type: "uv_print"`, category `UV Printing > Wall Decor > <CHARACTERS|FUNNY|GAMERS|...>` (pick the existing
-  subcategory that fits; the library collection `Posters-<X>` is a hint), attributes **MATERIAL** (METAL, WOOD) x
+  `process_type: "uv_print"`, category `UV Printing > Wall Decor > <SUBCATEGORY>`, where the subcategory follows the library
+  collection (user decision 2026-10-28): `Posters-Characters` -> CHARACTERS, `Posters-Funny` -> FUNNY,
+  `Posters-Gaming` -> GAMERS, `Posters-Quotes` -> QUOTES, `Posters-Black-White` -> BLACK & WHITE; a new
+  `Posters-<X>` collection -> `<X>` in capitals. This is the one exception to "existing categories only": use it even
+  when WooCommerce does not have it yet (the sync creates it), attributes **MATERIAL** (METAL, WOOD) x
   **Size** (M, XL) with the same variations and the same text structure as the existing Wall Art products. The print
   file is the poster image itself (not a room photo or preview; often, but not always, the largest file); the
   previews/mockups (`mockup_*.jpg` made by wallart_mockups.py, `*-1.png`, room photos) are the product images --
