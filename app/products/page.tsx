@@ -35,6 +35,19 @@ function productCategories(p: ProductWithVariations): string[] {
   return String(p.categories ?? "").split(",").map((c) => c.trim()).filter(Boolean);
 }
 
+/** Labels op het kaartje: eerst de hoofdcategorie (techniek), dan de laatste stap van elk pad. Een product dat in
+ *  WooCommerce enkel in de subcategorie zit ("Resin Printing > Figurines") krijgt zo ook het technieklabel. */
+function categoryPills(categories: string[]): string[] {
+  const roots = categories.map((c) => c.split(">")[0].trim());
+  const leaves = categories.map((c) => c.split(">").pop()!.trim());
+  return Array.from(new Set([...roots, ...leaves]));
+}
+
+/** Product valt onder een categorie als één van zijn paden die categorie is of eronder ligt. */
+function inCategory(p: ProductWithVariations, category: string): boolean {
+  return productCategories(p).some((c) => c === category || c.startsWith(`${category} >`));
+}
+
 function priceRange(p: ProductWithVariations) {
   const prices = p.product_variations.map((v) => v.suggested_price).filter((x): x is number => x != null);
   if (prices.length === 0) return { min: null as number | null, max: null as number | null };
@@ -597,7 +610,7 @@ export default function ProductsPage() {
   /** Alle categoriepaden die bij minstens één product voorkomen, alfabetisch, voor de filter-dropdown. */
   const categoryOptions = useMemo(() => {
     const set = new Set<string>();
-    for (const p of products) for (const c of productCategories(p)) set.add(c);
+    for (const p of products) for (const c of productCategories(p)) { set.add(c); set.add(c.split(">")[0].trim()); }
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [products]);
 
@@ -605,7 +618,7 @@ export default function ProductsPage() {
     let list = products;
     if (activeTab !== "all") list = list.filter((p) => p.process_type === activeTab);
     if (publishFilter !== "all") list = list.filter((p) => (publishFilter === "published" ? p.published : !p.published));
-    if (categoryFilter !== "all") list = list.filter((p) => productCategories(p).includes(categoryFilter));
+    if (categoryFilter !== "all") list = list.filter((p) => inCategory(p, categoryFilter));
     if (fileFilter !== "all") list = list.filter((p) => matchesFileFilter(fileStatus.get(p.id), fileFilter));
     const q = search.trim().toLowerCase();
     if (q) list = list.filter((p) => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q));
@@ -969,8 +982,8 @@ export default function ProductsPage() {
                     </div>
                     {categories.length > 0 && (
                       <div className="prod-cats" title={categories.join("\n")}>
-                        {categories.slice(0, 2).map((cat) => <span key={cat} className="pill cyan">{cat.split(">").pop()!.trim()}</span>)}
-                        {categories.length > 2 && <span className="muted" style={{ fontSize: 12 }}>+{categories.length - 2}</span>}
+                        {categoryPills(categories).slice(0, 2).map((cat) => <span key={cat} className="pill cyan">{cat}</span>)}
+                        {categoryPills(categories).length > 2 && <span className="muted" style={{ fontSize: 12 }}>+{categoryPills(categories).length - 2}</span>}
                       </div>
                     )}
                     <div className="prod-files"><FileBadges productId={p.id} status={fileStatus.get(p.id)} /></div>
