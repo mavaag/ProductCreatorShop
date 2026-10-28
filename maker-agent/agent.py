@@ -8,7 +8,8 @@ en laat Claude Code die afwerken:
     zetten. Wat lukte, verplaatst dit script daarna naar _Inbox/_verwerkt; dat wordt na INBOX_RETENTION_DAYS dagen
     automatisch leeggemaakt (Claude zelf mag niets verplaatsen of verwijderen);
   - daarnaast, los van de opdrachten: elke 10 minuten de WooCommerce-bestellingen ophalen (orders_sync.py) en elke dag
-    voorstellen welke map in _Shop bij welk shopproduct hoort (match_shop_files.py);
+    voorstellen welke map in _Shop bij welk shopproduct hoort (match_shop_files.py); catalogusmodellen die een
+    shopproduct zijn mee in _Shop zetten (shop_links.py, elke 10 minuten);
   - soort 'split' (knop "Bundel opsplitsen"): volgens SPLIT_PROMPT.md een model dat eigenlijk een map met veel losse
     modellen is, opsplitsen in submappen (Claude kopieert enkel). Lukte dat, dan zet dit script de bundel als
     verzamelmap in _catalog/sources.json (met backup), bouwt de catalogus opnieuw en haalt het bundelkaartje weg.
@@ -32,7 +33,7 @@ POLL_S = 30
 IDLE_EXIT_S = 3600
 JOB_TIMEOUT_S = 6 * 3600
 TAIL_LINES = 60
-VERSION = '10'
+VERSION = '11'
 ORDERS_SYNC_MIN = 10          # bestellingen uit WooCommerce ophalen (orders_sync.py)
 MATCH_EVERY_H = 24            # shopproducten <-> mappen in _Shop voorstellen (match_shop_files.py)
 # Techniekmappen in de Inbox: zet je iets in _Inbox/Resin, dan weet de agent dat het een resinprint is (enz.).
@@ -141,7 +142,7 @@ def background_loop():
     """Los van de opdrachten: bestellingen synchroniseren en (dagelijks) bestanden bij shopproducten voorstellen."""
     stamp = os.path.join(LOGS, 'last_match_shop_files')
     while True:
-        for script, due in (('orders_sync.py', True),
+        for script, due in (('orders_sync.py', True), ('shop_links.py', True),
                             ('match_shop_files.py', not os.path.exists(stamp) or time.time() - os.path.getmtime(stamp) > MATCH_EVERY_H * 3600)):
             if not due: continue
             try:

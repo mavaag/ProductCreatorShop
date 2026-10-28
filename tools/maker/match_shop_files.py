@@ -1,10 +1,10 @@
 """match_shop_files.py - stelt per product in de beheertool voor welke map in _Shop de productiebestanden bevat.
 
-_Shop bevat de productiebestanden van de shopproducten (vroeger de PRODUCTS-map op de pc): 3DPrinting, LaserCutting, UVPrinting,
-Engraving en Sublimatie, met per product een map. Dit script vergelijkt elk product met die mappen:
+_Shop bevat de productiebestanden van de shopproducten (vroeger de PRODUCTS-map op de pc): 3DPrinting, ResinPrinting, LaserCutting,
+UVPrinting, Engraving en Sublimatie, met per product een map. Dit script vergelijkt elk product met die mappen:
   - dezelfde foto: een afbeelding van het product in de shop (bv. Kirby_base.png) staat ook in de map (sterk);
   - de naam: woorden van de productnaam in de mapnaam (en de bovenliggende map);
-  - enkel mappen van de juiste techniek (3D-printen -> 3DPrinting, ...).
+  - enkel mappen van de juiste techniek (3D-printen -> 3DPrinting, resin -> ResinPrinting of 3DPrinting, ...).
 Schrijft het beste voorstel per product in product_files (confirmed = false, source 'shop'). Bevestigde of zelf
 gekozen rijen worden nooit aangeraakt; een product met een bevestigde map krijgt geen nieuw voorstel.
     python3 match_shop_files.py [--dry-run]"""
@@ -14,8 +14,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import supa
 
 SHOP = os.path.join(supa.MAKER_ROOT, '_Shop')
-TECH_DIR = {'3d_print': '3DPrinting', 'resin_print': '3DPrinting', 'laser_cutting': 'LaserCutting',
-            'uv_print': 'UVPrinting', 'laser_engraving': 'Engraving', 'sublimation': 'Sublimatie'}
+TECH_DIR = {'3d_print': ('3DPrinting',), 'resin_print': ('ResinPrinting', '3DPrinting'), 'laser_cutting': ('LaserCutting',),
+            'uv_print': ('UVPrinting',), 'laser_engraving': ('Engraving',), 'sublimation': ('Sublimatie',)}
 PROD_EXT = {'.3mf', '.stl', '.obj', '.step', '.gcode', '.bgcode', '.lac', '.svg', '.dxf', '.ai', '.eps', '.pdf', '.cdr',
             '.lbrn', '.lbrn2', '.xcs', '.lys', '.chitubox', '.ctb', '.goo', '.zip', '.rar', '.dwg', '.lp2'}
 IMG_EXT = {'.jpg', '.jpeg', '.png', '.webp'}
@@ -80,7 +80,7 @@ def main():
         tech = TECH_DIR.get(p['process_type'])
         prod_imgs = {img_key(u) for u in (p.get('image_url') or '').split(',') if u.strip()}
         cands = [(score(p, rel, imgs, prod_imgs), rel) for rel, imgs in folders.items()
-                 if not tech or rel.split('/')[1] == tech]
+                 if not tech or rel.split('/')[1] in tech]
         cands = sorted((c for c in cands if c[0] >= MIN_SCORE), reverse=True)[:1]
         for sc, rel in cands:
             rows.append({'product_id': p['id'], 'path': rel, 'source': 'shop', 'confirmed': False, 'score': round(min(sc, 1.5), 3)})
