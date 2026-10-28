@@ -41,6 +41,7 @@ const SECTIONS: Section[] = [
         <ul>
           <li><b>+ Nieuw product</b>: naam, techniek, parent-SKU en eventueel attributen (bv. Size, Thickness). Zonder attributen wordt het een simpel product.</li>
           <li><b>Selecteren</b> (vinkje op een kaartje) geeft bulkacties: <i>Publiceren / Depubliceren</i>, <i>Marge toepassen</i>, <i>Categorie instellen</i>, <i>Synchroniseer geselecteerde</i>, <i>Verwijderen</i>. Verwijderen gebeurt enkel in de beheertool, niet in de shop.</li>
+          <li><b>Hamburgermenu</b> (☰ op een kaartje of rij): <i>Bewerken</i>, <i>Dupliceer</i>, <i>Publiceren / Depubliceren</i> van dat ene product, <i>Verwijder</i>. (De)publiceren gaat naar de shop bij de volgende synchronisatie.</li>
           <li><b>Synchroniseren met WooCommerce</b>:
             <ul>
               <li><i>Bestaande synchroniseren</i>: stuurt wijzigingen (prijs, tekst, voorraad, ...) door naar producten die al in de shop staan.</li>
