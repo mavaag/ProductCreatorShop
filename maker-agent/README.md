@@ -35,6 +35,8 @@ container opnieuw bouwen (stap 5).
    ssh -t mavaag@192.168.50.10 "sudo docker compose -f /volume1/Docker/product-app/src/maker-agent/docker-compose.yml up -d --build"
    ```
    De eerste keer duurt dat enkele minuten. Daarna zie je in de Catalogus "Agent actief".
+   Opnieuw bouwen (zelfde commando) is nodig na een wijziging aan `Dockerfile` of `docker-compose.yml`, bv. voor de
+   AI-upscaler Real-ESRGAN (`tools/maker/upscale_print.py`, gebruikt de Intel-GPU via `/dev/dri`).
 
 ## Inbox
 Nieuwe modellen (bestanden, mappen, zip/rar) zet je in `\\NASMAT\MakerProducts\_Inbox`. De agent toont ze in de

@@ -14,6 +14,12 @@ services:
     env_file: /volume1/Docker/maker-agent/agent.env  # CLAUDE_CODE_OAUTH_TOKEN (claude setup-token)
     environment:
       TZ: Europe/Brussels
+    # Intel-GPU van de NAS voor Real-ESRGAN (upscale_print.py). /dev/dri is op de NAS van root:root (660), dus de
+    # agent-gebruiker krijgt groep 0 erbij om het apparaat te mogen openen.
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - "0"
     volumes:
       - /volume1/MakerProducts:/volume1/MakerProducts  # modellen + _catalog (lezen en schrijven)
       - /volume1/Docker/supabase/.env:/volume1/Docker/supabase/.env:ro  # service-key voor tools/maker/supa.py

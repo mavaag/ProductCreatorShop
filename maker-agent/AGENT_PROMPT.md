@@ -89,7 +89,9 @@ are designs (an image or vector set), not something to cut or print in 3D: never
   file is the poster image itself (not a room photo or preview; often, but not always, the largest file); the
   previews/mockups (`mockup_*.jpg` made by wallart_mockups.py, `*-1.png`, room photos) are the product images --
   when `mockup_*.jpg` files are present, the product images are **only those mockups** (user decision 2026-10-28: the
-  print file itself is never a product image then), and a `mockup_*` file is never the print file. Put it in `variations[].production` as `{"technology": "uv", "files": ["<print file>"]}`. Many posters are
+  print file itself is never a product image then), and a `mockup_*` file is never the print file. Put it in `variations[].production` as `{"technology": "uv", "files": ["<print file>"]}`; when
+  `<name>_upscaled.png` exists (made by upscale_print.py), that is the print file (never a product image) and add a
+  `notes_internal` line that it was AI-upscaled and must be checked before printing. Many posters are
   already sold: check the shop export first and fill `woo_existing` when it matches.
 - **`engraving`** and **`sublimation`**: there is **no standard product yet** (user, 2026-10-28). Do not write a
   product document: report the model as skipped with the note "geen standaardproduct voor gravure/sublimatie --
