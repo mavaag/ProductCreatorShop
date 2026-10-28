@@ -94,9 +94,39 @@ async function resinCostInputs(supabase: SupabaseClient, prod: ResinProduction):
 }
 
 /**
+ * Wall Art (uv_print): alle posters hebben per MATERIAL/Size dezelfde kostenopbouw (printer, plaat/kader, inkt, arbeid)
+ * en prijs. Per variant nemen we de meest voorkomende opbouw van de bestaande posters met dezelfde attribuutwaarden
+ * over (enkel varianten waarvan elke machinelijn een machine heeft). Geen match -> null (dan leeg, zelf invullen).
+ */
+async function siblingCostInputs(supabase: SupabaseClient, processType: string) {
+  const { data } = await supabase
+    .from("product_variations")
+    .select("attribute_values, cost_inputs, suggested_price, products!inner(process_type)")
+    .eq("products.process_type", processType);
+  const key = (a: Record<string, string>) => JSON.stringify(Object.keys(a).sort().map((k) => [k, a[k]]));
+  const counts = new Map<string, Map<string, { n: number; cost_inputs: CostInputs; suggested_price: number | null }>>();
+  for (const v of data ?? []) {
+    const ci = v.cost_inputs as CostInputs;
+    if (!ci?.machine_time?.length || ci.machine_time.some((l) => !l.machine_id)) continue;
+    const k = key(v.attribute_values ?? {});
+    const perAttr = counts.get(k) ?? new Map();
+    const id = JSON.stringify([ci, v.suggested_price]);
+    const hit = perAttr.get(id) ?? { n: 0, cost_inputs: ci, suggested_price: v.suggested_price };
+    hit.n++;
+    perAttr.set(id, hit);
+    counts.set(k, perAttr);
+  }
+  return (attrs: Record<string, string>) => {
+    const options = Array.from(counts.get(key(attrs))?.values() ?? []);
+    return options.sort((a, b) => b.n - a.n)[0] ?? null;
+  };
+}
+
+/**
  * Maakt van een productdocument een (concept)product met al zijn varianten in de beheertool en koppelt het
  * aan de selectie in maker_picks. De prijsberekening blijft leeg -- die vul je daarna in op de productpagina -- behalve
- * bij resin, waar printer, printtijd en resin uit resin_plates.py al ingevuld worden.
+ * bij resin, waar printer, printtijd en resin uit resin_plates.py al ingevuld worden, en bij Wall Art (uv_print), waar
+ * kostenopbouw en prijs van de bestaande posters met dezelfde MATERIAL/Size overgenomen worden.
  */
 /** opts.categories: de categorie die je in de Catalogus koos (anders de voorgestelde uit het document). */
 export async function createProductFromDoc(supabase: SupabaseClient, doc: MakerDoc, opts: { categories?: string } = {}): Promise<string> {
@@ -122,6 +152,7 @@ export async function createProductFromDoc(supabase: SupabaseClient, doc: MakerD
   if (error) throw error;
 
   const rows = [];
+  const sibling = p.process_type === "uv_print" ? await siblingCostInputs(supabase, p.process_type) : null;
   const variations = attributeNames.length === 0
     ? [{ attributes: {} as Record<string, string>, production: doc.variations[0]?.production ?? {} }]
     : doc.variations;
@@ -130,10 +161,12 @@ export async function createProductFromDoc(supabase: SupabaseClient, doc: MakerD
     const variationSku = values.length === 0
       ? product.sku
       : await nextAvailableSku(supabase, "product_variations", `${product.sku}-` + values.map(slugifyForSku).join("-"));
-    const cost_inputs = p.process_type === "resin_print"
-      ? await resinCostInputs(supabase, v.production as ResinProduction)
+    const copied = sibling?.(v.attributes);
+    const cost_inputs = copied ? copied.cost_inputs
+      : p.process_type === "resin_print" ? await resinCostInputs(supabase, v.production as ResinProduction)
       : emptyCostInputs(p.process_type);
-    rows.push({ product_id: product.id, sku: variationSku, attribute_values: v.attributes, cost_inputs });
+    rows.push({ product_id: product.id, sku: variationSku, attribute_values: v.attributes, cost_inputs,
+                ...(copied?.suggested_price != null ? { suggested_price: copied.suggested_price } : {}) });
   }
   const { error: varError } = await supabase.from("product_variations").insert(rows);
   if (varError) {
