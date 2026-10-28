@@ -114,11 +114,15 @@ export default function CatalogPage() {
     [models, kind]
   );
 
+  /** In de shop: vanuit de Catalogus aangemaakt ("created") of gekoppeld aan / herkend als een bestaand shopproduct ("shop"). */
+  const inShop = (s: Stage | null) => s === "created" || s === "shop";
+
   const counts = useMemo(() => {
     const c: Record<Stage, number> = { all: models.length, picked: picks.size, doc: 0, ready: 0, created: 0, shop: 0 };
     for (const m of models) {
       const s = stageOf(m);
       if (s) c[s]++;
+      if (s === "created") c.shop++;   // "Al in de shop" = alles wat in de shop zit: zelf gemaakt én gekoppeld
     }
     return c;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -133,7 +137,7 @@ export default function CatalogPage() {
       if (onlyTrademark && !m.is_trademark) return false;
       if (onlyBundles && !canSplit(m)) return false;
       if (stage === "picked" && !picks.has(m.id)) return false;
-      if (stage !== "all" && stage !== "picked" && stageOf(m) !== stage) return false;
+      if (stage === "shop" ? !inShop(stageOf(m)) : stage !== "all" && stage !== "picked" && stageOf(m) !== stage) return false;
       if (q && !`${m.title} ${m.collection} ${m.category} ${m.path}`.toLowerCase().includes(q)) return false;
       return true;
     });
@@ -363,9 +367,9 @@ export default function CatalogPage() {
                   </div>
                 </div>
                 <div className="prod-foot">
-                  <span className={`prod-status${s === "created" || s === "ready" ? " on" : ""}`}>
+                  <span className={`prod-status${inShop(s) || s === "ready" ? " on" : ""}`}>
                     <i />
-                    {s === "created" ? "Product gemaakt" : s === "ready" ? "Klaar om aan te maken" : s === "doc" ? "Wacht op document" : s === "shop" ? "Al in de shop" : "Niet geselecteerd"}
+                    {s === "created" ? "Product gemaakt" : s === "ready" ? "Klaar om aan te maken" : s === "doc" ? "Wacht op document" : s === "shop" ? "Gekoppeld aan shopproduct" : "Niet geselecteerd"}
                   </span>
                 </div>
               </div>
