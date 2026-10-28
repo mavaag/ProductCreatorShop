@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
 import { PROCESS_TYPE_LABELS } from "@/lib/types";
 import { alertDialog, confirmDialog } from "@/components/DialogHost";
-import { AGENT_ONLINE_MS, MAKER_MODEL_COLUMNS, MakerAgent, MakerDoc, MakerJob, MakerModel, MakerPick, MakerWooLink, canSplit, createProductFromDoc, licenseWarning, shopProductId, techniqueLabel, techniqueOf } from "@/lib/maker";
+import { AGENT_ONLINE_MS, MAKER_MODEL_COLUMNS, MakerAgent, MakerDoc, MakerJob, MakerModel, MakerPick, MakerWooLink, canSplit, createProductFromDoc, licenseWarning, shopProductId, TECHNIQUE_LABELS, Technique, techniqueLabel, techniqueOf } from "@/lib/maker";
 
 /** Stappen van een model: kiezen -> document (beschrijving, foto's, varianten) -> product in de beheertool. */
 type Stage = "all" | "picked" | "doc" | "ready" | "created" | "shop";
@@ -20,7 +20,9 @@ const STAGES: { value: Stage; label: string }[] = [
   { value: "shop", label: "Al in de shop" },
 ];
 
-const KIND_COLORS: Record<string, string> = { Lasercut: "#ff5a5a", "3D-Print": "var(--cyan)", resin: "#3dffc5" };
+const KIND_COLORS: Record<string, string> = {
+  Lasercut: "#ff5a5a", "3D-Print": "var(--cyan)", resin: "#3dffc5", "UV-Print": "#c77dff", Engraving: "#ffb347", Sublimation: "#ff6fb5",
+};
 const PAGE_SIZE = 120;
 
 /** Haalt alle rijen op in blokken van 1000 (PostgREST geeft er standaard maximaal 1000 per keer). */
@@ -253,6 +255,9 @@ export default function CatalogPage() {
             <option value="laser">Laser</option>
             <option value="fdm">3D-print FDM</option>
             <option value="resin">3D-print Resin</option>
+            <option value="uv">UV-print</option>
+            <option value="engraving">Gravure</option>
+            <option value="sublimation">Sublimatie</option>
           </select>
         </div>
         <div style={{ flex: 1, minWidth: 160 }}>
@@ -556,7 +561,7 @@ function AgentPanel({ waiting, titles, onJobFinished }: {
               {inbox.map((i) => (
                 <li key={i.name}>
                   <span className="mono">{i.name}</span>{" "}
-                  {i.technique && <span className="pill cyan" style={{ marginRight: 6 }}>{i.technique === "fdm" ? "3D-print FDM" : i.technique === "resin" ? "3D-print Resin" : "Laser"}</span>}
+                  {i.technique && <span className="pill cyan" style={{ marginRight: 6 }}>{TECHNIQUE_LABELS[i.technique as Technique] ?? i.technique}</span>}
                   <span className="muted">
                     ({i.kind === "folder" ? `map, ${i.files} bestand${i.files === 1 ? "" : "en"}` : "bestand"}, {formatSize(i.size)})
                     {!i.ready && " -- wordt nog gekopieerd..."}

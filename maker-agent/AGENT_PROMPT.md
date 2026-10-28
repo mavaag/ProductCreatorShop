@@ -75,6 +75,22 @@ Every model in the job must end with exactly one `result`. Notes are short and i
    sold, fill `woo_existing` ({id, name, permalink}) and keep the shop text, as the runbook describes.
 3. Report the `result` for the model before moving on.
 
+## UV print, engraving and sublimation designs (user decision 2026-10-28)
+Models with `technique` `uv`, `engraving` or `sublimation` (top folders `UV-Print/`, `Engraving/`, `Sublimation/`)
+are designs (an image or vector set), not something to cut or print in 3D: never make LaserReady plates for them.
+- **`uv`**: the shop sells these as UV-printed **Wall Art** posters. Copy the structure of an existing one from
+  `woo_products.json` (search "Wall Art –"): name `Wall Art – <Character/Subject> (<Short Edition Name>)`,
+  `process_type: "uv_print"`, category `UV Printing > Wall Decor > <CHARACTERS|FUNNY|GAMERS|...>` (pick the existing
+  subcategory that fits; the library collection `Posters-<X>` is a hint), attributes **MATERIAL** (METAL, WOOD) x
+  **Size** (M, XL) with the same variations and the same text structure as the existing Wall Art products. The print
+  file is the largest non-preview image in the folder; the previews/mockups (`*-1.png`, room photos) are the product
+  images. Put it in `variations[].production` as `{"technology": "uv", "files": ["<print file>"]}`. Many posters are
+  already sold: check the shop export first and fill `woo_existing` when it matches.
+- **`engraving`** and **`sublimation`**: there is **no standard product yet** (user, 2026-10-28). Do not write a
+  product document: report the model as skipped with the note "geen standaardproduct voor gravure/sublimatie --
+  maak het product zelf of geef in de opdracht aan wat het moet worden". If the job note describes the product
+  (material, sizes, price idea), follow the note instead and write the document.
+
 ## Resin figures (user decision 2026-10-26)
 - **The model's `technique` in the job decides** (from `_technique.txt` in the model folder or the Inbox technique
   folder): `resin` -> always a resin product (even without pre-supported files: then mention that supports still have

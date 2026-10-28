@@ -33,12 +33,12 @@ POLL_S = 30
 IDLE_EXIT_S = 3600
 JOB_TIMEOUT_S = 6 * 3600
 TAIL_LINES = 60
-VERSION = '11'
+VERSION = '12'
 ORDERS_SYNC_MIN = 10          # bestellingen uit WooCommerce ophalen (orders_sync.py)
 MATCH_EVERY_H = 24            # shopproducten <-> mappen in _Shop voorstellen (match_shop_files.py)
 # Techniekmappen in de Inbox: zet je iets in _Inbox/Resin, dan weet de agent dat het een resinprint is (enz.).
-# Items los in _Inbox blijven werken: dan beslist de agent zelf.
-TECH_DIRS = {'fdm': 'fdm', 'resin': 'resin', 'laser': 'laser'}
+# Items los in _Inbox blijven werken: dan beslist de agent zelf. UV/Engraving/Sublimation: fase 2 (2026-10-28).
+TECH_DIRS = {'fdm': 'fdm', 'resin': 'resin', 'laser': 'laser', 'uv': 'uv', 'engraving': 'engraving', 'sublimation': 'sublimation'}
 WORK_KEEP_DAYS = 2   # uitgepakte inbox-archieven in ~/work/inbox (enkel tijdelijk werk van de agent)
 CATALOG = os.path.join(supa.MAKER_ROOT, '_catalog')
 
@@ -69,7 +69,7 @@ def _inbox_entries(folder):
 
 def scan_inbox():
     """Items in _Inbox (alles behalve _verwerkt en verborgen bestanden), voor de Catalogus. Wat in een techniekmap
-    staat (_Inbox/FDM, _Inbox/Resin, _Inbox/Laser) heet "<map>/<naam>" en krijgt die techniek mee."""
+    staat (_Inbox/FDM, _Inbox/Resin, _Inbox/Laser, _Inbox/UV, _Inbox/Engraving, _Inbox/Sublimation) heet "<map>/<naam>" en krijgt die techniek mee."""
     if not os.path.isdir(INBOX): return []
     out = []
     for name in _inbox_entries(INBOX):

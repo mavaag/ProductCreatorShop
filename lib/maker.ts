@@ -6,7 +6,7 @@ import { nextAvailableSku, slugifyForSku } from "@/lib/sku";
 export type MakerModel = {
   id: string;
   title: string;
-  kind: "Lasercut" | "3D-Print" | string;
+  kind: "Lasercut" | "3D-Print" | "UV-Print" | "Engraving" | "Sublimation" | string;
   collection: string;
   category: string;
   path: string;
@@ -20,7 +20,8 @@ export type MakerModel = {
   designs: number;
   /** bundel waaruit dit model kwam ("" = geen) */
   bundle: string;
-  /** "resin" / "fdm" / "laser", of "" = nog niet bekend (uit _technique.txt, de Inbox-techniekmap of de bestanden) */
+  /** "resin" / "fdm" / "laser" / "uv" / "engraving" / "sublimation", of "" = nog niet bekend (uit _technique.txt, de
+   *  Inbox-techniekmap, de hoofdmap in de bibliotheek of de bestanden) */
   technique: string;
 };
 
@@ -171,19 +172,30 @@ export const BUNDLE_MIN_DESIGNS_3D = 2;
 /** Mag "Bundel opsplitsen" bij dit model? Niet bij een al opgesplitst model, een vaste collectie of te weinig ontwerpen. */
 export function canSplit(m: MakerModel): boolean {
   const min = m.kind === "3D-Print" ? BUNDLE_MIN_DESIGNS_3D : BUNDLE_MIN_DESIGNS;
+  if (DESIGN_KINDS.includes(m.kind)) return false;   // UV/gravure/sublimatie: één ontwerp per map
   return !m.bundle && m.collection !== "Heads AAS26" && (m.designs ?? 0) >= min;
 }
 
+/** Hoofdmappen met ontwerpen (fase 2, 2026-10-28): UV-Print/, Engraving/, Sublimation/ in de bibliotheek. */
+export const DESIGN_KINDS = ["UV-Print", "Engraving", "Sublimation"];
+
+export type Technique = "laser" | "resin" | "fdm" | "uv" | "engraving" | "sublimation";
+
 /**
- * Techniek in de Catalogus: "laser", "resin" of "fdm". 3D-print = FDM (gebruikerskeuze 2026-10-26); een 3D-model is
- * enkel Resin als dat gemarkeerd of herkend is (technique "resin").
+ * Techniek in de Catalogus. 3D-print = FDM (gebruikerskeuze 2026-10-26); een 3D-model is enkel Resin als dat
+ * gemarkeerd of herkend is (technique "resin"). UV-print, gravure en sublimatie volgen uit hun hoofdmap.
  */
-export function techniqueOf(m: Pick<MakerModel, "kind" | "technique">): "laser" | "resin" | "fdm" {
+export function techniqueOf(m: Pick<MakerModel, "kind" | "technique">): Technique {
   if (m.kind === "Lasercut") return "laser";
+  if (m.kind === "UV-Print") return "uv";
+  if (m.kind === "Engraving") return "engraving";
+  if (m.kind === "Sublimation") return "sublimation";
   return m.technique === "resin" ? "resin" : "fdm";
 }
 
-export const TECHNIQUE_LABELS = { laser: "Laser", fdm: "3D-print FDM", resin: "3D-print Resin" } as const;
+export const TECHNIQUE_LABELS: Record<Technique, string> = {
+  laser: "Laser", fdm: "3D-print FDM", resin: "3D-print Resin", uv: "UV-print", engraving: "Gravure", sublimation: "Sublimatie",
+};
 
 /** Label op een catalogus-kaartje. */
 export function techniqueLabel(m: Pick<MakerModel, "kind" | "technique">): string {

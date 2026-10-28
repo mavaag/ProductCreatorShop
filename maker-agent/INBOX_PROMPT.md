@@ -33,16 +33,25 @@ A **model is one folder** holding its files (sources, images, README/licence). T
 - 3D print (FDM): `3D-Print/<Collection>/<Model>/` (every folder directly under `3D-Print` is a collection). Use an
   existing collection when it fits, otherwise create one named after the designer/pack or the theme.
 - Resin: `Resin-Print/<Collection>/<Model>/` (same idea as 3D-Print; the catalog marks everything there as resin).
+- UV print / engraving / sublimation designs (user decision 2026-10-28): `UV-Print/<Collection>/<Design>/`,
+  `Engraving/<Collection>/<Design>/`, `Sublimation/<Collection>/<Design>/`. One folder per design: the print file
+  (image/vector) plus its previews/mockups. A pack of loose images or same-named vector sets (`Bear.svg`, `Bear.dxf`,
+  `Bear.png`) becomes one folder per design. Existing collections: `ls` the top folder (e.g. `UV-Print/Posters-Characters`,
+  `Engraving/Peeking-Animals`). Files that are no design (test strips, machine settings, customer work) do not go
+  into the catalog: put them in `_Werkbestanden/<technique>/...` and say so in the result note.
 
 ## Technique folders (user decision 2026-10-26)
-The user can sort new items into technique folders in the Inbox. An item named `Resin/<name>`, `FDM/<name>` or
-`Laser/<name>` (field `technique` in the job: "resin", "fdm", "laser") tells you how it will be produced -- follow it,
+The user can sort new items into technique folders in the Inbox. An item named `Resin/<name>`, `FDM/<name>`,
+`Laser/<name>`, `UV/<name>`, `Engraving/<name>` or `Sublimation/<name>` (field `technique` in the job: "resin", "fdm",
+"laser", "uv", "engraving", "sublimation") tells you how it will be produced -- follow it,
 do not second-guess it:
 - `resin`: it goes to `Resin-Print/<Collection>/<Model>/` (user decision 2026-10-28: resin has its own top folder).
 - `fdm`: it goes to `3D-Print/<Collection>/<Model>/`. In **every model folder** you create for it, also write a file
   `_technique.txt` containing just `fdm` (the catalog reads it: the card shows FDM, and the model workflow makes an FDM
   product from it).
 - `laser`: it goes to `Lasercut/Vectors/<Category>/<Model>/` (no `_technique.txt` needed).
+- `uv` / `engraving` / `sublimation`: it goes to `UV-Print/...`, `Engraving/...` or `Sublimation/...` as described
+  above (the top folder sets the technique; no `_technique.txt` needed).
 - An item directly in `_Inbox` (technique ""): decide yourself as before. When the files make it certain that it
   is resin (pre-supported files or resin slicer projects), put it under `Resin-Print/`.
 Extract into `~/work/inbox/<last part of the item name>/` (without the technique folder).
