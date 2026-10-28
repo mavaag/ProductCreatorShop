@@ -15,8 +15,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import supa
 
 ROOT = supa.MAKER_ROOT
-TECH_DIR = {'laser': 'LaserCutting', 'fdm': '3DPrinting', 'resin': '3DPrinting'}
-PROCESS_DIR = {'3d_print': '3DPrinting', 'resin_print': '3DPrinting', 'laser_cutting': 'LaserCutting',
+TECH_DIR = {'laser': 'LaserCutting', 'fdm': '3DPrinting', 'resin': 'ResinPrinting'}
+PROCESS_DIR = {'3d_print': '3DPrinting', 'resin_print': 'ResinPrinting', 'laser_cutting': 'LaserCutting',
                'uv_print': 'UVPrinting', 'laser_engraving': 'Engraving', 'sublimation': 'Sublimatie'}
 SKIP = re.compile(r'^(\.|@eaDir$|#Recycle$|desktop\.ini$|thumbs\.db$)', re.I)
 MARKER = '.catalog-model'   # in de _Shop-map: id van het model, zodat een bestaande map met dezelfde naam herkend wordt
