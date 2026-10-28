@@ -55,11 +55,12 @@ def owner(full):
     except OSError: return ''
 
 
-def copy_tree(src, dst):
-    """Nieuwe/gewijzigde bestanden van src naar dst; niets verwijderen. Geeft het aantal gekopieerde bestanden."""
+def copy_tree(src, dst, skip=()):
+    """Nieuwe/gewijzigde bestanden van src naar dst; niets verwijderen. skip = namen van submappen direct onder src die
+    niet meegaan. Geeft het aantal gekopieerde bestanden."""
     n = 0
     for dp, dn, fn in os.walk(src):
-        dn[:] = [d for d in dn if not SKIP.match(d)]
+        dn[:] = [d for d in dn if not SKIP.match(d) and not (dp == src and d in skip)]
         rel = os.path.relpath(dp, src)
         os.makedirs(os.path.join(dst, rel), exist_ok=True)
         for f in fn:
