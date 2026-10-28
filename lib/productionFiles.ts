@@ -37,8 +37,12 @@ export async function loadProductFolders(
     if (!m || copied.has(`${p.product_id}:${p.model_id}`)) continue;
     add(p.product_id, { path: m.path, label: "Catalogusmodel (met LaserReady/PrintReady)", source: "catalog", confirmed: true, modelId: m.id });
   }
+  // product met een eigen bevestigde map in _Shop: de modelmap in de catalogus is daar een kopie van -- in Productie
+  // (zonder voorstellen) niet nog eens tonen; op de productpagina wel (met de link naar het model)
+  const ownFolder = new Set((files ?? []).filter((f) => f.confirmed && f.source !== "catalog").map((f) => f.product_id));
   for (const f of files ?? []) {
     if (!f.confirmed && !includeSuggestions) continue;
+    if (!includeSuggestions && f.source === "catalog" && !f.path.startsWith("_Shop/") && ownFolder.has(f.product_id)) continue;
     add(f.product_id, {
       path: f.path, source: f.source, confirmed: f.confirmed, score: f.score, modelId: f.model_id ?? undefined,
       label: f.source === "catalog"

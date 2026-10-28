@@ -30,19 +30,21 @@ A **model is one folder** holding its files (sources, images, README/licence). T
 - Laser: `Lasercut/Vectors/<Category>/<Model>/`. Use an existing category folder when one fits (`ls` it: Animals,
   Boxes-Storage, Clocks, Decor, Lamps-Lighting, Heads-Trophies, Vehicles/<sub>, ...). Only create a new category
   folder when nothing fits, with the same naming style (English, Title-Case-With-Dashes).
-- 3D print: `3D-Print/<Collection>/<Model>/` (every folder directly under `3D-Print` is a collection). Use an
+- 3D print (FDM): `3D-Print/<Collection>/<Model>/` (every folder directly under `3D-Print` is a collection). Use an
   existing collection when it fits, otherwise create one named after the designer/pack or the theme.
+- Resin: `Resin-Print/<Collection>/<Model>/` (same idea as 3D-Print; the catalog marks everything there as resin).
 
 ## Technique folders (user decision 2026-10-26)
 The user can sort new items into technique folders in the Inbox. An item named `Resin/<name>`, `FDM/<name>` or
 `Laser/<name>` (field `technique` in the job: "resin", "fdm", "laser") tells you how it will be produced -- follow it,
 do not second-guess it:
-- `resin` / `fdm`: it goes to `3D-Print/<Collection>/<Model>/`. In **every model folder** you create for it, also write
-  a file `_technique.txt` containing just `resin` or `fdm` (the catalog reads it: the card shows Resin or FDM, and the
-  model workflow makes a resin or an FDM product from it).
+- `resin`: it goes to `Resin-Print/<Collection>/<Model>/` (user decision 2026-10-28: resin has its own top folder).
+- `fdm`: it goes to `3D-Print/<Collection>/<Model>/`. In **every model folder** you create for it, also write a file
+  `_technique.txt` containing just `fdm` (the catalog reads it: the card shows FDM, and the model workflow makes an FDM
+  product from it).
 - `laser`: it goes to `Lasercut/Vectors/<Category>/<Model>/` (no `_technique.txt` needed).
-- An item directly in `_Inbox` (technique ""): decide yourself as before. Only write `_technique.txt` when the files
-  make it certain (pre-supported files or resin slicer projects -> `resin`).
+- An item directly in `_Inbox` (technique ""): decide yourself as before. When the files make it certain that it
+  is resin (pre-supported files or resin slicer projects), put it under `Resin-Print/`.
 Extract into `~/work/inbox/<last part of the item name>/` (without the technique folder).
 
 ## Per item
