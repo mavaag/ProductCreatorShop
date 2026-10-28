@@ -8,7 +8,7 @@ Printbestand = de enige afbeelding in de map die geen mockup_ is; staan er meerd
 ontwerper), dan moet je het printbestand opgeven met --print <bestand> (de grootste is niet altijd de print).
 Heeft de print een andere verhouding dan het kader, dan wordt ze in het midden bijgesneden (zoals bij het printen
 op 20x30 / 30x40), niet uitgerekt.
---update-doc: de mockups (eerst) in de foto's van het productdocument van het ontwerp zetten (_catalog/products/<id>.json,
+--update-doc: de mockups worden de foto's van het productdocument (enkel de mockups, niet het printbestand; gebruiker 2026-10-28) van het ontwerp zetten (_catalog/products/<id>.json,
 met source_path = de ontwerpmap); daarna publish_docs.py, dan komen ze in de Catalogus. Voor posters die al een
 document hadden voor er mockups waren.
     python3 wallart_mockups.py "UV-Print/Posters-Characters/Batman" [...] [--print <bestand>] [--update-doc] [--dry-run]"""
@@ -77,14 +77,16 @@ def safe(name):
 
 
 def update_doc(rel, folder, dry):
-    """Mockups van deze ontwerpmap vooraan in doc.product.images zetten (backup .bak-mockups); geeft een melding."""
+    """De mockups van deze ontwerpmap worden doc.product.images -- enkel de mockups, het printbestand is geen
+    productfoto (backup .bak-mockups); geeft een melding. Zonder mockups blijft het document ongewijzigd."""
     rel = os.path.relpath(folder, ROOT).replace(os.sep, '/')
     mocks = [f'{rel}/{f}' for f in sorted(os.listdir(folder)) if f.lower().startswith(PREFIX) and f.lower().endswith(IMAGE_EXT)]
     for fn in glob.glob(os.path.join(ROOT, '_catalog', 'products', '*.json')):
         doc = json.load(open(fn, encoding='utf-8'))
         if doc.get('source_path', '').strip('/') != rel: continue
         old = doc['product'].get('images') or []
-        new = mocks + [i for i in old if i not in mocks]
+        if not mocks: return f'{rel}: geen mockups, document niet aangepast'
+        new = mocks
         if new == old: return f'{rel}: document had de mockups al'
         if dry: return f'{rel}: document {os.path.basename(fn)} zou {len(mocks)} mockups krijgen'
         if not os.path.exists(fn + '.bak-mockups'): shutil.copy2(fn, fn + '.bak-mockups')
