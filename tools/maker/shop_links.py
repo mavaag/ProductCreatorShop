@@ -16,7 +16,7 @@ het model wordt bewaard (path = de modelmap in de catalogus). Een eenmaal gekoze
 een product later offline gehaald, dan blijft zijn map in _Shop staan (er wordt nooit iets verwijderd).
 agent.py roept dit elke 10 minuten aan.
     python3 shop_links.py [--dry-run]"""
-import csv, hashlib, json, os, re, shutil, sys, urllib.parse
+import csv, hashlib, html, json, os, re, shutil, sys, urllib.parse
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import supa
 
@@ -31,6 +31,15 @@ MARKER = '.catalog-model'   # in de _Shop-map: id van het model, zodat een besta
 
 def safe(name):
     return re.sub(r'[<>:"/\\|?*]+', '-', name).strip(' .-') or 'Product'
+
+
+def folder_name(name):
+    """Mapnaam voor een product: de naam tot '|' of '–' ("Geometric Rhino Trophy – Precision ..." -> "Geometric Rhino
+    Trophy"), maar niet als het deel vóór '–' maar een algemene aanduiding is ("Wall Art – Batman (...)" bleef anders
+    voor elke poster "Wall Art")."""
+    base = html.unescape(name).split('|')[0].strip()
+    head = base.split('–')[0].strip()
+    return head if len(head.split()) > 2 else base
 
 
 def woo_shop():
@@ -155,7 +164,7 @@ def main():
         else:
             tech = TECH_DIR.get(m.get('technique')) or PROCESS_DIR.get(p['process_type'], '3DPrinting')
             cat = (p.get('categories') or '').split(',')[0].split('>')[-1].strip() or m.get('collection') or 'Catalogus'
-            dest = f'_Shop/{tech}/{safe(cat)}/{safe(p["name"].split("|")[0].split("–")[0])}'
+            dest = f'_Shop/{tech}/{safe(cat)}/{safe(folder_name(p["name"]))}'
             if per_product[pid] > 1: dest += f'/{safe(m["title"])}'       # meerdere modellen bij één product: submap per model
             if owner(os.path.join(ROOT, dest)) not in (None, mid):
                 dest += ' (catalogus)'                                  # er staat al een andere map met die naam
