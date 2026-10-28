@@ -562,6 +562,7 @@ function AgentPanel({ waiting, titles, onJobFinished }: {
                 <li key={i.name}>
                   <span className="mono">{i.name}</span>{" "}
                   {i.technique && <span className="pill cyan" style={{ marginRight: 6 }}>{TECHNIQUE_LABELS[i.technique as Technique] ?? i.technique}</span>}
+                  {i.wall_art && <span className="pill cyan" style={{ marginRight: 6 }} title="De agent maakt er meteen mockups van met de Wall Art-templates">Wall Art + mockups</span>}
                   <span className="muted">
                     ({i.kind === "folder" ? `map, ${i.files} bestand${i.files === 1 ? "" : "en"}` : "bestand"}, {formatSize(i.size)})
                     {!i.ready && " -- wordt nog gekopieerd..."}

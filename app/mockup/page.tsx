@@ -116,6 +116,13 @@ export default function MockupPage() {
     load();
   }
 
+  /** UV-template aan/uit voor de automatische Wall Art-mockups (agent, _Inbox/UV/Wall-Art). */
+  async function setWallArt(t: MockupTemplate, on: boolean) {
+    const { error } = await supabase.from("mockup_templates").update({ wall_art: on }).eq("id", t.id);
+    if (error) await alertDialog("Opslaan mislukt: " + error.message);
+    load();
+  }
+
   if (!ready) return null;
 
   const tech = TECHNIQUES.find((t) => t.key === technique)!;
@@ -152,6 +159,12 @@ export default function MockupPage() {
                   <div key={t.id} className="card" style={{ width: 220, padding: 12 }}>
                     <img src={t.room_image_url} alt={t.name} style={{ width: "100%", aspectRatio: "4/3", objectFit: "cover", borderRadius: 2, display: "block" }} />
                     <div style={{ fontWeight: 700, margin: "10px 0 8px" }}>{t.name}</div>
+                    {technique === "uv" && (
+                      <label style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 0 8px" }} title="De agent plaatst nieuwe posters uit _Inbox/UV/Wall-Art automatisch in deze template">
+                        <input type="checkbox" style={{ width: "auto" }} checked={!!t.wall_art} onChange={(e) => setWallArt(t, e.target.checked)} />
+                        Gebruik voor Wall Art
+                      </label>
+                    )}
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                       <button className="btn" onClick={() => setScreen({ kind: "compose", template: t })}>
                         {technique === "engrave" ? "Gravure plaatsen" : "Print plaatsen"}
