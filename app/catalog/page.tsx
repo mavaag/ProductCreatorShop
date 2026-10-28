@@ -235,6 +235,14 @@ export default function CatalogPage() {
         &quot;Klaar om aan te maken&quot;, waar je kiest welke je als product aanmaakt.
       </p>
 
+      {/* agent bovenaan: tabbladen, filters en kaartjes staan zo samen */}
+      <AgentPanel
+        key={jobsKey}
+        waiting={models.filter((m) => stageOf(m) === "doc")}
+        titles={titles}
+        onJobFinished={load}
+      />
+
       <div className="tabs">
         {STAGES.map((s) => (
           <button key={s.value} type="button" className={`tab${stage === s.value ? " active" : ""}`} onClick={() => setStage(s.value)}>
@@ -304,13 +312,6 @@ export default function CatalogPage() {
           <button className="btn" onClick={() => setStage("ready")}>Bekijk en kies</button>
         </div>
       )}
-
-      <AgentPanel
-        key={jobsKey}
-        waiting={models.filter((m) => stageOf(m) === "doc")}
-        titles={titles}
-        onJobFinished={load}
-      />
 
       {error && <p className="warning">{error}</p>}
 
