@@ -3,6 +3,7 @@
 Fase 1 van "alles in de Catalogus, _Shop enkel wat gepubliceerd is":
     python3 shop_import.py plan     # schrijft _catalog/shop_import_plan.csv (niets wordt gekopieerd)
     python3 shop_import.py apply    # voert de rijen met actie 'kopie' uit het (eventueel aangepaste) plan uit
+    python3 shop_import.py fix      # herberekent de kolom 'zonder' in het plan (na de fout van 2026-10-28)
 Het plan kiest per productmap een plaats tussen de bestaande collecties:
   - laser  -> Lasercut/Vectors/<categorie>/<model>   (Animals, Decor, Heads-Trophies, Lamps-Lighting, Vehicles/..., ...)
   - 3D     -> 3D-Print/<categorie>/<model>           (elke map onder 3D-Print is een collectie)
@@ -149,8 +150,13 @@ def nested_copies(path):
     """Submappen die een exacte kopie zijn van een buurmap van path (zelfde naam en grootte) -- per ongeluk mee gekopieerd,
     zoals Animals/Normal/Crocodile/Giraffe naast Animals/Normal/Giraffe."""
     parent = os.path.dirname(path)
-    return [os.path.basename(d) for d in subdirs(path)
-            if os.path.isdir(os.path.join(parent, os.path.basename(d))) and dir_size(d) == dir_size(os.path.join(parent, os.path.basename(d)))]
+    out = []
+    for d in subdirs(path):
+        sibling = os.path.join(parent, os.path.basename(d))
+        # een submap met dezelfde naam als de map zelf (Flexi Chameleon/Flexi Chameleon) is geen kopie van een buurmap
+        if os.path.normpath(sibling) == os.path.normpath(path) or not os.path.isdir(sibling): continue
+        if dir_size(d) == dir_size(sibling): out.append(os.path.basename(d))
+    return out
 
 
 def shop_products():
@@ -224,5 +230,20 @@ def apply():
     print(f'apply: {done} bestanden gekopieerd')
 
 
+def fix():
+    """Kolom 'zonder' opnieuw berekenen voor de kopie-rijen (eerste versie sloeg bv. Flexi Chameleon/Flexi Chameleon over)."""
+    rows = list(csv.DictReader(open(PLAN, encoding='utf-8-sig'), delimiter=';'))
+    changed = 0
+    for r in rows:
+        if r['actie'] != 'kopie': continue
+        skip = '|'.join(nested_copies(os.path.join(ROOT, r['bron'])))
+        if skip != (r.get('zonder') or ''):
+            changed += 1; r['zonder'] = skip
+            r['opmerking'] = ('zonder ' + skip.replace('|', ', ') + ' (kopie van een buurmap)') if skip else ''
+    with open(PLAN, 'w', encoding='utf-8-sig', newline='') as fh:
+        w = csv.DictWriter(fh, fieldnames=list(rows[0]), delimiter=';'); w.writeheader(); w.writerows(rows)
+    print(f'fix: {changed} rijen aangepast')
+
+
 if __name__ == '__main__':
-    {'plan': plan, 'apply': apply}[sys.argv[1] if len(sys.argv) > 1 else 'plan']()
+    {'plan': plan, 'apply': apply, 'fix': fix}[sys.argv[1] if len(sys.argv) > 1 else 'plan']()
