@@ -443,6 +443,16 @@ export default function ProductsPage() {
     load();
   }
 
+  /** Eén product (de)publiceren vanuit het hamburgermenu; net als de bulkknoppen gaat het naar WooCommerce bij de
+   *  volgende synchronisatie (het product staat dan op "Gewijzigd"). */
+  async function setPublished(p: ProductWithVariations, published: boolean) {
+    setBusy(true);
+    await supabase.from("products").update({ published, updated_at: new Date().toISOString() }).eq("id", p.id);
+    setMessage(`"${p.name}" ${published ? "gepubliceerd" : "gedepubliceerd"}.`);
+    setBusy(false);
+    load();
+  }
+
   async function bulkDelete() {
     if (!(await confirmDialog(`${selected.size} product(en) met al hun varianten verwijderen?`, { confirmLabel: "Verwijderen", danger: true }))) return;
     setBusy(true);
@@ -997,6 +1007,7 @@ export default function ProductsPage() {
                       product={p}
                       busy={busy}
                       onDuplicate={() => startDuplicate(p)}
+                      onTogglePublish={() => setPublished(p, !p.published)}
                       onDelete={() => deleteProduct(p.id)}
                     />
                   </div>
@@ -1056,6 +1067,7 @@ export default function ProductsPage() {
                       product={p}
                       busy={busy}
                       onDuplicate={() => startDuplicate(p)}
+                      onTogglePublish={() => setPublished(p, !p.published)}
                       onDelete={() => deleteProduct(p.id)}
                     />
                   </td>
@@ -1087,17 +1099,19 @@ export default function ProductsPage() {
   );
 }
 
-/** Hamburgermenu met de rij-acties (bewerken, dupliceren, verwijderen) -- houdt de tabel compact
+/** Hamburgermenu met de rij-acties (bewerken, dupliceren, (de)publiceren, verwijderen) -- houdt de tabel compact
  * nu er ook een categoriekolom bij staat. Sluit bij een klik erbuiten of op Escape. */
 function RowActionsMenu({
   product,
   busy,
   onDuplicate,
+  onTogglePublish,
   onDelete,
 }: {
   product: ProductWithVariations;
   busy: boolean;
   onDuplicate: () => void;
+  onTogglePublish: () => void;
   onDelete: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -1148,6 +1162,15 @@ function RowActionsMenu({
             onClick={() => { setOpen(false); onDuplicate(); }}
           >
             Dupliceer
+          </button>
+          <button
+            type="button"
+            className="row-menu-item"
+            role="menuitem"
+            disabled={busy}
+            onClick={() => { setOpen(false); onTogglePublish(); }}
+          >
+            {product.published ? "Depubliceren" : "Publiceren"}
           </button>
           <button
             type="button"
