@@ -37,8 +37,9 @@ def fetch(url):
 
 
 def candidates(folder):
+    # *_upscaled.png (upscale_print.py) is dezelfde print, vergroot: voor een mockup volstaat het origineel
     return sorted(f for f in os.listdir(folder) if f.lower().endswith(IMAGE_EXT) and not f.lower().startswith(PREFIX)
-                  and os.path.isfile(os.path.join(folder, f)))
+                  and '_upscaled' not in os.path.splitext(f)[0].lower() and os.path.isfile(os.path.join(folder, f)))
 
 
 def perspective_coeffs(dst, src):

@@ -60,6 +60,11 @@ do not second-guess it:
   photo or preview). It places the poster in every mockup template the user marked "Gebruik voor Wall Art" and saves
   `mockup_<template>.jpg` in the design folder; it never overwrites. Mention the number of mockups in the result note.
   When it says there are no Wall Art templates, still report `ok` and add "geen Wall Art-templates aangeduid".
+  Then check the print resolution (user decision 2026-10-28):
+  `python3 /src/tools/maker/upscale_print.py "UV-Print/<Collection>/<Design>" --print "<print file name>"`.
+  When the print is too small for XL (short side < 1800 px) it makes a 4x AI-upscaled copy `<name>_upscaled.png`
+  next to the original (takes a few minutes). Mention it in the result note ("print vergroot 736x1412 -> 2944x5648,
+  nakijken"). If it fails, still report `ok` with the error in the note.
 - An item directly in `_Inbox` (technique ""): decide yourself as before. When the files make it certain that it
   is resin (pre-supported files or resin slicer projects), put it under `Resin-Print/`.
 Extract into `~/work/inbox/<last part of the item name>/` (without the technique folder).
