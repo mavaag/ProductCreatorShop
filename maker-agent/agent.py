@@ -8,8 +8,8 @@ en laat Claude Code die afwerken:
     zetten. Wat lukte, verplaatst dit script daarna naar _Inbox/_verwerkt; dat wordt na INBOX_RETENTION_DAYS dagen
     automatisch leeggemaakt (Claude zelf mag niets verplaatsen of verwijderen);
   - daarnaast, los van de opdrachten: elke 10 minuten de WooCommerce-bestellingen ophalen (orders_sync.py) en elke dag
-    voorstellen welke map in _Shop bij welk shopproduct hoort (match_shop_files.py); catalogusmodellen die een
-    shopproduct zijn mee in _Shop zetten (shop_links.py, elke 10 minuten);
+    voorstellen welk catalogusmodel bij welk shopproduct hoort (match_shop_files.py); shopproducten aan hun
+    catalogusmodel koppelen (shop_links.py, elke 10 minuten; er wordt niets meer naar _Shop gekopieerd);
   - soort 'split' (knop "Bundel opsplitsen"): volgens SPLIT_PROMPT.md een model dat eigenlijk een map met veel losse
     modellen is, opsplitsen in submappen (Claude kopieert enkel). Lukte dat, dan zet dit script de bundel als
     verzamelmap in _catalog/sources.json (met backup), bouwt de catalogus opnieuw en haalt het bundelkaartje weg.
@@ -35,7 +35,7 @@ JOB_TIMEOUT_S = 6 * 3600
 TAIL_LINES = 60
 VERSION = '13'
 ORDERS_SYNC_MIN = 10          # bestellingen uit WooCommerce ophalen (orders_sync.py)
-MATCH_EVERY_H = 24            # shopproducten <-> mappen in _Shop voorstellen (match_shop_files.py)
+MATCH_EVERY_H = 24            # shopproducten <-> catalogusmodellen voorstellen (match_shop_files.py)
 # Techniekmappen in de Inbox: zet je iets in _Inbox/Resin, dan weet de agent dat het een resinprint is (enz.).
 # Items los in _Inbox blijven werken: dan beslist de agent zelf. UV/Engraving/Sublimation: fase 2 (2026-10-28).
 TECH_DIRS = {'fdm': 'fdm', 'resin': 'resin', 'laser': 'laser', 'uv': 'uv', 'engraving': 'engraving', 'sublimation': 'sublimation'}

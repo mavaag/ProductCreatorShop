@@ -2,9 +2,10 @@ import { SupabaseClient } from "@supabase/supabase-js";
 
 /**
  * Productiebestanden van een product: mappen op de NAS (relatief t.o.v. MakerProducts).
- *  - catalog: het catalogusmodel van het product. tools/maker/shop_links.py kopieert het naar _Shop en schrijft een
- *    product_files-rij (source 'catalog', model_id); tot dan tonen we de modelmap zelf (via maker_picks);
- *  - shop / manual: de map in _Shop (productiebestanden van de shopproducten) uit product_files.
+ *  - catalog: de map van het catalogusmodel (product_files met model_id; geschreven door tools/maker/shop_links.py,
+ *    "Map koppelen" of een bevestigd voorstel van match_shop_files.py). Regel 2026-10-29: alles blijft in de
+ *    Catalogus, er wordt niets meer naar _Shop gekopieerd. Zolang er nog geen rij is, tonen we de modelmap via maker_picks;
+ *  - manual: een zelf gekozen pad dat geen catalogusmodel is; shop: oude koppeling met een map in _Shop.
  * Downloaden gaat via /api/files (zie app/api/files/route.ts).
  */
 export type ProductFolder = { path: string; label: string; source: "catalog" | "shop" | "manual"; confirmed: boolean; score?: number; modelId?: string };
@@ -51,7 +52,7 @@ export async function loadProductFolders(
     add(f.product_id, {
       path: f.path, source: f.source, confirmed: f.confirmed, score: f.score, modelId: f.model_id ?? undefined,
       label: f.source === "catalog"
-        ? (f.path.startsWith("_Shop/") ? "Uit de catalogus (kopie in _Shop)" : "Catalogusmodel")
+        ? (f.path.startsWith("_Shop/") ? "Uit de catalogus (oude kopie in _Shop)" : f.confirmed ? "Catalogusmodel" : "Voorstel uit de catalogus")
         : f.source === "manual" ? "Zelf gekozen map" : f.confirmed ? "Map in _Shop" : "Voorstel uit _Shop",
     });
   }
@@ -121,7 +122,7 @@ export async function loadFileStatus(supabase: SupabaseClient): Promise<Map<stri
   for (const p of picks ?? []) { const s = get(p.product_id); s.modelId ??= p.model_id; s.hasFolder = true; }
   for (const f of files ?? []) {
     const s = get(f.product_id);
-    if (f.source === "catalog" && f.model_id) s.modelId ??= f.model_id;
+    if (f.source === "catalog" && f.model_id && f.confirmed) s.modelId ??= f.model_id;   // voorstel telt niet als "Catalogus"
     if (f.confirmed) s.hasFolder = true; else s.hasSuggestion = true;
   }
   return out;

@@ -6,9 +6,9 @@ import { ProductFolder, loadProductFolders } from "@/lib/productionFiles";
 import FolderBrowser from "@/components/FolderBrowser";
 
 /**
- * Blok "Productiebestanden" op de productpagina: de mappen op de NAS bij dit product (catalogusmodel en/of map uit
- * de PRODUCTS-kopie in _Shop), met downloaden. Een voorstel van match_shop_files.py bevestig je of wijs je af;
- * een andere map kies je door het pad te plakken.
+ * Blok "Productiebestanden" op de productpagina: de mappen op de NAS bij dit product (normaal de map van zijn
+ * catalogusmodel), met downloaden. Een voorstel van match_shop_files.py bevestig je of wijs je af; een andere map kies
+ * je door het pad te plakken -- ligt dat pad in een catalogusmodel, dan wordt het model gekoppeld (source 'catalog').
  */
 export default function ProductFilesCard({ productId }: { productId: string }) {
   const [folders, setFolders] = useState<ProductFolder[] | null>(null);
@@ -36,10 +36,17 @@ export default function ProductFilesCard({ productId }: { productId: string }) {
     if (error) setError(error.message); else load();
   }
   async function addManual() {
-    // \\NASMAT\MakerProducts\_Shop\... of _Shop/... -> relatief pad met /
+    // \\NASMAT\MakerProducts\3D-Print\... of 3D-Print/... -> relatief pad met /
     const rel = manual.trim().replace(/\\/g, "/").replace(/^\/\/[^/]+\/MakerProducts\//i, "").replace(/^\/+|\/+$/g, "");
     if (!rel) return;
-    const { error } = await supabase.from("product_files").upsert({ product_id: productId, path: rel, source: "manual", confirmed: true });
+    // het catalogusmodel waar dit pad (of een bovenliggende map) het model van is -> dat model koppelen
+    const parts = rel.split("/");
+    const candidates = parts.map((_, i) => parts.slice(0, i + 1).join("/"));
+    const { data: models } = await supabase.from("maker_models").select("id, path").in("path", candidates);
+    const model = (models ?? []).sort((a, b) => b.path.length - a.path.length)[0];
+    const { error } = await supabase.from("product_files").upsert(model
+      ? { product_id: productId, path: model.path, source: "catalog", confirmed: true, model_id: model.id }
+      : { product_id: productId, path: rel, source: "manual", confirmed: true });
     if (error) setError(error.message); else { setManual(""); load(); }
   }
 
@@ -60,7 +67,7 @@ export default function ProductFilesCard({ productId }: { productId: string }) {
               </>
             )}
             {f.modelId && <> {" "}<a className="link-btn" href={`/catalog?model=${f.modelId}`}>model in de catalogus</a></>}
-            {f.confirmed && f.source !== "catalog" && (
+            {f.confirmed && (
               <> {" "}<button type="button" className="link-btn" onClick={() => remove(f.path)}>ontkoppelen</button></>
             )}
           </div>
@@ -68,7 +75,7 @@ export default function ProductFilesCard({ productId }: { productId: string }) {
         </div>
       ))}
       <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-        <input value={manual} onChange={(e) => setManual(e.target.value)} placeholder="\\NASMAT\MakerProducts\_Shop\3DPrinting\Figurines\Kirby" />
+        <input value={manual} onChange={(e) => setManual(e.target.value)} placeholder="\\NASMAT\MakerProducts\3D-Print\Figurines\Kirby" />
         <button type="button" className="btn secondary" disabled={!manual.trim()} onClick={addManual}>Map koppelen</button>
       </div>
       {error && <p className="warning">{error}</p>}
