@@ -105,8 +105,13 @@ export async function POST(request: Request) {
         const a = (wp.attributes || []).find((x: any) => x.id === da.id || x.name === da.name);
         if (a && da.option) defaults[a.name] = da.option;
       }
+      // komt uit de shop, dus meteen "gesynct": anders toont Producten het als "Nieuw" (nog nooit naar WooCommerce)
+      const now = new Date().toISOString();
       const productRow = {
         sku: wp.sku,
+        updated_at: now,
+        last_exported_at: now,
+        last_exported_published: wp.status === "publish",
         name: wp.name || wp.sku,
         process_type: guessProcessType(categories),
         published: wp.status === "publish",
@@ -137,11 +142,12 @@ export async function POST(request: Request) {
             sku: rv.sku,
             attribute_values: Object.fromEntries((rv.attributes || []).map((a: any) => [a.name, a.option]).filter(([, o]: [string, string]) => !!o)),
             suggested_price: rv.price && rv.price !== "" ? parseFloat(rv.price) : null,
+            exported_price: rv.price && rv.price !== "" ? parseFloat(rv.price) : null,
             image_url: rv.image?.src || null,
           }));
       } else {
         // Simpel product: één variant-rij die de prijs draagt (zo modelleert de app dat).
-        variationRows = [{ product_id: productId, sku: wp.sku, attribute_values: {}, suggested_price: wp.price && wp.price !== "" ? parseFloat(wp.price) : null, image_url: null }];
+        variationRows = [{ product_id: productId, sku: wp.sku, attribute_values: {}, suggested_price: wp.price && wp.price !== "" ? parseFloat(wp.price) : null, exported_price: wp.price && wp.price !== "" ? parseFloat(wp.price) : null, image_url: null }];
       }
       if (variationRows.length > 0) {
         const { error: vErr } = await supabase.from("product_variations").insert(variationRows);
