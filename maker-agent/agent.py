@@ -245,6 +245,12 @@ def build_prompt(job, shop_note):
     rows = supa.rest('GET', 'maker_models?select=id,title,kind,technique,collection,category,path,laser_ready,has_doc&id=in.('
                      + ','.join(f'"{m}"' for m in job['model_ids']) + ')') or []
     info = {r['id']: r for r in rows}
+    # model dat de gebruiker zelf aan een bestaand shopproduct koppelde: meegeven, dan hoeft de agent niet te zoeken
+    woo = supa.rest('GET', 'maker_woo_links?select=model_id,woo_product_id,woo_name,woo_permalink&model_id=in.('
+                    + ','.join(f'"{m}"' for m in job['model_ids']) + ')') or []
+    for w in woo:
+        if w['model_id'] in info and w['woo_product_id']:
+            info[w['model_id']]['linked_shop_product'] = {'id': w['woo_product_id'], 'name': w['woo_name'], 'permalink': w['woo_permalink']}
     models = [info.get(m, {'id': m}) for m in job['model_ids']]
     if job.get('kind') == 'split':
         prompt = open(os.path.join(HERE, 'SPLIT_PROMPT.md'), encoding='utf-8').read()

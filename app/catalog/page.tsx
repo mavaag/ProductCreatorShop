@@ -238,7 +238,10 @@ export default function CatalogPage() {
       {/* agent bovenaan: tabbladen, filters en kaartjes staan zo samen */}
       <AgentPanel
         key={jobsKey}
-        waiting={models.filter((m) => stageOf(m) === "doc")}
+        // te verwerken: geselecteerd zonder document, en ook een aangevinkt model dat al aan een shopproduct gekoppeld
+        // is maar nog geen document of (laser) geen snijklare platen heeft
+        waiting={models.filter((m) => stageOf(m) === "doc" || (stageOf(m) === "shop" && picks.has(m.id)
+          && (!m.has_doc || (m.kind === "Lasercut" && (m.laser_ready ?? []).length === 0))))}
         titles={titles}
         onJobFinished={load}
       />
@@ -533,7 +536,7 @@ function AgentPanel({ waiting, titles, onJobFinished }: {
       {todo.length > 0 && (
         <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap", marginTop: 12 }}>
           <p className="muted" style={{ flex: "1 1 100%", margin: 0 }}>
-            <b style={{ color: "var(--yellow)" }}>{todo.length}</b> geselecteerd zonder productdocument
+            <b style={{ color: "var(--yellow)" }}>{todo.length}</b> geselecteerd zonder productdocument of platen
             {needPlates > 0 && <> (waarvan <b style={{ color: "var(--yellow)" }}>{needPlates}</b> lasermodellen zonder snijklare platen)</>}.
             De agent maakt de platen (3 mm, xTool M2 + LaserPecker LX2), de shoptekst, de varianten en de foto&apos;s.
           </p>
