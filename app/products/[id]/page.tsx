@@ -1174,7 +1174,10 @@ const VariationEditor = forwardRef<VariationEditorHandle, {
     sku !== variation.sku ||
     JSON.stringify(attributeValues) !== JSON.stringify(variation.attribute_values ?? {}) ||
     JSON.stringify(inputs) !== JSON.stringify(baselineInputs) ||
-    imageUrl !== (variation.image_url ?? "");
+    imageUrl !== (variation.image_url ?? "") ||
+    // kostenopbouw al ingevuld bij het aanmaken (bv. vanuit de Catalogus) maar de prijs nooit bewaard: de sync gebruikt
+    // de bewaarde suggested_price, dus anders gaat er geen prijs naar WooCommerce
+    (suggestedPrice != null && variation.suggested_price == null);
 
   return (
     <div className="card" style={dirty ? { borderColor: "var(--yellow)" } : undefined}>
