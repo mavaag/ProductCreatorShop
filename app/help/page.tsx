@@ -190,6 +190,8 @@ const SECTIONS: Section[] = [
           <li><b>Batch</b>: kies een bronmap met foto's en een doelmap; voor elke foto wordt automatisch een mockup gemaakt en weggeschreven. Werkt in Chrome, Edge of Brave.</li>
           <li><b>Gebruik voor Wall Art</b> (vinkje op een UV-template): de agent plaatst elke nieuwe poster uit <span className="mono">_Inbox\UV\Wall-Art</span> automatisch in deze template (zie <i>Catalogus &gt; Inbox</i>).</li>
           <li><b>Gebruik voor klokken</b> (vinkje op een template bij <i>Lasersnijden</i>): een kamerfoto met een lege muur; de agent hangt elke nieuwe wandklok in het kader (zie <i>Wandklokken</i> bij de Catalogus).</li>
+          <li><b>Lasergravure</b>: geef elke template een <i>soort product</i> (bv. Snijplank, Onderlegger). Met <i>+ Zone</i> maak je een template met meerdere zones, bv. een foto van 4 onderleggers: bij <i>Gravure plaatsen</i> kies je dan per zone een ontwerp, en in batch krijgt elke mockup telkens zoveel foto&apos;s na elkaar uit de map. Gravurekleur, soort afbeelding en lettertype worden bij de template bewaard.</li>
+          <li><b>Gebruik voor de agent</b> (vinkje op een gravure-template): de agent maakt met deze template de productfoto&apos;s van nieuwe gravuremodellen, met de gravurekleur en het soort afbeelding van de template.</li>
         </ul>
       </>
     ),
