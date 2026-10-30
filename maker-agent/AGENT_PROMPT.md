@@ -122,10 +122,30 @@ are designs (an image or vector set), not something to cut or print in 3D: never
   `<name>_upscaled.png` exists (made by upscale_print.py), that is the print file (never a product image) and add a
   `notes_internal` line that it was AI-upscaled and must be checked before printing. Many posters are
   already sold: check the shop export first and fill `woo_existing` when it matches.
-- **`engraving`** and **`sublimation`**: there is **no standard product yet** (user, 2026-10-28). Do not write a
-  product document: report the model as skipped with the note "geen standaardproduct voor gravure/sublimatie --
-  maak het product zelf of geef in de opdracht aan wat het moet worden". If the job note describes the product
-  (material, sizes, price idea), follow the note instead and write the document.
+- **`sublimation`**: there is **no standard product yet** (user, 2026-10-28). Do not write a product document:
+  report the model as skipped with the note "geen standaardproduct voor sublimatie -- maak het product zelf of geef
+  in de opdracht aan wat het moet worden". If the job note describes the product, follow the note instead.
+- **`engraving`** (user decision 2026-10-30): one design = **one variable product** with one attribute **`PRODUCT`**,
+  one variation per kind of blank the user engraves on. The kinds are the engraving templates the user marked
+  "Gebruik voor de agent" in the Mockup generator: run `python3 /src/tools/maker/engrave_mockups.py --list`; use the
+  templates with **1 zone** (more zones = sets, not for a single design). No such template -> skip the model with the
+  note "geen gravure-templates op 'Gebruik voor de agent' (Mockups > Lasergravure)".
+  - Variation value = a short English name for the kind (e.g. `Onderlegger leisteen rond` -> `Round Slate Coaster`,
+    `Snijplank` -> `Cutting Board`); several templates with the same kind = one variation. Default: the first one.
+  - Per variation `production`: `{"technology": "engraving", "product_kind": "<kind exactly as listed>", "files":
+    ["<design file>"], "machines": {"F2": {}}, "materials": [{"name": "<blank>", "quantity": 1}]}` -- the blank is the
+    material from the `--list` output that matches the kind (e.g. `RONDE ONDERLEGGER LEISTEEN`); when none matches,
+    leave `materials` out and add a `notes_internal` line "materiaal voor <kind> ontbreekt in Materialen". The
+    design file: the SVG when there is one, else the largest PNG/JPG; never LaserReady plates.
+  - Name `<Subject> Laser Engraved <Kind>` for one kind, else `<Subject> – Laser Engraved` (e.g. "Peeking Bear –
+    Laser Engraved"); `process_type: "laser_engraving"`, category `Engraving > Daily Use` (existing). Text: what the
+    design shows, laser engraved (permanent, does not wear off), per kind one line on the blank (slate: natural
+    stone, non-slip feet; wood: food safe, ...); no claims you cannot know (sizes only when the material name has them).
+  - Photos: after writing the document run `python3 /src/tools/maker/engrave_mockups.py "<model path>" --update-doc`
+    (engraves the design on every template photo with the template's engraving colour; each variation gets the photo
+    of its kind) and then `publish_docs.py`. Look at one mockup: when the design is unreadable (e.g. a photo with too
+    little contrast on slate) say so in the result note. The designer's previews are never product photos.
+  - Trademark/licence checks as for every model (characters of a brand -> `license.trademark`).
 
 ## Resin figures (user decision 2026-10-26)
 - **The model's `technique` in the job decides** (from `_technique.txt` in the model folder or the Inbox technique
