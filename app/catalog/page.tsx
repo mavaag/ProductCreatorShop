@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
 import { PROCESS_TYPE_LABELS } from "@/lib/types";
 import { alertDialog, confirmDialog } from "@/components/DialogHost";
-import { AGENT_ONLINE_MS, MAKER_MODEL_COLUMNS, MakerAgent, MakerDoc, MakerJob, MakerModel, MakerPick, MakerWooLink, canSplit, createProductFromDoc, licenseWarning, shopProductId, TECHNIQUE_LABELS, Technique, techniqueLabel, techniqueOf } from "@/lib/maker";
+import { AGENT_ONLINE_MS, MAKER_MODEL_COLUMNS, MakerAgent, MakerDoc, MakerJob, MakerModel, MakerPick, MakerWooLink, canSplit, canSplitManually, createProductFromDoc, licenseWarning, shopProductId, TECHNIQUE_LABELS, Technique, techniqueLabel, techniqueOf } from "@/lib/maker";
 
 /** Stappen van een model: kiezen -> document (beschrijving, foto's, varianten) -> product in de beheertool. */
 type Stage = "all" | "picked" | "doc" | "ready" | "created" | "shop";
@@ -403,7 +403,7 @@ export default function CatalogPage() {
           onToggle={() => togglePick(models.find((m) => m.id === openId)!)}
           onMake={() => makeProducts([openId])}
           onSplit={() => splitBundle(models.find((m) => m.id === openId)!)}
-          splittable={canSplit(models.find((m) => m.id === openId)!) && !splitDone.has(openId)}
+          splittable={canSplitManually(models.find((m) => m.id === openId)!) && !splitDone.has(openId)}
           link={links.get(openId)}
           onLinked={load}
           category={categoryChoice.get(openId)}
@@ -946,7 +946,7 @@ function ModelDetail({ model, pick, busy, onClose, onToggle, onMake, onSplit, sp
                   <button className="btn" disabled={busy || !doc || !!shopId} title={shopId ? "Staat al in de shop -- ontkoppel eerst als je toch een nieuw product wil" : undefined} onClick={onMake}>Maak product</button>
                   {!doc && <button className="btn secondary" onClick={onToggle}>{pick ? "Uit selectie halen" : "Selecteren"}</button>}
                   {!doc && splittable && (
-                    <button className="btn secondary" onClick={onSplit} title="Map met veel verschillende modellen? Laat de agent ze in aparte submappen zetten.">
+                    <button className="btn secondary" onClick={onSplit} title="Map met verschillende modellen (bv. 25 klokken)? Laat de agent ze in aparte submappen zetten; is het toch één model, dan laat hij het zo.">
                       Bundel opsplitsen
                     </button>
                   )}

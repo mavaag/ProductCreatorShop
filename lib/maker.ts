@@ -209,6 +209,14 @@ export function canSplit(m: MakerModel): boolean {
   return !m.bundle && m.collection !== "Heads AAS26" && (m.designs ?? 0) >= min;
 }
 
+/**
+ * Mag je "Bundel opsplitsen" zelf kiezen in het modelvenster? Ook als de telling het niet als bundel ziet, bv. clock1.svg
+ * t/m clock25.svg (volgnummers tellen als varianten van één ontwerp). De agent beslist zelf of het echt één model is.
+ */
+export function canSplitManually(m: MakerModel): boolean {
+  return !DESIGN_KINDS.includes(m.kind) && !m.bundle && m.collection !== "Heads AAS26";
+}
+
 /** Hoofdmappen met ontwerpen (fase 2, 2026-10-28): UV-Print/, Engraving/, Sublimation/ in de bibliotheek. */
 export const DESIGN_KINDS = ["UV-Print", "Engraving", "Sublimation"];
 
