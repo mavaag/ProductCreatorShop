@@ -225,8 +225,20 @@ export type MockupTemplate = {
   shape?: ZoneShape; // vorm van de zone binnen de 4 punten; ontbreekt = "rect"
   wall_art?: boolean; // UV: gebruiken voor de automatische mockups van nieuwe Wall Art-posters (migratie 028)
   clock?: boolean; // kamerfoto voor de automatische foto's van wandklokken; kader = plaats van de klok (migratie 029)
+  zones?: MockupZone[] | null; // meerdere zones (bv. set van 4 onderleggers); leeg = één zone uit corners + shape (migratie 031)
+  engrave_settings?: { color?: string; imageMode?: "auto" | "logo" | "photo"; font?: string } | null; // gravure van deze template
+  product_kind?: string; // gravure: soort product op de foto, bv. "Snijplank", "Onderlegger"
+  agent?: boolean; // gravure: de agent maakt hiermee de productfoto's van nieuwe gravuremodellen
   created_at: string;
 };
+
+/** Eén zone van een mockup-template: 4 punten (0-1, LB, RB, RO, LO) en de vorm erbinnen. */
+export type MockupZone = { corners: { x: number; y: number }[]; shape: ZoneShape };
+
+/** Alle zones van een template; oudere templates en templates met één zone hebben enkel corners + shape. */
+export function templateZones(t: Pick<MockupTemplate, "zones" | "corners" | "shape">): MockupZone[] {
+  return t.zones?.length ? t.zones : [{ corners: t.corners, shape: t.shape ?? "rect" }];
+}
 
 export type PriceHistoryEntry = {
   id: string;
