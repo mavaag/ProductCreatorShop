@@ -91,7 +91,8 @@ and gets **no** 3/6 mm sets or M/L sizes:
   Size), name `<Subject> Wall Clock – Ø28 cm`, category `Laser Cutting > Clocks`, `process_type: "laser_cutting"`. Text in the structure of the existing clocks in the shop
   (search "Wall Clock" in `woo_products.json`), but both materials (glossy black acrylic or natural wood, 3 mm), Ø 28 cm, silent quartz movement
   included (battery AA not included), ready to hang. Production per variation: the same 280 mm cut file, the
-  material of that variation (black acrylic 3 mm or wood 3 mm) and one clock movement; put "uurwerk monteren" in
+  material of that variation (materials `ZWART ACRYL 500x300x3` or `HOUTEN PLAAT 500x300x3`, one plate) and one
+  `KLOKUURWERK`; put "uurwerk monteren" in
   `notes_internal`. Default variation: Black Acrylic.
 - One clock per model: when a folder holds several clocks, it must be split first (Bundel opsplitsen); in a models
   job, report it as skipped with that note instead of making one product for all of them.
