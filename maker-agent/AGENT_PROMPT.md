@@ -73,6 +73,8 @@ Every model in the job must end with exactly one `result`. Notes are short and i
    before every job (see `shop_export` in the job below; if it says the export failed, the file may be old or
    missing -- say so in the result note). Match on product name, image file names and SKU. When a model is already
    sold, fill `woo_existing` ({id, name, permalink}) and keep the shop text, as the runbook describes.
+   A model with `linked_shop_product` in the job was linked to that shop product by the user: it **is** that
+   product -- use it as `woo_existing` without searching, keep its shop text, and still make the LaserReady plates.
 3. Report the `result` for the model before moving on.
 
 ## UV print, engraving and sublimation designs (user decision 2026-10-28)
