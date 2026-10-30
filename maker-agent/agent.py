@@ -16,7 +16,7 @@ en laat Claude Code die afwerken:
 Claude draait in de modus "dontAsk": alleen wat in claude-settings.json toegelaten is mag, de rest wordt geweigerd.
 Na één opdracht (of na een uur zonder opdracht) stopt het script; de container start het opnieuw, zodat een
 nieuwe versie uit de repo (/src, bijgehouden door auto-deploy) vanzelf gebruikt wordt."""
-import datetime, json, os, shutil, subprocess, sys, threading, time
+import datetime, json, os, re, shutil, subprocess, sys, threading, time
 sys.path.insert(0, '/src/tools/maker')
 import supa
 
@@ -261,6 +261,18 @@ def build_prompt(job, shop_note):
     return prompt + '\n\n## This job\n```json\n' + json.dumps(data, indent=2, ensure_ascii=False) + '\n```\n', len(models), 'model'
 
 
+FORMAT_WORDS = {'png', 'svg', 'dxf', 'eps', 'cdr', 'ai', 'pdf', 'jpg', 'jpeg', 'stl', '3mf', 'obj', 'lbrn', 'lbrn2', 'files'}
+
+
+def is_format_folder(name, title):
+    """Submap die enkel bestanden van één formaat bevat (png/, Svg/, "WATCHES DXF", "watch AI"): geen model. Na de
+    formaatwoorden en de woorden uit de bundelnaam blijft er niets over."""
+    words = re.findall(r'[a-z0-9]+', name.lower())
+    title_words = re.findall(r'[a-z0-9]+', (title or '').lower())
+    rest = [w for w in words if w not in FORMAT_WORDS and not any(t.startswith(w) or w.startswith(t) for t in title_words)]
+    return any(w in FORMAT_WORDS for w in words) and not rest
+
+
 def register_bundle(model):
     """Bundel als verzamelmap in sources.json zetten (de submappen worden de modellen) en het bundelkaartje weghalen.
     Geeft een korte melding terug. Raakt geen bestanden in de bibliotheek aan, enkel sources.json (met backup)."""
@@ -273,9 +285,12 @@ def register_bundle(model):
     if not os.path.exists(backup): shutil.copy2(src, backup)
     if rel not in sources.setdefault('_containers', []): sources['_containers'].append(rel)
     category = model.get('category') or ''
+    title = model.get('title') or os.path.basename(rel)
+    skipped = [d for d in subs if is_format_folder(d, title)]
     for d in subs:
-        sources.setdefault(f'{rel}/{d}', {'collection': model.get('collection') or 'Vectors', 'category': category,
-                                          'bundle': model.get('title') or os.path.basename(rel)})
+        # de originele formaatmappen blijven staan, maar worden geen kaartje (build_catalog slaat "skip" over)
+        sources.setdefault(f'{rel}/{d}', {'skip': True} if d in skipped else
+                           {'collection': model.get('collection') or 'Vectors', 'category': category, 'bundle': title})
     tmp = src + '.tmp'
     with open(tmp, 'w', encoding='utf-8') as f: json.dump(sources, f, ensure_ascii=False, indent=1)
     os.replace(tmp, src)
@@ -285,7 +300,8 @@ def register_bundle(model):
     if not model.get('has_doc') and not any(p.get('product_id') for p in pick):
         supa.rest('DELETE', f'maker_picks?model_id=eq.{mid}', prefer='return=minimal')
         supa.rest('DELETE', f'maker_models?id=eq.{mid}', prefer='return=minimal')
-    return f'{rel}: {len(subs)} modellen als aparte kaartjes in de catalogus'
+    note = f' (formaatmappen niet als model: {", ".join(skipped)})' if skipped else ''
+    return f'{rel}: {len(subs) - len(skipped)} modellen als aparte kaartjes in de catalogus{note}'
 
 
 def run_job(job):
