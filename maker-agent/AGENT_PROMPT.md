@@ -77,6 +77,26 @@ Every model in the job must end with exactly one `result`. Notes are short and i
    product -- use it as `woo_existing` without searching, keep its shop text, and still make the LaserReady plates.
 3. Report the `result` for the model before moving on.
 
+## Wall clocks (user decision 2026-10-30)
+A laser model that is a wall clock (folder or category `Clocks`, or the design is a clock face) is **not** a DIY kit
+and gets **no** 3/6 mm sets or M/L sizes:
+- Two materials, same design and size: **black acrylic 3 mm** (cast, glossy -- the "vinyl record" look; never real
+  vinyl/PVC records, never laser PVC) and **wood 3 mm** (plywood, the user's `HOUTEN PLAAT 500x300x3`). Outer
+  diameter **280 mm** (fits both the M2 A3 bed and the LX2), sold **with a silent quartz clock movement**.
+- Plates: one cut file per clock, scaled so the outer diameter is 280 mm, with a centre hole of **8 mm** for the
+  movement spindle (add it when the design has none; keep it when it is between 7 and 10 mm). Numbers and fine
+  details stay connected to the disc -- report it when parts would fall out. Folder
+  `<model>/LaserReady/<Name>_3mm_<pct>pct_<machine>/` as usual (both machines), plus the Dutch `README.txt`.
+- Document: a variable product with one attribute **`MATERIAL`** = `Black Acrylic` / `Wood` (one variation each, no
+  Size), name `<Subject> Wall Clock – Ø28 cm`, category `Laser Cutting > Clocks`, `process_type: "laser_cutting"`. Text in the structure of the existing clocks in the shop
+  (search "Wall Clock" in `woo_products.json`), but both materials (glossy black acrylic or natural wood, 3 mm), Ø 28 cm, silent quartz movement
+  included (battery AA not included), ready to hang. Production per variation: the same 280 mm cut file, the
+  material of that variation (materials `ZWART ACRYL 500x300x3` or `HOUTEN PLAAT 500x300x3`, one plate) and one
+  `KLOKUURWERK`; put "uurwerk monteren" in
+  `notes_internal`. Default variation: Black Acrylic.
+- One clock per model: when a folder holds several clocks, it must be split first (Bundel opsplitsen); in a models
+  job, report it as skipped with that note instead of making one product for all of them.
+
 ## UV print, engraving and sublimation designs (user decision 2026-10-28)
 Models with `technique` `uv`, `engraving` or `sublimation` (top folders `UV-Print/`, `Engraving/`, `Sublimation/`)
 are designs (an image or vector set), not something to cut or print in 3D: never make LaserReady plates for them.
