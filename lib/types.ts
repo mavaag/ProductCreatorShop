@@ -214,7 +214,7 @@ export type ProductVariation = {
 };
 
 /** Techniek van een mockup-template = tabblad in de mockup-generator. */
-export type MockupTechnique = "uv" | "engrave";
+export type MockupTechnique = "uv" | "engrave" | "laser"; // laser: migratie 030
 
 export type MockupTemplate = {
   id: string;

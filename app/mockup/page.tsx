@@ -32,6 +32,12 @@ const TECHNIQUES: { key: MockupTechnique; label: string; intro: string; template
     intro: "Toon hoe een logo, foto of tekst eruitziet als lasergravure op een product (hout, leisteen, metaal, leder), en download het resultaat als één afbeelding.",
     templateHint: "een foto van het product met de zone waar de gravure komt",
   },
+  {
+    key: "laser",
+    label: "Lasersnijden",
+    intro: "Plaats een lasergesneden product (bv. een wandklok, als PNG met transparante achtergrond) in een kamerfoto. Vink \"Gebruik voor klokken\" aan om de agent elke nieuwe klok automatisch in die kamerfoto te laten hangen.",
+    templateHint: "een kamerfoto met een lege muur, met het kader waar het product komt",
+  },
 ];
 
 const TECHNIQUE_STORAGE_KEY = "mockup-technique";
@@ -85,7 +91,7 @@ export default function MockupPage() {
   useEffect(() => {
     try {
       const saved = localStorage.getItem(TECHNIQUE_STORAGE_KEY);
-      if (saved === "uv" || saved === "engrave") setTechnique(saved);
+      if (saved === "uv" || saved === "engrave" || saved === "laser") setTechnique(saved);
     } catch {
       // geen opslag beschikbaar: dan gewoon UV-print
     }
@@ -172,10 +178,12 @@ export default function MockupPage() {
                         Gebruik voor Wall Art
                       </label>
                     )}
-                    <label style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 0 8px" }} title="De agent hangt elke wandklok in deze kamerfoto, in het kader (lege muur)">
-                      <input type="checkbox" style={{ width: "auto" }} checked={!!t.clock} onChange={(e) => setClock(t, e.target.checked)} />
-                      Gebruik voor klokken
-                    </label>
+                    {technique === "laser" && (
+                      <label style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 0 8px" }} title="De agent hangt elke wandklok in deze kamerfoto, in het kader (lege muur)">
+                        <input type="checkbox" style={{ width: "auto" }} checked={!!t.clock} onChange={(e) => setClock(t, e.target.checked)} />
+                        Gebruik voor klokken
+                      </label>
+                    )}
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                       <button className="btn" onClick={() => setScreen({ kind: "compose", template: t })}>
                         {technique === "engrave" ? "Gravure plaatsen" : "Print plaatsen"}

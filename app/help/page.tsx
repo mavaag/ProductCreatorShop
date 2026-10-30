@@ -77,7 +77,7 @@ const SECTIONS: Section[] = [
           <li><b>Klaar om aan te maken</b> - document klaar, nog geen product. Vink aan en klik <i>Maak N producten</i>. In het detailvenster kan je eerst de <b>WooCommerce-categorie</b> aanpassen (standaard die van de agent).</li>
           <li><b>Product gemaakt</b> - je hebt het product vanuit de Catalogus aangemaakt (<i>Open product</i>).</li>
           <li><b>Al in de shop</b> - alle modellen die in de shop zitten: zelf aangemaakt (kaartje: <i>Product gemaakt</i>) én gekoppeld aan of herkend als een bestaand shopproduct (kaartje: <i>Gekoppeld aan shopproduct</i>). Je andere shopproducten (die niet uit de bibliotheek komen) staan enkel op <b>Producten</b>.</li>
-          <li><b>Wandklokken</b> (sinds 30/10/2026): geen bouwpakket en geen 3/6 mm-varianten, maar <b>Ø 28 cm met stil uurwerk</b>, met variant <i>MATERIAL</i> <b>Black Acrylic</b> (zwart acryl 3 mm) of <b>Wood</b> (hout 3 mm), in <i>Laser Cutting &gt; Clocks</i>. De agent maakt per klok één snijbestand op 280 mm met een gat van 8 mm voor het uurwerk, en de productfoto's: zwart acryl en hout op een muur (wijzers op 10:10), een close-up en de klok in elke kamerfoto die in de <b>Mockup</b>-generator op <i>Gebruik voor klokken</i> staat (kader = plaats van de klok op een lege muur). De houtfoto wordt de foto van de variant <i>Wood</i>. Een map met meerdere klokken eerst opsplitsen. Nooit echte LP's laseren (PVC).</li>
+          <li><b>Wandklokken</b> (sinds 30/10/2026): geen bouwpakket en geen 3/6 mm-varianten, maar <b>Ø 28 cm met stil uurwerk</b>, met variant <i>MATERIAL</i> <b>Black Acrylic</b> (zwart acryl 3 mm) of <b>Wood</b> (hout 3 mm), in <i>Laser Cutting &gt; Clocks</i>. De agent maakt per klok één snijbestand op 280 mm met een gat van 8 mm voor het uurwerk, en de productfoto's: zwart acryl en hout op een muur (wijzers op 10:10), een close-up en de klok in elke kamerfoto die in de <b>Mockup</b>-generator (tabblad <i>Lasersnijden</i>) op <i>Gebruik voor klokken</i> staat (kader = plaats van de klok op een lege muur). De houtfoto wordt de foto van de variant <i>Wood</i>. Een map met meerdere klokken eerst opsplitsen. Nooit echte LP's laseren (PVC).</li>
           <li><b>Platen en document voor een gekoppeld model</b>: vink een model aan dat al aan een shopproduct gekoppeld is maar nog geen document of (laser) geen snijklare platen heeft; het verschijnt dan bij de agent onder <i>Laat de agent dit verwerken</i>. De agent maakt de platen (M2 + LX2) en een document dat de bestaande shoptekst behoudt.</li>
         </ul>
         <h3>Filters en labels op de kaartjes</h3>
@@ -181,12 +181,13 @@ const SECTIONS: Section[] = [
     href: "/mockup",
     body: (
       <>
-        <p>Productfoto's maken door een ontwerp op een foto te plaatsen, voor UV-print en lasergravure.</p>
+        <p>Productfoto's maken door een ontwerp op een foto te plaatsen, met een tabblad per techniek: UV-print, lasergravure en lasersnijden.</p>
         <ul>
           <li><b>Templates</b>: laad een foto (bv. een onderlegger of een kamer met een kader) en sleep de 4 hoekpunten van de printzone; kies de vorm (rechthoek of cirkel). Een template hergebruik je telkens.</li>
           <li><b>Mockup maken</b>: kies een template, laad je ontwerp en/of typ een tekst (lettertype, gravurekleur), verplaats en schaal het (slepen, scrollen) en klik <i>Downloaden als afbeelding</i>.</li>
           <li><b>Batch</b>: kies een bronmap met foto's en een doelmap; voor elke foto wordt automatisch een mockup gemaakt en weggeschreven. Werkt in Chrome, Edge of Brave.</li>
           <li><b>Gebruik voor Wall Art</b> (vinkje op een UV-template): de agent plaatst elke nieuwe poster uit <span className="mono">_Inbox\UV\Wall-Art</span> automatisch in deze template (zie <i>Catalogus &gt; Inbox</i>).</li>
+          <li><b>Gebruik voor klokken</b> (vinkje op een template bij <i>Lasersnijden</i>): een kamerfoto met een lege muur; de agent hangt elke nieuwe wandklok in het kader (zie <i>Wandklokken</i> bij de Catalogus).</li>
         </ul>
       </>
     ),
