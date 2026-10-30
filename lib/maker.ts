@@ -94,6 +94,42 @@ async function resinCostInputs(supabase: SupabaseClient, prod: ResinProduction):
   };
 }
 
+/** Machinecategorie per soort product: de eerste machine van die soort komt in een nieuwe variant. */
+const MACHINE_CATEGORY: Record<string, string[]> = {
+  laser_cutting: ["laser"], laser_engraving: ["laser"], "3d_print": ["3d_printer"],
+  sublimation: ["sublimation_printer", "heat_press"],
+};
+
+/**
+ * Kostenopbouw voor een nieuwe variant uit het document (bv. een wandklok): een machine van de juiste soort op elke
+ * machinelijn (bij laser de machine uit production.machines, bv. "M2" -> XTOOL M2) en de materialen uit
+ * production.materials ([{name, quantity}], op naam opgezocht). Tijd en arbeid blijven 0 -- die vul je zelf in.
+ * Zonder machine-id toont de prijsberekening "machine bestaat niet meer", dus nooit een lege machinelijn als er een
+ * machine van die soort bestaat.
+ */
+async function docCostInputs(supabase: SupabaseClient, processType: string, prod: Record<string, any>): Promise<CostInputs> {
+  const base = emptyCostInputs(processType);
+  const [{ data: machines }, { data: materials }] = await Promise.all([
+    supabase.from("machines").select("id, name, category"),
+    supabase.from("materials").select("id, name"),
+  ]);
+  const cats = MACHINE_CATEGORY[processType] ?? [];
+  const wanted = Object.keys(prod.machines ?? {}).map((k) => k.toUpperCase());
+  const pick = (cat: string) => {
+    const ofCat = (machines ?? []).filter((m) => m.category === cat);
+    return ofCat.find((m) => wanted.some((w) => m.name.toUpperCase().includes(w))) ?? ofCat[0];
+  };
+  const machine_time = base.machine_time.map((l, i) => ({ ...l, machine_id: (cats[i] && pick(cats[i])?.id) || l.machine_id }));
+  const byName = new Map((materials ?? []).map((m) => [m.name.toUpperCase(), m.id]));
+  const mats = Array.isArray(prod.materials) ? prod.materials as { name: string; quantity?: number }[] : [];
+  return {
+    ...base,
+    machine_time,
+    materials: mats.filter((m) => byName.has(String(m.name).toUpperCase()))
+      .map((m) => ({ material_id: byName.get(String(m.name).toUpperCase())!, quantity: m.quantity ?? 1 })),
+  };
+}
+
 /**
  * Wall Art (uv_print): alle posters hebben per MATERIAL/Size dezelfde kostenopbouw (printer, plaat/kader, inkt, arbeid)
  * en prijs. Per variant nemen we de meest voorkomende opbouw van de bestaande posters met dezelfde attribuutwaarden
@@ -165,7 +201,7 @@ export async function createProductFromDoc(supabase: SupabaseClient, doc: MakerD
     const copied = sibling?.(v.attributes);
     const cost_inputs = copied ? copied.cost_inputs
       : p.process_type === "resin_print" ? await resinCostInputs(supabase, v.production as ResinProduction)
-      : emptyCostInputs(p.process_type);
+      : await docCostInputs(supabase, p.process_type, v.production ?? {});
     rows.push({ product_id: product.id, sku: variationSku, attribute_values: v.attributes, cost_inputs,
                 ...(v.image_url ? { image_url: v.image_url } : {}),
                 ...(copied?.suggested_price != null ? { suggested_price: copied.suggested_price } : {}) });

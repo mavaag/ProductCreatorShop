@@ -92,7 +92,8 @@ and gets **no** 3/6 mm sets or M/L sizes:
   (search "Wall Clock" in `woo_products.json`), but both materials (glossy black acrylic or natural wood, 3 mm), Ø 28 cm, silent quartz movement
   included (battery AA not included), ready to hang. Production per variation: the same 280 mm cut file, the
   material of that variation (materials `ZWART ACRYL 500x300x3` or `HOUTEN PLAAT 500x300x3`, one plate) and one
-  `KLOKUURWERK`; put "uurwerk monteren" in
+  `KLOKUURWERK`, written as `production.materials: [{"name": "<material name>", "quantity": 1}, ...]` and
+  `production.machines` with the keys `M2` / `LX2` (Maak product fills the cost lines from these); put "uurwerk monteren" in
   `notes_internal`. Default variation: Black Acrylic.
 - Photos: there are no real photos of the clocks. After writing the document, run
   `python3 /src/tools/maker/clock_mockups.py "<model path>" --update-doc` (renders the clock from its SVG/PNG in black
