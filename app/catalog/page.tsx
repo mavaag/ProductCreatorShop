@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
 import { PROCESS_TYPE_LABELS } from "@/lib/types";
 import { alertDialog, confirmDialog } from "@/components/DialogHost";
-import { AGENT_ONLINE_MS, MAKER_MODEL_COLUMNS, MakerAgent, MakerDoc, MakerJob, MakerModel, MakerPick, MakerWooLink, applyDocToProduct, canSplit, canSplitManually, createProductFromDoc, licenseWarning, shopProductId, TECHNIQUE_LABELS, Technique, techniqueLabel, techniqueOf } from "@/lib/maker";
+import { AGENT_ONLINE_MS, MAKER_MODEL_COLUMNS, MakerAgent, MakerDoc, MakerJob, MakerModel, MakerPick, MakerWooLink, applyDocToProduct, isSet, canSplit, canSplitManually, createProductFromDoc, licenseWarning, shopProductId, TECHNIQUE_LABELS, Technique, techniqueLabel, techniqueOf } from "@/lib/maker";
 
 /** Stappen van een model: kiezen -> document (beschrijving, foto's, varianten) -> product in de beheertool. */
 type Stage = "all" | "picked" | "doc" | "ready" | "created" | "shop";
@@ -236,6 +236,11 @@ export default function CatalogPage() {
       </p>
 
       {/* agent bovenaan: tabbladen, filters en kaartjes staan zo samen */}
+      <SetMaker
+        designs={models.filter((m) => picks.has(m.id) && techniqueOf(m) === "engraving" && !isSet(m))}
+        onQueued={() => { setJobsKey((k) => k + 1); load(); }}
+      />
+
       <AgentPanel
         key={jobsKey}
         // te verwerken: geselecteerd zonder document, en ook een aangevinkt model dat al aan een shopproduct gekoppeld
@@ -362,6 +367,7 @@ export default function CatalogPage() {
                   <div className="prod-sku">{[m.collection, m.category].filter(Boolean).join(" · ")}</div>
                   <div className="prod-cats">
                     {m.kind === "Lasercut" && m.laser_ready.length > 0 && <span className="pill cyan">Snijklaar</span>}
+                    {isSet(m) && <span className="pill" title="Set van gravureontwerpen (Maak set)">Set</span>}
                     {m.has_doc && <span className="pill cyan">Document</span>}
                     {canSplit(m) && !m.has_doc && (splitDone.has(m.id) ? (
                       <span className="pill" title="De agent splitst deze bundel op, of gaf aan dat het één model is">{BUNDLE_ICON} Bundel</span>
@@ -426,6 +432,48 @@ const JOB_STATUS_LABELS: Record<MakerJob["status"], string> = {
   failed: "Mislukt",
   cancelled: "Geannuleerd",
 };
+
+/**
+ * Van aangevinkte gravureontwerpen een set maken (bv. 4 onderleggers met elk een ander dier): de agent maakt de map
+ * Engraving/Sets/<naam> met set.json (welke ontwerpen, in deze volgorde -- niets gekopieerd) en een voorbeeldfoto.
+ * De set wordt een eigen kaartje; verwerk je dat, dan vult de agent de templates met evenveel zones.
+ */
+function SetMaker({ designs, onQueued }: { designs: MakerModel[]; onQueued: () => void }) {
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  if (designs.length < 2) return null;
+
+  async function make() {
+    const clean = name.trim();
+    if (!clean) { setError("Geef de set een naam, bv. Peeking Animals Coaster Set 1."); return; }
+    if (/[\\/:*?"<>|]/.test(clean)) { setError('Gebruik geen \\ / : * ? " < > | in de naam (het wordt een mapnaam).'); return; }
+    const msg = `Set "${clean}" maken met ${designs.length} ontwerpen (in deze volgorde: ${designs.map((d) => d.title).join(", ")})?\n\n` +
+      "De agent maakt de map Engraving/Sets/" + clean + " (er wordt niets gekopieerd) en de set verschijnt als eigen kaartje. " +
+      "Daarna vink je de set aan en laat je hem verwerken. De losse ontwerpen worden uitgevinkt.";
+    if (!(await confirmDialog(msg, { confirmLabel: "Maak set" }))) return;
+    const { error } = await supabase.from("maker_jobs").insert({ kind: "set", model_ids: designs.map((d) => d.id), items: [clean], note: "" });
+    if (error) { setError(error.message); return; }
+    await supabase.from("maker_picks").delete().in("model_id", designs.map((d) => d.id)).is("product_id", null);
+    setName(""); setError(null);
+    onQueued();
+  }
+
+  return (
+    <div className="card" style={{ marginBottom: 16, display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+      <p className="muted" style={{ flex: "1 1 100%", margin: 0 }}>
+        <b style={{ color: "var(--yellow)" }}>{designs.length}</b> gravureontwerpen aangevinkt ({designs.map((d) => d.title).join(", ")}).
+        Horen ze samen in één product, bv. een set van {designs.length} onderleggers? Maak er dan een set van; hij komt op de
+        templates met {designs.length} zones.
+      </p>
+      <div style={{ flex: 1, minWidth: 240 }}>
+        <label>Naam van de set</label>
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="bv. Peeking Animals Coaster Set 1" />
+      </div>
+      <button className="btn" onClick={make}>Maak set ({designs.length})</button>
+      {error && <p className="warning" style={{ flex: "1 1 100%", margin: 0 }}>{error}</p>}
+    </div>
+  );
+}
 
 /**
  * Opdrachten voor de MakerProducts-agent (Docker-container op de NAS, zie maker-agent/): geselecteerde modellen
@@ -598,6 +646,7 @@ function AgentPanel({ waiting, titles, onJobFinished }: {
             {jobs.map((j) => {
               const isInbox = j.kind === "inbox";
               const isSplit = j.kind === "split";
+              const isSetJob = j.kind === "set";
               const keys = isInbox ? (j.items ?? []) : j.model_ids;
               // inbox-opdracht: resultaten per inbox-item, plus eventueel per nieuw model (bij "daarna meteen verwerken")
               const extra = isInbox ? Object.keys(j.results ?? {}).filter((k) => !keys.includes(k)) : [];
@@ -609,7 +658,8 @@ function AgentPanel({ waiting, titles, onJobFinished }: {
                   <tr>
                     <td className="mono">
                       {new Date(j.created_at).toLocaleString("nl-BE", { dateStyle: "short", timeStyle: "short" })} ·{" "}
-                      {isInbox ? `Inbox, ${keys.length} item${keys.length === 1 ? "" : "s"}` : isSplit ? "Bundel opsplitsen" : `${keys.length} model${keys.length === 1 ? "" : "len"}`}
+                      {isInbox ? `Inbox, ${keys.length} item${keys.length === 1 ? "" : "s"}` : isSplit ? "Bundel opsplitsen"
+                        : isSetJob ? `Set "${j.items?.[0] ?? ""}" (${keys.length} ontwerpen)` : `${keys.length} model${keys.length === 1 ? "" : "len"}`}
                     </td>
                     <td style={{ color: j.status === "failed" ? "var(--rust)" : j.status === "done" ? "var(--moss)" : j.status === "running" ? "var(--cyan)" : undefined }}>
                       {JOB_STATUS_LABELS[j.status]}

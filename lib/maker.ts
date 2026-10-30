@@ -317,6 +317,12 @@ export const TECHNIQUE_LABELS: Record<Technique, string> = {
   laser: "Laser", fdm: "3D-print FDM", resin: "3D-print Resin", uv: "UV-print", engraving: "Gravure", sublimation: "Sublimatie",
 };
 
+/** Set van gravureontwerpen (map Engraving/Sets/<naam> met set.json, gemaakt met "Maak set"). */
+export const SET_FOLDER = "Engraving/Sets/";
+export function isSet(m: Pick<MakerModel, "path">): boolean {
+  return m.path.startsWith(SET_FOLDER);
+}
+
 /** Label op een catalogus-kaartje. */
 export function techniqueLabel(m: Pick<MakerModel, "kind" | "technique">): string {
   return TECHNIQUE_LABELS[techniqueOf(m)];
@@ -326,8 +332,9 @@ export function techniqueLabel(m: Pick<MakerModel, "kind" | "technique">): strin
 export type MakerJob = {
   id: string;
   status: "queued" | "running" | "done" | "failed" | "cancelled";
-  /** models = geselecteerde modellen verwerken; inbox = nieuwe bestanden uit _Inbox in de bibliotheek zetten */
-  kind?: "models" | "inbox" | "split";
+  /** models = geselecteerde modellen verwerken; inbox = nieuwe bestanden uit _Inbox in de bibliotheek zetten;
+   *  set = van gravureontwerpen een set maken (items[0] = naam, migratie 032) */
+  kind?: "models" | "inbox" | "split" | "set";
   model_ids: string[];
   items?: string[];
   then_process?: boolean;

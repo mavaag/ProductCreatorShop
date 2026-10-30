@@ -10,6 +10,8 @@ en laat Claude Code die afwerken:
   - daarnaast, los van de opdrachten: elke 10 minuten de WooCommerce-bestellingen ophalen (orders_sync.py) en elke dag
     voorstellen welk catalogusmodel bij welk shopproduct hoort (match_shop_files.py); shopproducten aan hun
     catalogusmodel koppelen (shop_links.py, elke 10 minuten; er wordt niets meer naar _Shop gekopieerd);
+  - soort 'set' (knop "Maak set"): zonder Claude de map Engraving/Sets/<naam> maken met set.json (welke
+    gravureontwerpen, niets gekopieerd) en een voorbeeldfoto; daarna de catalogus opnieuw bouwen (eigen kaartje);
   - soort 'split' (knop "Bundel opsplitsen"): volgens SPLIT_PROMPT.md een model dat eigenlijk een map met veel losse
     modellen is, opsplitsen in submappen (Claude kopieert enkel). Lukte dat, dan zet dit script de bundel als
     verzamelmap in _catalog/sources.json (met backup), bouwt de catalogus opnieuw en haalt het bundelkaartje weg.
@@ -304,7 +306,63 @@ def register_bundle(model):
     return f'{rel}: {len(subs) - len(skipped)} modellen als aparte kaartjes in de catalogus{note}'
 
 
+SETS = os.path.join(supa.MAKER_ROOT, 'Engraving', 'Sets')
+
+
+def make_set(job):
+    """Set van gravureontwerpen: map Engraving/Sets/<naam> met set.json en preview.jpg (de ontwerpen naast elkaar, ook
+    het kaartje in de catalogus). Maakt enkel nieuwe bestanden; een bestaande map wordt nooit aangeraakt."""
+    import engrave_mockups as em
+    name = re.sub(r'[\\/:*?"<>|]+', ' ', (job.get('items') or [''])[0]).strip()
+    if not name: raise ValueError('geen naam voor de set')
+    folder = os.path.join(SETS, name)
+    if os.path.exists(folder): raise ValueError(f'Engraving/Sets/{name} bestaat al -- kies een andere naam')
+    rows = supa.rest('GET', 'maker_models?select=id,title,path,kind&id=in.(' + ','.join(f'"{m}"' for m in job['model_ids']) + ')') or []
+    by_id = {r['id']: r for r in rows}
+    members = [by_id[m] for m in job['model_ids'] if m in by_id]
+    if len(members) != len(job['model_ids']): raise ValueError('niet alle ontwerpen gevonden in de catalogus')
+    if any(m['kind'] != 'Engraving' for m in members): raise ValueError('een set bevat enkel gravureontwerpen')
+    designs = []
+    for m in members:
+        f = em.design_file(os.path.join(supa.MAKER_ROOT, m['path']))
+        if not f: raise ValueError(f'{m["title"]}: geen ontwerp (SVG/PNG/JPG) gevonden')
+        designs.append(em.load_design(f))
+    os.makedirs(folder)
+    with open(os.path.join(folder, 'set.json'), 'w', encoding='utf-8') as f:
+        json.dump({'name': name, 'created': now(), 'designs': [{'id': m['id'], 'title': m['title'], 'path': m['path']} for m in members]},
+                  f, ensure_ascii=False, indent=1)
+    # voorbeeldfoto: de ontwerpen in een raster op wit
+    from PIL import Image
+    cols = 2 if len(designs) == 4 else min(len(designs), 3)
+    rows_n = -(-len(designs) // cols); cell = 600
+    sheet = Image.new('RGB', (cols * cell, rows_n * cell), 'white')
+    for i, d in enumerate(designs):
+        d = d.copy(); d.thumbnail((cell - 60, cell - 60))
+        x = (i % cols) * cell + (cell - d.width) // 2; y = (i // cols) * cell + (cell - d.height) // 2
+        sheet.paste(d, (x, y), d)
+    sheet.save(os.path.join(folder, 'preview.jpg'), 'JPEG', quality=88)
+    return f'Engraving/Sets/{name}: set met {len(members)} ontwerpen ({", ".join(m["title"] for m in members)})'
+
+
+def run_set_job(job):
+    jid = job['id']
+    status['text'] = 'bezig met een set maken'
+    try:
+        msg = make_set(job)
+    except Exception as e:
+        patch_job(jid, status='failed', finished_at=now(), progress=f'set niet gemaakt: {e}'[:300],
+                  results={m: {'status': 'failed', 'note': str(e)[:200]} for m in job['model_ids']})
+        return
+    tail = [msg]
+    for cmd in (['python3', os.path.join(CATALOG, 'tools', 'build_catalog.py')], ['python3', '/src/tools/maker/sync_catalog.py']):
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        tail.extend((r.stdout + r.stderr).strip().splitlines()[-2:])
+    patch_job(jid, status='done', finished_at=now(), log_tail='\n'.join(tail), progress='klaar: set staat in de Catalogus (vink hem aan om te verwerken)',
+              results={m: {'status': 'ok', 'note': 'in de set'} for m in job['model_ids']})
+
+
 def run_job(job):
+    if job.get('kind') == 'set': return run_set_job(job)
     jid = job['id']; inbox_job = job.get('kind') == 'inbox'; split_job = job.get('kind') == 'split'
     os.makedirs(WORK, exist_ok=True); os.makedirs(LOGS, exist_ok=True)
     # actuele shoplijst, zodat de agent kan nakijken of een model al in de shop staat

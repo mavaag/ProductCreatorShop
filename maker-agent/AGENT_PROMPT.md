@@ -146,6 +146,14 @@ are designs (an image or vector set), not something to cut or print in 3D: never
     of its kind) and then `publish_docs.py`. Look at one mockup: when the design is unreadable (e.g. a photo with too
     little contrast on slate) say so in the result note. The designer's previews are never product photos.
   - Trademark/licence checks as for every model (characters of a brand -> `license.trademark`).
+- **Engraving sets** (a model under `Engraving/Sets/`, made with "Maak set"): `set.json` lists the designs (catalogue
+  ids and paths, in order). One product for the whole set: the templates with **as many zones as designs** are the
+  variations (`PRODUCT`, e.g. `Set of 4 Round Slate Coasters`), the material quantity = the number of designs (e.g. 4 x
+  `RONDE ONDERLEGGER LEISTEEN`), `production.files` = the design file of every member in order. Name
+  `<Theme> Coaster Set of <n> – Laser Engraved` (theme from the set name / the designs). Photos:
+  `python3 /src/tools/maker/engrave_mockups.py --set "<set path>" "<design path 1>" ... --update-doc`, then
+  `publish_docs.py`; `preview.jpg` in the set folder is only the catalogue thumbnail, never a product photo. No
+  template with that many zones -> skip with the note "geen template met <n> zones op 'Gebruik voor de agent'".
 
 ## Resin figures (user decision 2026-10-26)
 - **The model's `technique` in the job decides** (from `_technique.txt` in the model folder or the Inbox technique
