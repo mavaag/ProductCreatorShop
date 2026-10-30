@@ -75,20 +75,33 @@ def silhouette(path):
 
 
 def clock_centre(mask):
-    """Midden van de klok: het kleine gat voor de as dicht bij het midden, anders het midden van het silhouet."""
+    """Midden van de klok = het asgat: een klein rond gat waar de andere gaten (uurstreepjes, cijfers) puntsymmetrisch
+    rond liggen. Bij een klok die niet rond is (bv. een logo met druppels) ligt dat niet in het midden van het silhouet,
+    en een cijfer of streepje dicht bij het midden mag niet winnen. Geen rond gat: het midden van het silhouet."""
     a = np.array(mask) > 127
     holes, n = ndimage.label(~a)
     h, w = a.shape
     edge = set(np.unique(np.concatenate([holes[0], holes[-1], holes[:, 0], holes[:, -1]])))
-    best = None
+    sizes = ndimage.sum(np.ones_like(holes), holes, range(n + 1))
+    cents, round_ = [], []
     for i, sl in enumerate(ndimage.find_objects(holes), 1):
         if i in edge or sl is None: continue
         hh, ww = sl[0].stop - sl[0].start, sl[1].stop - sl[1].start
-        if not (0.005 * w < ww < 0.06 * w and 0.6 < ww / max(hh, 1) < 1.6): continue
         cy, cx = (sl[0].start + sl[0].stop) / 2, (sl[1].start + sl[1].stop) / 2
-        d = math.hypot(cx - w / 2, cy - h / 2)
-        if d < 0.2 * w and (best is None or d < best[0]): best = (d, cx, cy)
-    return (best[1], best[2]) if best else (w / 2, h / 2)
+        cents.append((cx, cy))
+        fill = sizes[i] / max(hh * ww, 1)   # een cirkel vult ~0.785 van zijn kader
+        if 0.004 * w < ww < 0.06 * w and 0.8 < ww / max(hh, 1) < 1.25 and 0.65 < fill < 0.9:
+            round_.append((cx, cy))
+    if not round_: return (w / 2, h / 2)
+    pts = np.array(cents)
+    tol = 0.012 * w
+
+    def symmetry(c):
+        mirrored = 2 * np.array(c) - pts
+        d = np.sqrt(((mirrored[:, None, :] - pts[None, :, :]) ** 2).sum(-1)).min(1)
+        return int((d < tol).sum())
+
+    return max(round_, key=lambda c: (symmetry(c), -math.hypot(c[0] - w / 2, c[1] - h / 2)))
 
 
 # ---------- materialen ----------
@@ -258,7 +271,8 @@ def main():
                 made += 1
                 print(f'{rel}: {PREFIX}{n}.jpg')
         if with_doc: print(update_doc(folder, dry))
-    print(f'clock_mockups: {made} foto{"" if made == 1 else "'s"} gemaakt ({len(tpl)} kamertemplate{"" if len(tpl) == 1 else "s"})'
+    fotos = 'foto' if made == 1 else "foto's"   # geen geneste quotes in de f-string (Python 3.11 in de container)
+    print(f'clock_mockups: {made} {fotos} gemaakt ({len(tpl)} kamertemplate{"" if len(tpl) == 1 else "s"})'
           + (' (droge test)' if dry else ''))
 
 
