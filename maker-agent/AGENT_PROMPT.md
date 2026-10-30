@@ -94,6 +94,12 @@ and gets **no** 3/6 mm sets or M/L sizes:
   material of that variation (materials `ZWART ACRYL 500x300x3` or `HOUTEN PLAAT 500x300x3`, one plate) and one
   `KLOKUURWERK`; put "uurwerk monteren" in
   `notes_internal`. Default variation: Black Acrylic.
+- Photos: there are no real photos of the clocks. After writing the document, run
+  `python3 /src/tools/maker/clock_mockups.py "<model path>" --update-doc` (renders the clock from its SVG/PNG in black
+  acrylic and wood on a wall, a close-up, and in every room photo marked "Gebruik voor klokken"; the wood photo becomes
+  the image of the `Wood` variation), then `publish_docs.py`. Look at `mockup_clock_1_acrylic.jpg`: when the hands are
+  not on the clock centre or the shape is wrong, say so in the result note. Never use the designer's PNG preview as a
+  product photo.
 - One clock per model: when a folder holds several clocks, it must be split first (Bundel opsplitsen); in a models
   job, report it as skipped with that note instead of making one product for all of them.
 

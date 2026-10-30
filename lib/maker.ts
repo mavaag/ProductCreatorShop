@@ -50,7 +50,8 @@ export type MakerDoc = {
   };
   woo_existing: { id: number; name: string; sku: string; type: string; status: string; price: string; categories: string[]; action: string } | null;
   attributes: { name: string; default: string; options: string[] }[];
-  variations: { attributes: Record<string, string>; production: Record<string, any> }[];
+  /** image / image_url: eigen foto van de variant (bv. de houten klok), image_url ingevuld door publish_docs.py */
+  variations: { attributes: Record<string, string>; production: Record<string, any>; image?: string; image_url?: string }[];
   notes_internal: string[];
   /** status "non-commercial" = de ontwerper verbiedt verkoop (bv. CC BY-NC): eerst toestemming vragen. */
   license: { status: string; note: string; trademark?: boolean };
@@ -166,6 +167,7 @@ export async function createProductFromDoc(supabase: SupabaseClient, doc: MakerD
       : p.process_type === "resin_print" ? await resinCostInputs(supabase, v.production as ResinProduction)
       : emptyCostInputs(p.process_type);
     rows.push({ product_id: product.id, sku: variationSku, attribute_values: v.attributes, cost_inputs,
+                ...(v.image_url ? { image_url: v.image_url } : {}),
                 ...(copied?.suggested_price != null ? { suggested_price: copied.suggested_price } : {}) });
   }
   const { error: varError } = await supabase.from("product_variations").insert(rows);

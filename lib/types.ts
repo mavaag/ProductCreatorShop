@@ -224,6 +224,7 @@ export type MockupTemplate = {
   technique?: MockupTechnique; // ontbreekt bij oudere templates = "uv"
   shape?: ZoneShape; // vorm van de zone binnen de 4 punten; ontbreekt = "rect"
   wall_art?: boolean; // UV: gebruiken voor de automatische mockups van nieuwe Wall Art-posters (migratie 028)
+  clock?: boolean; // kamerfoto voor de automatische foto's van wandklokken; kader = plaats van de klok (migratie 029)
   created_at: string;
 };
 
