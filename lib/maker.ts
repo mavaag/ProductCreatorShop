@@ -188,10 +188,25 @@ export async function createProductFromDoc(supabase: SupabaseClient, doc: MakerD
     .single();
   if (error) throw error;
 
+  const { error: varError } = await supabase.from("product_variations").insert(await docVariationRows(supabase, doc, product));
+  if (varError) {
+    await supabase.from("products").delete().eq("id", product.id); // geen half product achterlaten
+    throw varError;
+  }
+
+  const { error: pickError } = await supabase.from("maker_picks").upsert({ model_id: doc.catalog_id, product_id: product.id });
+  if (pickError) throw pickError;
+  return product.id as string;
+}
+
+/** Varianten (product_variations-rijen) van een productdocument voor product (id, sku): sku, attributen, kostenopbouw, foto. */
+async function docVariationRows(supabase: SupabaseClient, doc: MakerDoc, product: { id: string; sku: string }) {
+  const p = doc.product;
+  const attributeNames = doc.attributes.map((a) => a.name);
   const rows = [];
   const sibling = p.process_type === "uv_print" ? await siblingCostInputs(supabase, p.process_type) : null;
-  const variations = attributeNames.length === 0
-    ? [{ attributes: {} as Record<string, string>, production: doc.variations[0]?.production ?? {} }]
+  const variations: MakerDoc["variations"] = attributeNames.length === 0
+    ? [{ attributes: {}, production: doc.variations[0]?.production ?? {} }]
     : doc.variations;
   for (const v of variations) {
     const values = attributeNames.map((n) => v.attributes[n]).filter(Boolean);
@@ -206,15 +221,41 @@ export async function createProductFromDoc(supabase: SupabaseClient, doc: MakerD
                 ...(v.image_url ? { image_url: v.image_url } : {}),
                 ...(copied?.suggested_price != null ? { suggested_price: copied.suggested_price } : {}) });
   }
-  const { error: varError } = await supabase.from("product_variations").insert(rows);
-  if (varError) {
-    await supabase.from("products").delete().eq("id", product.id); // geen half product achterlaten
-    throw varError;
-  }
+  return rows;
+}
 
-  const { error: pickError } = await supabase.from("maker_picks").upsert({ model_id: doc.catalog_id, product_id: product.id });
+/**
+ * Productdocument overnemen in een product dat al in de shop staat (gekoppeld via maker_woo_links): beschrijving,
+ * korte beschrijving, foto's, categorie, attributen en varianten uit het document. SKU, publicatiestatus en
+ * (standaard) de naam blijven, zodat de sync hetzelfde WooCommerce-product bijwerkt (zelfde id, URL, reviews).
+ * De oude varianten (bv. de ene prijsrij van een simpel product) worden vervangen; prijzen vul je daarna zelf in.
+ * Een simpel product dat zo variabel wordt, zet de sync om (zie app/api/sync/route.ts).
+ */
+export async function applyDocToProduct(
+  supabase: SupabaseClient, doc: MakerDoc, productId: string, opts: { replaceName?: boolean; categories?: string } = {},
+): Promise<void> {
+  const p = doc.product;
+  const { data: product, error } = await supabase.from("products").select("id, sku").eq("id", productId).single();
+  if (error) throw error;
+  // eerst de oude varianten weg, zodat de nieuwe hun gewone SKU krijgen (bv. 1060-wood, ook bij opnieuw overnemen)
+  const { error: delError } = await supabase.from("product_variations").delete().eq("product_id", productId);
+  if (delError) throw delError;
+  const { error: varError } = await supabase.from("product_variations").insert(await docVariationRows(supabase, doc, product));
+  if (varError) throw varError;
+  const images = p.image_urls ?? [];
+  const { error: upError } = await supabase.from("products").update({
+    ...(opts.replaceName ? { name: p.name } : {}),
+    process_type: p.process_type,
+    attribute_names: doc.attributes.map((a) => a.name),
+    default_attribute_values: Object.fromEntries(doc.attributes.map((a) => [a.name, a.default])),
+    description: p.description,
+    short_description: p.short_description,
+    categories: opts.categories?.trim() || p.categories,
+    ...(images.length ? { image_url: images.join(",") } : {}),
+  }).eq("id", productId);
+  if (upError) throw upError;
+  const { error: pickError } = await supabase.from("maker_picks").upsert({ model_id: doc.catalog_id, product_id: productId });
   if (pickError) throw pickError;
-  return product.id as string;
 }
 
 /** Licentie die verkoop niet zomaar toelaat (bv. CC BY-NC): de Catalogus waarschuwt voor je een product maakt. */

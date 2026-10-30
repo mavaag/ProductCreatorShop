@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
 import { PROCESS_TYPE_LABELS } from "@/lib/types";
 import { alertDialog, confirmDialog } from "@/components/DialogHost";
-import { AGENT_ONLINE_MS, MAKER_MODEL_COLUMNS, MakerAgent, MakerDoc, MakerJob, MakerModel, MakerPick, MakerWooLink, canSplit, canSplitManually, createProductFromDoc, licenseWarning, shopProductId, TECHNIQUE_LABELS, Technique, techniqueLabel, techniqueOf } from "@/lib/maker";
+import { AGENT_ONLINE_MS, MAKER_MODEL_COLUMNS, MakerAgent, MakerDoc, MakerJob, MakerModel, MakerPick, MakerWooLink, applyDocToProduct, canSplit, canSplitManually, createProductFromDoc, licenseWarning, shopProductId, TECHNIQUE_LABELS, Technique, techniqueLabel, techniqueOf } from "@/lib/maker";
 
 /** Stappen van een model: kiezen -> document (beschrijving, foto's, varianten) -> product in de beheertool. */
 type Stage = "all" | "picked" | "doc" | "ready" | "created" | "shop";
@@ -669,36 +669,85 @@ const BUNDLE_ICON = (
 
 type WooHit = { id: number; name: string; sku: string; status: string; permalink: string; image: string | null };
 
+/** Producten in WooCommerce zoeken op naam of SKU; een getal = het product met dat id. */
+async function searchWoo(q: string): Promise<WooHit[]> {
+  const { data: session } = await supabase.auth.getSession();
+  const res = await fetch(`/api/woocommerce/products?search=${encodeURIComponent(q.trim())}`, {
+    headers: { Authorization: `Bearer ${session.session?.access_token}` },
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error ?? res.statusText);
+  return body.products;
+}
+
 /**
  * Koppeling van een catalogusmodel aan een bestaand WooCommerce-product. Jouw koppeling (maker_woo_links) gaat voor op
  * de suggestie van de agent (doc.woo_existing); "Klopt niet" bewaart een koppeling zonder product.
+ * Met een document kun je het overnemen in dat shopproduct (applyDocToProduct): beschrijving, foto's en varianten.
  */
-function ShopLink({ model, doc, link, onLinked }: { model: MakerModel; doc: MakerDoc | null; link: MakerWooLink | undefined; onLinked: () => void }) {
+function ShopLink({ model, doc, link, onLinked, category }: { model: MakerModel; doc: MakerDoc | null; link: MakerWooLink | undefined; onLinked: () => void; category: string | undefined }) {
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<WooHit[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // product in de beheertool bij het gekoppelde shopproduct (zelfde SKU); null = (nog) niet geïmporteerd
+  const [target, setTarget] = useState<{ id: string; name: string; sku: string } | null | undefined>(undefined);
+  const [replaceName, setReplaceName] = useState(false);
+  const [applying, setApplying] = useState(false);
   const suggestion = doc?.woo_existing ?? null;
   const linkedId = shopProductId(model, link);
   // vermoedens van de agent in de notities, bv. "Possibly already in the shop as #1212 (...)"
   const guesses = Array.from(new Set((doc?.notes_internal ?? []).flatMap((n) =>
     /in the shop/i.test(n) ? Array.from(n.matchAll(/#(\d+)/g), (x) => x[1]) : [])));
 
+  useEffect(() => {
+    setTarget(undefined);
+    if (!doc || !link?.woo_product_id) return;
+    let stale = false;
+    searchWoo(String(link.woo_product_id)).then(async (rows) => {
+      const sku = rows[0]?.sku;
+      const { data } = sku ? await supabase.from("products").select("id, name, sku").eq("sku", sku).maybeSingle() : { data: null };
+      if (!stale) setTarget(data ?? null);
+    }).catch((e) => !stale && setError(e.message ?? String(e)));
+    return () => { stale = true; };
+  }, [doc, link?.woo_product_id]);
+
   async function search(q = query) {
     if (!q.trim()) return;
     setSearching(true); setError(null);
     try {
-      const { data: session } = await supabase.auth.getSession();
-      const res = await fetch(`/api/woocommerce/products?search=${encodeURIComponent(q.trim())}`, {
-        headers: { Authorization: `Bearer ${session.session?.access_token}` },
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? res.statusText);
-      setHits(body.products);
+      setHits(await searchWoo(q));
     } catch (e: any) {
       setError(e.message ?? String(e));
     }
     setSearching(false);
+  }
+
+  async function apply() {
+    if (!doc || !target) return;
+    const variants = doc.variations.map((v) => Object.values(v.attributes).join(" / ")).filter(Boolean);
+    const msg = `Het document overnemen in "${target.name}" (SKU ${target.sku})?
+
+`
+      + `Beschrijving, korte beschrijving, foto's en categorie worden vervangen`
+      + (replaceName ? `, de naam wordt "${doc.product.name}"` : `; de naam blijft`) + `.
+`
+      + `De varianten worden vervangen door: ${variants.join(", ") || "één variant"} (prijzen daarna zelf invullen).
+
+`
+      + `In de shop verandert pas iets als je daarna synchroniseert; het blijft hetzelfde WooCommerce-product (zelfde URL en reviews).`;
+    if (!(await confirmDialog(msg, { confirmLabel: "Overnemen" }))) return;
+    setApplying(true); setError(null);
+    try {
+      await applyDocToProduct(supabase, doc, target.id, { replaceName, categories: category });
+      onLinked();
+      if (await confirmDialog("Overgenomen. Nu de prijzen invullen op de productpagina?", { confirmLabel: "Open product" })) {
+        window.location.href = `/products/${target.id}`;
+      }
+    } catch (e: any) {
+      setError(e.message ?? String(e));
+    }
+    setApplying(false);
   }
 
   async function save(woo: { id: number; name: string; permalink: string } | null) {
@@ -727,7 +776,7 @@ function ShopLink({ model, doc, link, onLinked }: { model: MakerModel; doc: Make
           ) : (
             <b>#{linkedId} {link?.woo_name || suggestion?.name}</b>
           )}
-          . Je maakt er dus geen nieuw product van; importeer het via Producten &gt; Import als je het in de beheertool wil.{" "}
+          . Je maakt er dus geen nieuw product van{doc && link ? "" : "; importeer het via Producten > Import als je het in de beheertool wil"}.{" "}
           {link ? (
             <button type="button" className="btn secondary" onClick={reset}>Ontkoppelen</button>
           ) : (
@@ -737,7 +786,33 @@ function ShopLink({ model, doc, link, onLinked }: { model: MakerModel; doc: Make
             </>
           )}
         </p>
-      ) : (
+      ) : null}
+      {linkedId && doc && link && (
+        target === undefined ? (
+          <p className="muted" style={{ margin: "0 0 8px" }}>Product in de beheertool zoeken...</p>
+        ) : target === null ? (
+          <p className="muted" style={{ margin: "0 0 8px" }}>
+            Dit shopproduct staat nog niet in de beheertool. Importeer het eerst via Producten &gt; Import; daarna kun je hier
+            de beschrijving, foto&apos;s en varianten uit het document overnemen.
+          </p>
+        ) : (
+          <div style={{ margin: "0 0 8px" }}>
+            <p style={{ margin: "0 0 6px" }}>
+              In de beheertool: <Link href={`/products/${target.id}`}>{target.name}</Link> <span className="muted">({target.sku})</span>.
+              Neem de beschrijving, foto&apos;s en varianten van dit document over in dat product; de sync werkt daarna het
+              bestaande shopproduct bij (zelfde URL, reviews en bestellingen).
+            </p>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <button type="button" className="btn" disabled={applying} onClick={apply}>{applying ? "Bezig..." : "Overnemen in shopproduct"}</button>
+              <label style={{ display: "flex", alignItems: "center", gap: 6 }} title={`Anders blijft de naam uit de shop staan (beter voor bestaande links en zoekmachines)`}>
+                <input type="checkbox" style={{ width: "auto" }} checked={replaceName} onChange={(e) => setReplaceName(e.target.checked)} />
+                Naam ook vervangen door &quot;{doc.product.name}&quot;
+              </label>
+            </div>
+          </div>
+        )
+      )}
+      {!linkedId && (
         <>
           <p className="muted" style={{ margin: "8px 0" }}>
             {link && suggestion
@@ -936,7 +1011,7 @@ function ModelDetail({ model, pick, busy, onClose, onToggle, onMake, onSplit, sp
               </>
             )}
 
-            <ShopLink model={model} doc={doc} link={link} onLinked={onLinked} />
+            <ShopLink model={model} doc={doc} link={link} onLinked={onLinked} category={category} />
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 16 }}>
               {pick?.product_id ? (
