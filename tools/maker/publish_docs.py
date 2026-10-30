@@ -41,6 +41,10 @@ def main():
             if not os.path.exists(src): print(f'  {cid}: foto ontbreekt: {rel}'); continue
             urls.append(supa.upload('product-images', f'maker/{cid}/{i + 1}.jpg', photo_bytes(src), 'image/jpeg'))
         doc['product']['image_urls'] = urls
+        for i, v in enumerate(doc.get('variations', [])):   # eigen foto van een variant (bv. de houten klok)
+            src = os.path.join(supa.MAKER_ROOT, v['image']) if v.get('image') else None
+            if src and os.path.exists(src):
+                v['image_url'] = supa.upload('product-images', f'maker/{cid}/v{i + 1}.jpg', photo_bytes(src), 'image/jpeg')
         doc['_source_md5'] = md5
         supa.rest('PATCH', f'maker_models?id=eq.{cid}', {'doc': doc, 'doc_updated_at': datetime.datetime.now(datetime.timezone.utc).isoformat()},
                   prefer='return=minimal')

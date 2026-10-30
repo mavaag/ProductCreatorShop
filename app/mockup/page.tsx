@@ -123,6 +123,13 @@ export default function MockupPage() {
     load();
   }
 
+  /** Kamerfoto aan/uit voor de automatische foto's van wandklokken (agent, tools/maker/clock_mockups.py). */
+  async function setClock(t: MockupTemplate, on: boolean) {
+    const { error } = await supabase.from("mockup_templates").update({ clock: on }).eq("id", t.id);
+    if (error) await alertDialog("Opslaan mislukt: " + error.message);
+    load();
+  }
+
   if (!ready) return null;
 
   const tech = TECHNIQUES.find((t) => t.key === technique)!;
@@ -165,6 +172,10 @@ export default function MockupPage() {
                         Gebruik voor Wall Art
                       </label>
                     )}
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 0 8px" }} title="De agent hangt elke wandklok in deze kamerfoto, in het kader (lege muur)">
+                      <input type="checkbox" style={{ width: "auto" }} checked={!!t.clock} onChange={(e) => setClock(t, e.target.checked)} />
+                      Gebruik voor klokken
+                    </label>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                       <button className="btn" onClick={() => setScreen({ kind: "compose", template: t })}>
                         {technique === "engrave" ? "Gravure plaatsen" : "Print plaatsen"}
