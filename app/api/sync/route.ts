@@ -187,6 +187,19 @@ export async function POST(request: Request) {
         continue;
       }
 
+      // Simpel product in WooCommerce dat hier varianten kreeg (bv. "Overnemen in shopproduct" in de Catalogus): omzetten
+      // naar een variabel product (zelfde id, URL en reviews) en de varianten aanmaken. Enkel als elke variant een prijs
+      // heeft -- een variabel product zonder (geprijsde) varianten kan niemand kopen.
+      const convert = parent.type === "simple";
+      if (convert) {
+        const unpriced = (p.product_variations as { sku: string; suggested_price: number | null }[]).filter((v) => v.suggested_price == null);
+        if (unpriced.length > 0) {
+          report.errors.push(`${p.sku}: staat in WooCommerce als simpel product en krijgt nu varianten -- vul eerst de prijs in van ${unpriced.map((v) => v.sku).join(", ")}`);
+          continue;
+        }
+        report.notes.push(`${p.sku}: ${dryRun ? "wordt" : "is"} omgezet van simpel naar variabel product met ${p.product_variations.length} varianten`);
+      }
+
       const remote = new Map<string, { id: number; regular_price: string; image_src: string | null; attributes: { id: number; name?: string; option: string }[] }>();
       for (let page = 1; ; page++) {
         const chunk = await wc(`/products/${parent.id}/variations?per_page=100&page=${page}`);
@@ -196,9 +209,15 @@ export async function POST(request: Request) {
 
       const updates: { id: number; regular_price?: string; image?: { src: string } | { id: number } }[] = [];
       const synced: string[] = [];
+      const toCreate: any[] = []; // varianten van een omgezet product (zie convert)
       for (const v of p.product_variations as { id: string; sku: string; suggested_price: number | null; image_url: string | null }[]) {
         if (v.suggested_price == null) continue;
         const rv = remote.get(v.sku);
+        if (!rv && convert) {
+          toCreate.push(v);
+          synced.push(v.id);
+          continue;
+        }
         if (!rv) {
           report.missingVariations.push(v.sku);
           continue;
@@ -229,8 +248,19 @@ export async function POST(request: Request) {
 
       // Update product metadata (naam, beschrijving, categorieën, afbeeldingen, attributen, etc.)
       if (!dryRun) {
-        await updateProductMetadata(wc, base, parent, p, report, categoryCache, attributeCache, mediaCache, effectivePublished);
+        const ok = await updateProductMetadata(wc, base, parent, p, report, categoryCache, attributeCache, mediaCache, effectivePublished, null, convert);
+        if (!ok && convert) {
+          report.errors.push(`${p.sku}: niet omgezet naar een variabel product (zie opmerkingen)`);
+          continue;
+        }
       }
+      if (toCreate.length > 0 && !dryRun) {
+        const payloads = await newVariationPayloads(base, p.attribute_names ?? [], toCreate, attributeCache, mediaCache);
+        for (let i = 0; i < payloads.length; i += 100) {
+          await wc(`/products/${parent.id}/variations/batch`, { method: "POST", body: JSON.stringify({ create: payloads.slice(i, i + 100) }) });
+        }
+      }
+      report.updated += toCreate.length;
 
       // Variant-attributen (globaal) herstellen/zetten wanneer ze ontbreken of afwijken van de app-data.
       // Nodig o.a. nadat een attribuut van lokaal naar globaal is omgezet: de varianten moeten dan opnieuw
@@ -437,7 +467,27 @@ async function createProduct(wc: WcFn, base: string, p: any, report: Report, cat
 
   if (simple) return true;
 
-  const toCreate = await Promise.all(variations.map(async (v) => ({
+  const toCreate = await newVariationPayloads(base, attrNames, variations, attributeCache, mediaCache);
+  try {
+    for (let i = 0; i < toCreate.length; i += 100) {
+      await wc(`/products/${created.id}/variations/batch`, { method: "POST", body: JSON.stringify({ create: toCreate.slice(i, i + 100) }) });
+    }
+  } catch (e: any) {
+    report.errors.push(`${p.sku}: product aangemaakt maar varianten mislukt (${e.message})`);
+    return false;
+  }
+  return true;
+}
+
+/** Payloads om varianten aan te maken in WooCommerce (sku, prijs, foto, attributen). attributeCache moet al gevuld zijn. */
+async function newVariationPayloads(
+  base: string,
+  attrNames: string[],
+  variations: { sku: string; attribute_values: Record<string, string>; suggested_price: number | null; image_url: string | null }[],
+  attributeCache: Map<string, number>,
+  mediaCache: Map<string, number | null>
+) {
+  return Promise.all(variations.map(async (v) => ({
     sku: v.sku,
     ...(v.suggested_price != null ? { regular_price: Number(v.suggested_price).toFixed(2) } : {}),
     ...(v.image_url ? { image: await resolveImageRef(base, v.image_url, mediaCache) } : {}),
@@ -449,15 +499,6 @@ async function createProduct(wc: WcFn, base: string, p: any, report: Report, cat
         return id ? { id, option: v.attribute_values[n] } : { name: n, option: v.attribute_values[n] };
       }),
   })));
-  try {
-    for (let i = 0; i < toCreate.length; i += 100) {
-      await wc(`/products/${created.id}/variations/batch`, { method: "POST", body: JSON.stringify({ create: toCreate.slice(i, i + 100) }) });
-    }
-  } catch (e: any) {
-    report.errors.push(`${p.sku}: product aangemaakt maar varianten mislukt (${e.message})`);
-    return false;
-  }
-  return true;
 }
 
 /** Update de metadata van een bestaand product in WooCommerce (naam, beschrijving, categorieën, afbeeldingen, attributen, etc.). */
@@ -471,7 +512,8 @@ async function updateProductMetadata(
   attributeCache: Map<string, number>,
   mediaCache: Map<string, number | null>,
   published: boolean, // effectieve publicatiestatus voor deze sync-run, zie reconcilePublishedStatus()
-  regularPrice: string | null = null // enkel voor simpele producten: nieuwe prijs, of null om ze niet te wijzigen
+  regularPrice: string | null = null, // enkel voor simpele producten: nieuwe prijs, of null om ze niet te wijzigen
+  makeVariable = false // simpel product in WooCommerce omzetten naar variabel (zelfde product-id)
 ): Promise<boolean> {
   const productId = parent.id;
   try {
@@ -503,6 +545,7 @@ async function updateProductMetadata(
     if (p.shipping_class) payload.shipping_class = p.shipping_class;
     if (images.length > 0) payload.images = images;
     if (regularPrice != null) payload.regular_price = regularPrice;
+    if (makeVariable) payload.type = "variable";
     const personalizationMeta = buildPersonalizationMetaData(parent.meta_data ?? [], p.personalization);
     if (personalizationMeta.length > 0) payload.meta_data = personalizationMeta;
 
