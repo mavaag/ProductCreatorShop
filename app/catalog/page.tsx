@@ -236,11 +236,6 @@ export default function CatalogPage() {
       </p>
 
       {/* agent bovenaan: tabbladen, filters en kaartjes staan zo samen */}
-      <SetMaker
-        designs={models.filter((m) => picks.has(m.id) && techniqueOf(m) === "engraving" && !isSet(m))}
-        onQueued={() => { setJobsKey((k) => k + 1); load(); }}
-      />
-
       <AgentPanel
         key={jobsKey}
         // te verwerken: geselecteerd zonder document, en ook een aangevinkt model dat al aan een shopproduct gekoppeld
@@ -322,6 +317,12 @@ export default function CatalogPage() {
       )}
 
       {error && <p className="warning">{error}</p>}
+
+      {/* vlak boven de kaartjes en blijft zichtbaar tijdens het scrollen: je vinkt ontwerpen aan in de lijst */}
+      <SetMaker
+        designs={models.filter((m) => picks.has(m.id) && techniqueOf(m) === "engraving" && !isSet(m))}
+        onQueued={() => { setJobsKey((k) => k + 1); load(); }}
+      />
 
       <div className="prod-viewbar">
         <div className="prod-viewbar-left">
@@ -459,7 +460,7 @@ function SetMaker({ designs, onQueued }: { designs: MakerModel[]; onQueued: () =
   }
 
   return (
-    <div className="card" style={{ marginBottom: 16, display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+    <div className="card" style={{ marginBottom: 16, display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap", position: "sticky", top: 66, zIndex: 20 }}>
       <p className="muted" style={{ flex: "1 1 100%", margin: 0 }}>
         <b style={{ color: "var(--yellow)" }}>{designs.length}</b> gravureontwerpen aangevinkt ({designs.map((d) => d.title).join(", ")}).
         Horen ze samen in één product, bv. een set van {designs.length} onderleggers? Maak er dan een set van; hij komt op de
