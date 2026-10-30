@@ -1038,6 +1038,10 @@ function ModelDetail({ model, pick, busy, onClose, onToggle, onMake, onSplit, sp
 /** Korte samenvatting van de productiegegevens van een variant (platen per laser / printschaal). */
 function productionLabel(p: Record<string, any>): string {
   if (p.status === "plates_to_generate") return `platen nog te maken (${p.scale_pct}%)`;
+  if (p.technology === "engraving") {
+    const mats = (p.materials ?? []).map((m: { name: string }) => m.name).join(" + ");
+    return `gravure op ${p.product_kind ?? "?"}${mats ? ` (${mats})` : " -- materiaal ontbreekt"}`;
+  }
   if (p.machines) {
     return Object.entries(p.machines as Record<string, { sheets: number; scale_pct: number }>)
       .map(([m, x]) => `${m}: ${x.sheets} platen @ ${x.scale_pct}%`)
