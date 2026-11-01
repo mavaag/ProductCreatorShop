@@ -15,12 +15,50 @@ const OPEN_STATUSES = ["processing", "on-hold"];
 
 type Line = {
   id: string; wc_line_id: number | null; name: string; sku: string | null; quantity: number;
+  total: number; total_tax: number | null; // regel excl. btw + btw (migratie 037)
   meta: { key: string; value: string }[] | null;
 };
 type Order = {
   id: string; wc_order_id: number; order_number: string; status: string; date_created: string;
   customer_name: string | null; shipping_method: string | null; customer_note: string | null; wc_order_items: Line[];
+  total: number; shipping_total: number | null; shipping_tax: number | null; discount_total: number | null;
 };
+
+const euro = (n: number) => n.toLocaleString("nl-BE", { style: "currency", currency: "EUR" });
+
+/**
+ * Betaald, verzending, kostprijs en winst van een bestelling. Prijzen in de shop zijn wat de klant betaalt (geen
+ * btw-plicht), dus omzet = regel + "btw" zoals WooCommerce ze opsplitst. Verzending gaat naar de vervoerder en telt
+ * niet mee in de winst. Kostprijs = huidige kostprijs van de variant in de beheertool.
+ */
+function OrderAmounts({ o, costBySku }: { o: Order; costBySku: Map<string, number> }) {
+  const shipping = Number(o.shipping_total ?? 0) + Number(o.shipping_tax ?? 0);
+  const productsPaid = o.wc_order_items.reduce((s, l) => s + Number(l.total) + Number(l.total_tax ?? 0), 0);
+  let cost = 0;
+  const missing: string[] = [];
+  for (const l of o.wc_order_items) {
+    const c = costBySku.get(l.sku ?? "");
+    if (c == null) missing.push(l.name);
+    else cost += c * Number(l.quantity);
+  }
+  const profit = productsPaid - cost;
+  const margin = productsPaid > 0 ? Math.round((profit / productsPaid) * 100) : 0;
+  return (
+    <div className="order-amounts">
+      <span><b>Betaald</b> {euro(Number(o.total))}</span>
+      <span><b>Producten</b> {euro(productsPaid)}</span>
+      <span><b>Verzending</b> {euro(shipping)}</span>
+      {Number(o.discount_total ?? 0) > 0 && <span><b>Korting</b> −{euro(Number(o.discount_total))}</span>}
+      <span><b>Kostprijs</b> {euro(cost)}</span>
+      <span className={profit >= 0 ? "order-profit" : "order-loss"} title="Producten min kostprijs (verzending niet meegerekend)">
+        <b>Winst</b> {missing.length ? "≥ " : ""}{euro(profit)} ({margin}%)
+      </span>
+      {missing.length > 0 && (
+        <span className="muted" title={missing.join("\n")}>kostprijs onbekend voor {missing.length} regel{missing.length === 1 ? "" : "s"}</span>
+      )}
+    </div>
+  );
+}
 type ProductInfo = { id: string; name: string; process_type: string };
 
 /** Bestanden die de klant opleverde of die de gravure-plugin maakte (logo, afbeelding, preview): bekijken of als zip. */
@@ -55,6 +93,7 @@ export default function ProductionQueue() {
   const [orders, setOrders] = useState<Order[] | null>(null);
   const [done, setDone] = useState<Set<string>>(new Set());
   const [productBySku, setProductBySku] = useState<Map<string, ProductInfo>>(new Map());
+  const [costBySku, setCostBySku] = useState<Map<string, number>>(new Map());
   const [folders, setFolders] = useState<Map<string, ProductFolder[]>>(new Map());
   const [hideDone, setHideDone] = useState(true);
   const [tech, setTech] = useState("");
@@ -62,7 +101,7 @@ export default function ProductionQueue() {
 
   async function load() {
     const { data, error } = await supabase.from("wc_orders")
-      .select("id, wc_order_id, order_number, status, date_created, customer_name, shipping_method, customer_note, wc_order_items(id, wc_line_id, name, sku, quantity, meta)")
+      .select("id, wc_order_id, order_number, status, date_created, customer_name, shipping_method, customer_note, total, shipping_total, shipping_tax, discount_total, wc_order_items(id, wc_line_id, name, sku, quantity, total, total_tax, meta)")
       .in("status", OPEN_STATUSES).order("date_created", { ascending: true });
     if (error) { setError(error.message); return; }
     const list = (data ?? []) as Order[];
@@ -70,7 +109,7 @@ export default function ProductionQueue() {
     const skus = Array.from(new Set(list.flatMap((o) => o.wc_order_items.map((l) => l.sku).filter(Boolean) as string[])));
     const [{ data: prod }, { data: vars }, { data: made }] = await Promise.all([
       skus.length ? supabase.from("products").select("id, sku, name, process_type").in("sku", skus) : Promise.resolve({ data: [] as any[] }),
-      skus.length ? supabase.from("product_variations").select("sku, product_id").in("sku", skus) : Promise.resolve({ data: [] as any[] }),
+      skus.length ? supabase.from("product_variations").select("sku, product_id, cost_price").in("sku", skus) : Promise.resolve({ data: [] as any[] }),
       wcIds.length ? supabase.from("wc_production").select("wc_order_id, wc_line_id").in("wc_order_id", wcIds) : Promise.resolve({ data: [] as any[] }),
     ]);
     // SKU van een variant -> zijn product; SKU van een simpel product -> dat product
@@ -84,6 +123,9 @@ export default function ProductionQueue() {
     for (const p of prod ?? []) bySku.set(p.sku, byId.get(p.id)!);
     for (const v of vars ?? []) if (byId.has(v.product_id)) bySku.set(v.sku, byId.get(v.product_id)!);
     setProductBySku(bySku);
+    const costs = new Map<string, number>();
+    for (const v of vars ?? []) if (v.cost_price != null && Number(v.cost_price) > 0) costs.set(v.sku, Number(v.cost_price));
+    setCostBySku(costs);
     setFolders(await loadProductFolders(supabase, Array.from(new Set(Array.from(bySku.values()).map((p) => p.id)))));
     setDone(new Set((made ?? []).map((m: any) => `${m.wc_order_id}:${m.wc_line_id}`)));
     setOrders(list);
@@ -142,6 +184,7 @@ export default function ProductionQueue() {
               {o.shipping_method && ` · ${o.shipping_method}`} · {o.status === "on-hold" ? "on hold" : "in verwerking"}
             </span>
           </div>
+          <OrderAmounts o={(orders ?? []).find((x) => x.id === o.id) ?? o} costBySku={costBySku} />
           {o.customer_note && <p className="warning" style={{ margin: "8px 0" }}>Opmerking klant: {o.customer_note}</p>}
           {o.wc_order_items.map((l) => {
             const p = productBySku.get(l.sku ?? "");

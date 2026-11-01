@@ -110,6 +110,10 @@ export async function POST(request: Request) {
       customer_name: [o.shipping?.first_name || o.billing?.first_name, o.shipping?.last_name || o.billing?.last_name].filter(Boolean).join(" "),
       customer_note: o.customer_note ?? "",
       shipping_method: (o.shipping_lines ?? []).map((s: any) => s.method_title).join(", "),
+      shipping_total: parseFloat(o.shipping_total) || 0,
+      shipping_tax: parseFloat(o.shipping_tax) || 0,
+      total_tax: parseFloat(o.total_tax) || 0,
+      discount_total: parseFloat(o.discount_total) || 0,
     }));
 
     const { data: upserted, error: upsertError } = await supabase
@@ -139,6 +143,7 @@ export async function POST(request: Request) {
           name: li.name,
           quantity: li.quantity,
           total: parseFloat(li.total) || 0,
+          total_tax: parseFloat(li.total_tax) || 0,
           meta: lineMeta(li),
         }));
       });
