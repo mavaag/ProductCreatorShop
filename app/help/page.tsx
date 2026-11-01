@@ -46,7 +46,7 @@ const SECTIONS: Section[] = [
           <li><b>Synchroniseren met WooCommerce</b>:
             <ul>
               <li><i>Bestaande synchroniseren</i>: stuurt wijzigingen (prijs, tekst, voorraad, ...) door naar producten die al in de shop staan.</li>
-              <li><i>Alles sync (+ nieuw)</i>: idem, en maakt producten die nog niet in de shop staan nieuw aan. Ontbrekende categorieën (bv. <i>Resin Printing &gt; Figurines</i>) worden automatisch aangemaakt.</li>
+              <li><i>Alles sync (+ nieuw)</i>: idem, en maakt producten die nog niet in de shop staan nieuw aan, en ook <b>nieuwe varianten</b> die je hier toevoegde aan een product dat al in de shop staat (sinds 01/11/2026; enkel varianten met een prijs). <i>Bestaande synchroniseren</i> maakt geen varianten aan, die meldt ze als ontbrekend. Ontbrekende categorieën (bv. <i>Resin Printing &gt; Figurines</i>) worden automatisch aangemaakt.</li>
             </ul>
           </li>
           <li><b>Importeren uit WooCommerce</b>: haalt producten die je rechtstreeks in de shop maakte of wijzigde naar hier (naam, beschrijving, categorieën, afbeeldingen, gewicht, verzendklasse). De prijs blijft die van de beheertool.</li>

@@ -9,6 +9,7 @@ import { gravureSettingsMeta, gravureImageMeta, withExistingMetaIds, metaUpToDat
 //   * producten die nog niet bestaan: worden enkel aangemaakt als createMissing true is (variabel product met
 //     attributen, varianten + prijzen, beschrijving, categorieën, afbeelding(en), gewicht en verzendklasse).
 //     Anders worden ze gerapporteerd.
+//   * varianten die nog niet in de shop staan bij een bestaand variabel product: idem, enkel met createMissing.
 //
 // Attributen: elk product-attribuut (bv. "Kleur", "Maat") wordt gekoppeld aan het GLOBALE WooCommerce-
 // attribuut met die naam (Producten > Attributen). Bestaat dat globale attribuut nog niet, dan maakt de
@@ -213,9 +214,12 @@ export async function POST(request: Request) {
       for (const v of p.product_variations as { id: string; sku: string; suggested_price: number | null; image_url: string | null }[]) {
         if (v.suggested_price == null) continue;
         const rv = remote.get(v.sku);
-        if (!rv && convert) {
+        // Nieuwe variant (omgezet product, of een variant die je in de app toevoegde aan een bestaand variabel
+        // product): aanmaken -- bij een bestaand product enkel als je "ook nieuwe aanmaken" koos.
+        if (!rv && (convert || createMissing)) {
           toCreate.push(v);
           synced.push(v.id);
+          if (!convert) report.notes.push(`${p.sku}: variant ${v.sku} ${dryRun ? "wordt" : "is"} aangemaakt in de shop`);
           continue;
         }
         if (!rv) {
