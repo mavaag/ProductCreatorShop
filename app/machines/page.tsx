@@ -198,7 +198,7 @@ export default function MachinesPage() {
   async function saveEdit(id: string) {
     setSaving(true);
     await supabase.from("machines").update(editForm).eq("id", id);
-    await offerRecalculation(supabase, "Machinewijziging");
+    await offerRecalculation(supabase, "Machinewijziging", { machineId: id });
     setSaving(false);
     setEditingId(null);
     load();

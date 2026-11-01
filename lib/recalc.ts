@@ -15,12 +15,32 @@ export type RecalcChange = {
   margin: number;
 };
 
+/** Beperkt een herberekening tot de varianten die een bepaald materiaal of een bepaalde machine gebruiken. */
+export type RecalcScope = { materialId: string } | { machineId: string };
+
+function usesScope(inputs: CostInputs, scope: RecalcScope): boolean {
+  if ("materialId" in scope) return (inputs.materials ?? []).some((l) => l.material_id === scope.materialId);
+  return (inputs.machine_time ?? []).some((l) => l.machine_id === scope.machineId);
+}
+
+/** Geen materialen, machinetijd, arbeid of andere kosten: de prijs is met de hand gezet (bv. geïmporteerd). */
+function hasNoCostBuildup(inputs: CostInputs): boolean {
+  return (
+    (inputs.materials ?? []).length === 0 &&
+    (inputs.machine_time ?? []).length === 0 &&
+    !(inputs.labor_minutes > 0 && inputs.labor_rate > 0) &&
+    !((inputs.other_costs ?? 0) > 0)
+  );
+}
+
 /**
- * Berekent voor alle varianten (of enkel de opgegeven productIds) de prijs opnieuw met de
- * huidige materiaal- en machinegegevens, en geeft enkel de varianten terug waarvan de
- * voorgestelde verkoopprijs of kostprijs effectief verandert.
+ * Berekent voor alle varianten (of enkel de opgegeven productIds, of enkel de varianten die een bepaald
+ * materiaal/machine gebruiken) de prijs opnieuw met de huidige materiaal- en machinegegevens, en geeft enkel
+ * de varianten terug waarvan de voorgestelde verkoopprijs of kostprijs effectief verandert.
+ * Varianten zonder kostenopbouw (prijs met de hand gezet, bv. geïmporteerd) worden overgeslagen -- anders
+ * zou hun prijs naar €0 gaan.
  */
-export async function previewRecalculation(supabase: SupabaseClient, productIds?: string[]): Promise<RecalcChange[]> {
+export async function previewRecalculation(supabase: SupabaseClient, productIds?: string[], scope?: RecalcScope): Promise<RecalcChange[]> {
   const [{ data: machines }, { data: materials }] = await Promise.all([
     supabase.from("machines").select("*"),
     supabase.from("materials").select("*"),
@@ -35,6 +55,8 @@ export async function previewRecalculation(supabase: SupabaseClient, productIds?
   const changes: RecalcChange[] = [];
   for (const v of (variations ?? []) as ProductVariation[]) {
     const inputs: CostInputs = { ...EMPTY_COST_INPUTS, ...(v.cost_inputs ?? {}) };
+    if (scope && !usesScope(inputs, scope)) continue;
+    if (hasNoCostBuildup(inputs)) continue;
     const result = calculatePrice(inputs, machinesById, materialsById);
     const same =
       numEq(v.suggested_price, result.suggestedPrice) &&
@@ -99,13 +121,14 @@ export async function recordPriceHistory(
 
 /**
  * Handige wrapper voor pagina's die een materiaal/machine opslaan: vraagt of de prijzen van de
- * betrokken varianten meteen herberekend mogen worden. Geeft het aantal aangepaste varianten terug.
+ * varianten die DAT materiaal of DIE machine gebruiken meteen herberekend mogen worden.
+ * Geeft het aantal aangepaste varianten terug.
  */
-export async function offerRecalculation(supabase: SupabaseClient, reason: string): Promise<number> {
-  const changes = await previewRecalculation(supabase);
+export async function offerRecalculation(supabase: SupabaseClient, reason: string, scope: RecalcScope): Promise<number> {
+  const changes = await previewRecalculation(supabase, undefined, scope);
   if (changes.length === 0) return 0;
   const ok = await confirmDialog(
-    `${changes.length} variant(en) krijgen een andere prijs door deze wijziging.\n\nNu herberekenen en in de prijsgeschiedenis bewaren?\n(Je kan dit ook later doen via Prijzen > Herbereken.)`
+    `${changes.length} variant(en) die dit ${"materialId" in scope ? "materiaal" : "machine"} gebruiken krijgen een andere prijs.\n\nNu herberekenen en in de prijsgeschiedenis bewaren?\n(Je kan dit ook later doen via Prijzen > Herbereken.)`
   );
   if (!ok) return 0;
   await applyRecalculation(supabase, changes, reason);

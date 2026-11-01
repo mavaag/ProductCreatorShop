@@ -198,7 +198,7 @@ export default function MaterialsPage() {
     setSaving(true);
     const priceChanged = materials.find((m) => m.id === id)?.price_per_unit !== editForm.price_per_unit;
     await supabase.from("materials").update(toPayload(editForm)).eq("id", id);
-    if (priceChanged) await offerRecalculation(supabase, `Materiaalprijs: ${editForm.name}`);
+    if (priceChanged) await offerRecalculation(supabase, `Materiaalprijs: ${editForm.name}`, { materialId: id });
     setSaving(false);
     setEditingId(null);
     load();
@@ -223,7 +223,7 @@ export default function MaterialsPage() {
         );
         if (update) {
           await supabase.from("materials").update({ price_per_unit: pricePerUnit }).eq("id", material.id);
-          await offerRecalculation(supabase, `Materiaalbestelling: ${material.name}`);
+          await offerRecalculation(supabase, `Materiaalbestelling: ${material.name}`, { materialId: material.id });
         }
       }
     }
