@@ -633,7 +633,7 @@ export default function CollectionsPage() {
                 .map((p) => (
                   <div key={p.id} className="coll-product">
                     {firstImage(p.image_url) ? <img src={firstImage(p.image_url)} alt="" loading="lazy" /> : <div className="coll-product-noimg" />}
-                    <Link href={`/products/${p.id}`} className="coll-product-name" title={p.sku}>{p.name}</Link>
+                    <Link href={`/products/${p.id}`} className="coll-product-name" title={`${p.name} (${p.sku})`}>{p.name}</Link>
                     {!p.published && <span className="muted" style={{ fontSize: 11 }}>niet gepubliceerd</span>}
                     {productChanged(p) && <span className="coll-dot" title="Wijziging nog niet in de shop" />}
                     <button className="btn secondary coll-remove" title="Uit de collectie halen" onClick={() => removeProduct(openCollection.id, p.id)}>×</button>
@@ -648,7 +648,7 @@ export default function CollectionsPage() {
             {candidates.map((p) => (
               <button key={p.id} type="button" className="coll-product coll-candidate" onClick={() => addProduct(openCollection.id, p.id)} title={`${p.sku} toevoegen`}>
                 {firstImage(p.image_url) ? <img src={firstImage(p.image_url)} alt="" loading="lazy" /> : <div className="coll-product-noimg" />}
-                <span className="coll-product-name">{p.name}</span>
+                <span className="coll-product-name" title={p.name}>{p.name}</span>
                 <span className="coll-add">+</span>
               </button>
             ))}
