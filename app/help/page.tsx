@@ -198,7 +198,7 @@ const SECTIONS: Section[] = [
     body: (
       <>
         <p><b>Overzicht:</b> verkoopcijfers uit WooCommerce: omzet en aantal bestellingen per maand, per status en de meest verkochte producten, voor een gekozen periode. Nieuwe bestellingen komen <b>automatisch elke 10 minuten</b> binnen (de agent op de NAS haalt ze op); met <i>Synchroniseer bestellingen</i> haal je ze meteen op.</p>
-        <p><b>Productie:</b> de open bestellingen (in verwerking / on hold), oudste eerst. Per regel zie je het aantal, de gekozen opties (maat, kleur, personalisatie), de opmerking van de klant en de <b>productiebestanden</b>: klap de map open en download een bestand of de hele map als zip, of kopieer het NAS-pad. Vink een regel af als hij gemaakt is.</p>
+        <p><b>Productie:</b> de open bestellingen (in verwerking / on hold), oudste eerst. Per regel zie je het aantal, de gekozen opties (maat, kleur, personalisatie), de opmerking van de klant en de <b>productiebestanden</b>: klap de map open en download een bestand of de hele map als zip, of kopieer het NAS-pad. Bij een <b>gepersonaliseerd</b> product (gravure of UV-print met eigen tekst, logo of foto) zie je ook de <b>bestanden van de klant</b>: het opgeladen logo of de foto en de preview zoals de klant ze zag. Klik op een bestand om het te openen, of download ze samen met <i>Download klantbestanden (zip)</i>. Tekst op meerdere lijnen staat bij de opties als <i>lijn 1 / lijn 2</i>, met het lettertype per lijn. Vink een regel af als hij gemaakt is.</p>
         <p>Waar komen de bestanden vandaan?</p>
         <ul>
           <li>Product gemaakt vanuit de <b>Catalogus</b>: het model met zijn LaserReady- of PrintReady-sets.</li>

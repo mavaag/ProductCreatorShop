@@ -63,7 +63,7 @@ export async function loadProductFolders(
   return out;
 }
 
-async function authHeader(supabase: SupabaseClient): Promise<Record<string, string>> {
+export async function authHeader(supabase: SupabaseClient): Promise<Record<string, string>> {
   const { data } = await supabase.auth.getSession();
   return { Authorization: `Bearer ${data.session?.access_token}` };
 }
@@ -136,4 +136,50 @@ export function matchesFileFilter(s: FileStatus | undefined, filter: FileFilter)
     case "none": return !s?.hasFolder && !s?.hasSuggestion;
     default: return true;
   }
+}
+
+/** Bestand van de klant bij een bestelregel (opgeladen logo/afbeelding of preview van de gravure-plugin). */
+export type CustomerFile = { label: string; url: string; fileName: string };
+
+const CUSTOMER_FILE = /^https?:\/\/\S+\/wp-content\/uploads\/tdp-gravure\/\S+\.(png|jpe?g|webp|gif|svg|pdf)$/i;
+
+/** Splitst de opties van een bestelregel in gewone opties en bestanden van de klant. */
+export function splitOrderMeta(meta: { key: string; value: string }[] | null, prefix: string): {
+  options: { key: string; value: string }[];
+  files: CustomerFile[];
+} {
+  const options: { key: string; value: string }[] = [];
+  const files: CustomerFile[] = [];
+  for (const m of meta ?? []) {
+    const v = String(m.value ?? "").trim();
+    if (CUSTOMER_FILE.test(v)) {
+      const ext = v.split(".").pop()!.toLowerCase();
+      const slug = m.key.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "bestand";
+      files.push({ label: m.key, url: v, fileName: `${prefix}-${slug}.${ext}` });
+    } else {
+      options.push(m);
+    }
+  }
+  return { options, files };
+}
+
+/** Alle bestanden van de klant bij een bestelregel als één zip downloaden. */
+export async function downloadCustomerFiles(supabase: SupabaseClient, zipName: string, files: CustomerFile[]): Promise<void> {
+  const res = await fetch("/api/order-files", {
+    method: "POST",
+    headers: { ...(await authHeader(supabase)), "Content-Type": "application/json" },
+    body: JSON.stringify({ name: zipName, files: files.map((f) => ({ url: f.url, name: f.fileName })) }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? res.statusText);
+  }
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${zipName}.zip`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }

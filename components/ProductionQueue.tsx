@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { PROCESS_TYPE_LABELS } from "@/lib/types";
-import { ProductFolder, loadProductFolders } from "@/lib/productionFiles";
+import { CustomerFile, ProductFolder, downloadCustomerFiles, loadProductFolders, splitOrderMeta } from "@/lib/productionFiles";
 import FolderBrowser from "@/components/FolderBrowser";
 
 // Tabblad Bestellingen > Productie: openstaande bestellingen (in verwerking / on hold) met per regel het product,
@@ -22,6 +22,34 @@ type Order = {
   customer_name: string | null; shipping_method: string | null; customer_note: string | null; wc_order_items: Line[];
 };
 type ProductInfo = { id: string; name: string; process_type: string };
+
+/** Bestanden die de klant opleverde of die de gravure-plugin maakte (logo, afbeelding, preview): bekijken of als zip. */
+function CustomerFiles({ files, zipName }: { files: CustomerFile[]; zipName: string }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function zip() {
+    setBusy(true); setError(null);
+    try { await downloadCustomerFiles(supabase, zipName, files); } catch (e: any) { setError(e.message); }
+    setBusy(false);
+  }
+  return (
+    <div className="customer-files">
+      <div className="customer-files-head">
+        <b>Bestanden van de klant</b>
+        <button type="button" className="btn secondary" disabled={busy} onClick={zip}>{busy ? "Bezig..." : "Download klantbestanden (zip)"}</button>
+      </div>
+      <div className="customer-files-list">
+        {files.map((f) => (
+          <a key={f.url} href={f.url} target="_blank" rel="noreferrer" className="customer-file" title={`${f.label} -- openen in een nieuw tabblad`}>
+            {/\.pdf$/i.test(f.url) ? <span className="customer-file-pdf">PDF</span> : <img src={f.url} alt={f.label} loading="lazy" />}
+            <span>{f.label}</span>
+          </a>
+        ))}
+      </div>
+      {error && <p className="warning" style={{ margin: "4px 0" }}>{error}</p>}
+    </div>
+  );
+}
 
 export default function ProductionQueue() {
   const [orders, setOrders] = useState<Order[] | null>(null);
@@ -119,6 +147,7 @@ export default function ProductionQueue() {
             const p = productBySku.get(l.sku ?? "");
             const key = `${o.wc_order_id}:${l.wc_line_id}`;
             const fs = p ? folders.get(p.id) ?? [] : [];
+            const { options, files } = splitOrderMeta(l.meta, `${o.order_number}-${l.wc_line_id ?? "regel"}`);
             return (
               <div key={l.id} className="production-line">
                 <label className="production-check" title="Gemaakt">
@@ -129,11 +158,14 @@ export default function ProductionQueue() {
                     <b>{l.quantity} ×</b> {l.name} {l.sku && <span className="muted mono">{l.sku}</span>}
                     {p && <> · <span className="pill cyan">{PROCESS_TYPE_LABELS[p.process_type as keyof typeof PROCESS_TYPE_LABELS] ?? p.process_type}</span> <Link href={`/products/${p.id}`}>product</Link></>}
                   </div>
-                  {(l.meta ?? []).length > 0 && (
-                    <div className="muted" style={{ fontSize: 12.5 }}>{(l.meta ?? []).map((m) => `${m.key}: ${m.value}`).join(" · ")}</div>
+                  {options.length > 0 && (
+                    <div className="muted" style={{ fontSize: 12.5 }}>
+                      {options.map((m) => `${m.key}: ${String(m.value).split(/\r?\n/).join(" / ")}`).join(" · ")}
+                    </div>
                   )}
+                  {files.length > 0 && <CustomerFiles files={files} zipName={`bestelling-${o.order_number}-regel-${l.wc_line_id ?? l.id}`} />}
                   {!p ? <p className="muted" style={{ margin: "4px 0" }}>Geen product met deze SKU in de beheertool.</p>
-                    : fs.length === 0 ? <p className="muted" style={{ margin: "4px 0" }}>Nog geen bestanden gekoppeld -- koppel een map op de <Link href={`/products/${p.id}`}>productpagina</Link>.</p>
+                    : fs.length === 0 ? (files.length > 0 ? null : <p className="muted" style={{ margin: "4px 0" }}>Nog geen bestanden gekoppeld -- koppel een map op de <Link href={`/products/${p.id}`}>productpagina</Link>.</p>)
                     : fs.map((f) => <FolderBrowser key={f.path} path={f.path} title={f.path} />)}
                 </div>
               </div>
