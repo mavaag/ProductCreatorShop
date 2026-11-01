@@ -85,13 +85,22 @@ export async function findSupplierImage(pageUrl: string): Promise<string | null>
   const fromQuery = imageFromQuery(pageUrl);
   if (fromQuery) return fromQuery;
   if (IMG_EXT.test(new URL(pageUrl).pathname)) return pageUrl;
-  const res = await fetch(pageUrl, {
-    headers: { "User-Agent": UA, Accept: "text/html,application/xhtml+xml", "Accept-Language": "nl-BE,nl;q=0.9,en;q=0.8" },
-    redirect: "follow",
-    cache: "no-store",
-    signal: AbortSignal.timeout(20000),
-  });
-  if (!res.ok) throw new Error(`de winkel antwoordde met ${res.status}`);
+  const get = () =>
+    fetch(pageUrl, {
+      headers: { "User-Agent": UA, Accept: "text/html,application/xhtml+xml", "Accept-Language": "nl-BE,nl;q=0.9,en;q=0.8" },
+      redirect: "follow",
+      cache: "no-store",
+      signal: AbortSignal.timeout(20000),
+    });
+  let res = await get();
+  if (res.status === 429 || res.status === 503) {
+    // Te veel verzoeken (bv. xTool): één keer opnieuw proberen na een korte pauze.
+    await new Promise((r) => setTimeout(r, 3000));
+    res = await get();
+  }
+  if (!res.ok) {
+    throw new Error(res.status === 429 ? "de winkel laat even geen verzoeken toe (429) -- probeer later opnieuw" : `de winkel antwoordde met ${res.status}`);
+  }
   const type = res.headers.get("content-type") ?? "";
   if (type.startsWith("image/")) return res.url || pageUrl;
   const html = (await res.text()).slice(0, 1_500_000);
