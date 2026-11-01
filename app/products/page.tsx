@@ -173,6 +173,8 @@ export default function ProductsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkMargin, setBulkMargin] = useState("");
   const [bulkCategory, setBulkCategory] = useState("");
+  const [collections, setCollections] = useState<{ id: string; name: string }[]>([]);
+  const [bulkCollection, setBulkCollection] = useState("");
   const [wcCategories, setWcCategories] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [duplicateTarget, setDuplicateTarget] = useState<{ product: ProductWithVariations; suggested: string } | null>(null);
@@ -193,6 +195,9 @@ export default function ProductsPage() {
       .order("name");
     setProducts((data as ProductWithVariations[]) ?? []);
     setFileStatus(await loadFileStatus(supabase));
+    // Collecties (migratie 035) -- ontbreekt de tabel nog, dan blijft de lijst gewoon leeg.
+    const { data: cols } = await supabase.from("collections").select("id, name").order("sort_order").order("name");
+    setCollections((cols as { id: string; name: string }[]) ?? []);
   }
 
   useEffect(() => {
@@ -493,6 +498,22 @@ export default function ProductsPage() {
     setMessage(`Categorie van ${selected.size} product(en) gezet op "${category}". Vergeet niet te synchroniseren met WooCommerce.`);
     setBulkCategory("");
     setBusy(false);
+    load();
+  }
+
+  /** Voegt de geselecteerde producten toe aan een collectie (of haalt ze eruit). Hun eigen categorieën blijven. */
+  async function bulkCollectionMembership(add: boolean) {
+    const col = collections.find((c) => c.id === bulkCollection);
+    if (!col) return;
+    const ids = Array.from(selected);
+    setBusy(true);
+    const { error } = add
+      ? await supabase.from("product_collections").upsert(ids.map((product_id) => ({ product_id, collection_id: col.id })), { onConflict: "product_id,collection_id", ignoreDuplicates: true })
+      : await supabase.from("product_collections").delete().eq("collection_id", col.id).in("product_id", ids);
+    if (!error) await supabase.from("products").update({ updated_at: new Date().toISOString() }).in("id", ids);
+    setBusy(false);
+    if (error) return setMessage(`Collectie niet bijgewerkt: ${error.message}`);
+    setMessage(`${ids.length} product(en) ${add ? `toegevoegd aan` : `uit`} collectie "${col.name}"${add ? "" : " gehaald"}. Vergeet niet te synchroniseren met WooCommerce.`);
     load();
   }
 
@@ -923,6 +944,16 @@ export default function ProductsPage() {
             </datalist>
           )}
           <button className="btn secondary" disabled={busy || !bulkCategory.trim()} onClick={bulkSetCategory}>Categorie instellen</button>
+          {collections.length > 0 && (
+            <>
+              <select style={{ width: 170 }} value={bulkCollection} onChange={(e) => setBulkCollection(e.target.value)} title="Collectie">
+                <option value="">Collectie...</option>
+                {collections.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <button className="btn secondary" disabled={busy || !bulkCollection} onClick={() => bulkCollectionMembership(true)}>Aan collectie toevoegen</button>
+              <button className="btn secondary" disabled={busy || !bulkCollection} onClick={() => bulkCollectionMembership(false)}>Uit collectie halen</button>
+            </>
+          )}
           <button className="btn danger" disabled={busy} onClick={bulkDelete}>Verwijderen</button>
           <button className="btn secondary" disabled={busy} onClick={() => runSync(true, Array.from(selected))}>Synchroniseer geselecteerde</button>
           <button className="btn secondary" onClick={() => setSelected(new Set())}>Selectie wissen</button>

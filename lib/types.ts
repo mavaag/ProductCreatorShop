@@ -125,6 +125,22 @@ export type Product = {
   updated_at: string;
 };
 
+/** Collectie (migratie 035), bv. Kerst of Halloween -- in WooCommerce een categorie onder "Collecties". */
+export type Collection = {
+  id: string;
+  name: string;
+  description: string;
+  banner_url: string | null;
+  season_start: string | null; // 'MM-DD'
+  season_end: string | null; // 'MM-DD'
+  highlight: "season" | "always" | "never"; // wanneer uitlichten op de homepage
+  sort_order: number;
+  woo_category_id: number | null;
+  woo_image_src: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 /**
  * Meerprijs-berekening voor een "personalisatie"-plugin (klant upload zelf een logo/tekening/tekst,
  * bv. de 3DP Gravure Preview- of 3DP T-shirt Preview-plugin). Deze meerprijs staat los van de normale

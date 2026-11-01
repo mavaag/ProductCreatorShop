@@ -44,6 +44,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="navlinks">
             <Link href="/products">Producten</Link>
             <Link href="/catalog">Catalogus</Link>
+            <Link href="/collections">Collecties</Link>
             <Link href="/machines">Machines</Link>
             <Link href="/materials">Materialen</Link>
             <Link href="/margins">Marges</Link>

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { gravureSettingsMeta, gravureImageMeta, withExistingMetaIds, metaUpToDate, variationGravureMeta } from "@/lib/gravure";
+import { COLLECTIONS_PARENT, collectionCategoryPath, collectionMarker } from "@/lib/collections";
 
 // Synchroniseert rechtstreeks met WooCommerce via de REST API, zonder CSV-import:
 //   * producten die al in de shop staan (zelfde SKU): update product metadata (naam, beschrijving, categorieën,
@@ -10,6 +11,8 @@ import { gravureSettingsMeta, gravureImageMeta, withExistingMetaIds, metaUpToDat
 //     attributen, varianten + prijzen, beschrijving, categorieën, afbeelding(en), gewicht en verzendklasse).
 //     Anders worden ze gerapporteerd.
 //   * varianten die nog niet in de shop staan bij een bestaand variabel product: idem, enkel met createMissing.
+//   * collecties (Kerst, Halloween, ...): elke collectie wordt een categorie "Collecties > <naam>" met tekst en banner
+//     (enkel in de eerste batch); de producten van een collectie krijgen die categorie er bij hun eigen categorieën bij.
 //
 // Attributen: elk product-attribuut (bv. "Kleur", "Maat") wordt gekoppeld aan het GLOBALE WooCommerce-
 // attribuut met die naam (Producten > Attributen). Bestaat dat globale attribuut nog niet, dan maakt de
@@ -108,7 +111,7 @@ export async function POST(request: Request) {
 
   let query = supabase
     .from("products")
-    .select("id, sku, name, published, last_exported_published, attribute_names, default_attribute_values, description, short_description, categories, image_url, weight_kg, shipping_class, personalization, product_variations(id, sku, attribute_values, suggested_price, image_url, gravure)")
+    .select("id, sku, name, published, last_exported_published, attribute_names, default_attribute_values, description, short_description, categories, image_url, weight_kg, shipping_class, personalization, product_variations(id, sku, attribute_values, suggested_price, image_url, gravure), product_collections(collections(name))")
     .order("name");
   if (type) query = query.eq("process_type", type);
   if (productIds) query = query.in("id", productIds);
@@ -130,6 +133,21 @@ export async function POST(request: Request) {
   const attributeCache = new Map<string, number>(); // 0 = bevestigd geen globaal attribuut met die naam
   const mediaCache = new Map<string, number | null>(); // url -> bestaand media-id (of null = geen match gevonden)
   const allProducts = (products ?? []) as any[];
+  // Collecties komen er als extra categorie "Collecties > <naam>" bij (de eigen categorieën blijven).
+  for (const p of allProducts) {
+    const paths = ((p.product_collections ?? []) as { collections: { name: string } | null }[])
+      .map((pc) => pc.collections?.name)
+      .filter((n): n is string => !!n)
+      .map(collectionCategoryPath);
+    if (paths.length > 0) p.categories = [String(p.categories ?? "").trim(), ...paths].filter(Boolean).join(", ");
+  }
+  if (!dryRun && offset === 0) {
+    try {
+      await syncCollections(wc, supabase, report, categoryCache);
+    } catch (e: any) {
+      report.errors.push(`Collecties: ${e.message}`);
+    }
+  }
   const total = allProducts.length;
   const batch = limit != null ? allProducts.slice(offset, offset + limit) : allProducts.slice(offset);
 
@@ -324,6 +342,75 @@ export async function POST(request: Request) {
 
   const done = offset + batch.length >= total;
   return NextResponse.json({ dryRun, total, offset, processed: batch.length, nextOffset: done ? null : offset + batch.length, done, ...report });
+}
+
+/** Tekst (zoals ingetypt in de beheertool) naar eenvoudige HTML voor de categoriebeschrijving. */
+function textToHtml(text: string): string {
+  const esc = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return esc
+    .split(/\n{2,}/)
+    .map((para) => para.trim())
+    .filter(Boolean)
+    .map((para) => `<p>${para.replace(/\n/g, "<br>")}</p>`)
+    .join("\n");
+}
+
+/**
+ * Zet elke collectie als categorie onder "Collecties" in WooCommerce (aanmaken of bijwerken: naam, tekst, banner,
+ * volgorde) en onthoudt het categorie-id. De banner wordt enkel opnieuw opgeladen als ze veranderd is.
+ */
+async function syncCollections(wc: WcFn, supabase: any, report: Report, categoryCache: Map<string, number>): Promise<void> {
+  const { data, error } = await supabase.from("collections").select("*").order("sort_order").order("name");
+  if (error) {
+    // Migratie 035 nog niet uitgevoerd: niets te doen.
+    if (/collections/.test(error.message)) return;
+    throw new Error(error.message);
+  }
+  const collections = (data ?? []) as any[];
+  if (collections.length === 0) return;
+  const parentId = await resolveCategory(wc, COLLECTIONS_PARENT, categoryCache);
+  let changed = 0;
+  for (const c of collections) {
+    try {
+      const payload: Record<string, unknown> = {
+        name: c.name,
+        parent: parentId,
+        description: [textToHtml(c.description ?? ""), collectionMarker(c)].filter(Boolean).join("\n"),
+        menu_order: c.sort_order ?? 0,
+      };
+      const banner: string | null = c.banner_url || null;
+      if (banner !== (c.woo_image_src || null)) payload.image = banner ? { src: banner } : {};
+
+      let id: number | null = c.woo_category_id ?? null;
+      let saved: any = null;
+      if (id) {
+        try {
+          saved = await wc(`/products/categories/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+        } catch (e: any) {
+          if (!/WooCommerce 404/.test(e.message)) throw e;
+          id = null; // categorie in WooCommerce verwijderd: opnieuw aanmaken
+        }
+      }
+      if (!id) {
+        const found: any[] = await wc(`/products/categories?per_page=100&parent=${parentId}&search=${encodeURIComponent(c.name)}`);
+        const match = found.find((x) => String(x.name).replace(/&amp;/g, "&").toLowerCase() === String(c.name).toLowerCase());
+        if (!banner) delete payload.image;
+        else payload.image = { src: banner };
+        saved = match
+          ? await wc(`/products/categories/${match.id}`, { method: "PUT", body: JSON.stringify(payload) })
+          : await wc("/products/categories", { method: "POST", body: JSON.stringify(payload) });
+        id = saved.id as number;
+      }
+      categoryCache.set(`/${COLLECTIONS_PARENT.toLowerCase()}/${String(c.name).trim().toLowerCase()}`, id as number);
+      if (id !== c.woo_category_id || banner !== (c.woo_image_src || null)) {
+        await supabase.from("collections").update({ woo_category_id: id, woo_image_src: banner }).eq("id", c.id);
+      }
+      changed++;
+    } catch (e: any) {
+      report.errors.push(`Collectie "${c.name}": ${e.message}`);
+    }
+  }
+  report.notes.push(`Collecties: ${changed} van ${collections.length} bijgewerkt in WooCommerce (categorie "${COLLECTIONS_PARENT}").`);
 }
 
 /** Een product zonder attributen is een simpel product (WooCommerce type "simple"). */

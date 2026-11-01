@@ -122,6 +122,27 @@ const SECTIONS: Section[] = [
     ),
   },
   {
+    id: "collecties",
+    title: "Collecties",
+    href: "/collections",
+    body: (
+      <>
+        <p>
+          Thema&apos;s zoals Kerst, Halloween of Moederdag (sinds 01/11/2026). Elke collectie wordt in de shop een eigen pagina: een categorie
+          <i> Collecties &gt; naam</i> met de tekst en de banner van de collectie. Een product kan in meerdere collecties zitten en blijft ook in zijn gewone categorie.
+        </p>
+        <ul>
+          <li><b>Nieuwe collectie</b>: naam, tekst, banner (breed beeld, bv. 1600 × 500) en seizoen (dag + maand, zonder jaar: het komt elk jaar terug; mag over nieuwjaar lopen). Met <i>Snel starten</i> vul je een veelgebruikte collectie met een voorstel voor het seizoen in.</li>
+          <li><b>Uitlichten op de homepage</b>: <i>tijdens het seizoen</i>, <i>altijd</i> of <i>nooit</i>. Bovenaan zie je welke collecties nu uitgelicht zijn.</li>
+          <li><b>Producten toevoegen</b>: via <i>Producten</i> op de collectie (zoeken en klikken), per product met de vinkjes bij <i>Collecties</i> op de productpagina, of in bulk op de pagina Producten: selecteer, kies de collectie en klik <i>Aan collectie toevoegen</i> (of <i>Uit collectie halen</i>).</li>
+          <li>Wijzigingen gaan naar de shop bij de volgende <b>synchronisatie</b>: de collectie (naam, tekst, banner, volgorde) en de categorieën van de producten. Gewijzigde producten krijgen het label <i>Gewijzigd</i>.</li>
+          <li><b>Verwijderen</b> haalt de collectie en haar pagina in de shop weg; de producten zelf blijven bestaan.</li>
+          <li>Collecties staan niet in de lijst van gewone categorieën: beheer ze hier, niet via het categorieveld van een product.</li>
+        </ul>
+      </>
+    ),
+  },
+  {
     id: "machines",
     title: "Machines",
     href: "/machines",
