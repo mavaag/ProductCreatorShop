@@ -22,6 +22,7 @@ export type Material = {
   // zodat de hoeveelheid voor een personalisatiezone geschat kan worden uit de printzone-afmetingen
   // i.p.v. gokken -- zie PersonalizationZone hieronder.
   ink_coverage_ml_per_m2: number | null;
+  image_url?: string | null; // migratie 034 -- foto van het materiaal (van de leverancierslink of zelf opgeladen)
 };
 
 export type MaterialLine = {

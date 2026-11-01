@@ -7,7 +7,8 @@ import Link from "next/link";
 import { Material, MaterialOrder, ProductVariation } from "@/lib/types";
 import { offerRecalculation } from "@/lib/recalc";
 import { createMaterialOrder, deleteMaterialOrder, markMaterialOrderReceived, NewMaterialOrder } from "@/lib/materialOrders";
-import { confirmDialog } from "@/components/DialogHost";
+import { alertDialog, confirmDialog } from "@/components/DialogHost";
+import { uploadProductImage } from "@/lib/uploadImage";
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -24,8 +25,8 @@ const CATEGORIES = [
   { value: "overig", label: "Overig" },
 ];
 
-type MaterialForm = { name: string; category: string; unit: string; price_per_unit: number; stock_quantity: string; min_stock: string; supplier_name: string; supplier_url: string; ink_coverage_ml_per_m2: string };
-const BLANK_FORM: MaterialForm = { name: "", category: "filament", unit: "kg", price_per_unit: 0, stock_quantity: "", min_stock: "", supplier_name: "", supplier_url: "", ink_coverage_ml_per_m2: "" };
+type MaterialForm = { name: string; category: string; unit: string; price_per_unit: number; stock_quantity: string; min_stock: string; supplier_name: string; supplier_url: string; ink_coverage_ml_per_m2: string; image_url: string };
+const BLANK_FORM: MaterialForm = { name: "", category: "filament", unit: "kg", price_per_unit: 0, stock_quantity: "", min_stock: "", supplier_name: "", supplier_url: "", ink_coverage_ml_per_m2: "", image_url: "" };
 
 // Lege invoer betekent "voorraad niet bijgehouden" (null in de database).
 function toNumberOrNull(value: string): number | null {
@@ -44,7 +45,90 @@ function toPayload(f: MaterialForm) {
     supplier_name: f.supplier_name.trim() || null,
     supplier_url: f.supplier_url.trim() || null,
     ink_coverage_ml_per_m2: toNumberOrNull(f.ink_coverage_ml_per_m2),
+    image_url: f.image_url.trim() || null,
   };
+}
+
+/**
+ * Haalt de productfoto achter een leverancierslink op en bewaart ze in de opslag (zie /api/materials/image).
+ * Met materialId wordt ze meteen bij het materiaal gezet. Gooit een fout met een leesbare uitleg.
+ */
+async function fetchMaterialImage(url: string, materialId?: string): Promise<string> {
+  const { data } = await supabase.auth.getSession();
+  const res = await fetch("/api/materials/image", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token}` },
+    body: JSON.stringify({ url, materialId }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || !body.image_url) throw new Error(body.error ?? `fout ${res.status}`);
+  return body.image_url as string;
+}
+
+/** Foto van een materiaal: voorbeeld + ophalen van de leverancierslink, zelf opladen of een URL plakken. */
+function MaterialImageField({ value, supplierUrl, onChange }: { value: string; supplierUrl: string; onChange: (url: string) => void }) {
+  const [busy, setBusy] = useState<"" | "fetch" | "upload">("");
+  const [error, setError] = useState("");
+
+  async function fromLink() {
+    setBusy("fetch");
+    setError("");
+    try {
+      onChange(await fetchMaterialImage(supplierUrl.trim()));
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function upload(file: File | null) {
+    if (!file) return;
+    setBusy("upload");
+    setError("");
+    try {
+      onChange(await uploadProductImage(file));
+    } catch (e: any) {
+      setError("Opladen mislukt: " + (e?.message ?? String(e)));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  return (
+    <div className="mat-image-field">
+      <div className="mat-image-preview">
+        {value ? <img src={value} alt="" /> : <span className="muted">Geen foto</span>}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+          <button type="button" className="btn secondary" disabled={!supplierUrl.trim() || !!busy} onClick={fromLink} title={supplierUrl.trim() ? "Productfoto ophalen van de link naar de leverancier" : "Vul eerst een link in"}>
+            {busy === "fetch" ? "Ophalen..." : "Foto van link ophalen"}
+          </button>
+          <label className="btn secondary" style={{ margin: 0, cursor: busy ? "default" : "pointer" }}>
+            {busy === "upload" ? "Opladen..." : "Zelf opladen"}
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              style={{ display: "none" }}
+              disabled={!!busy}
+              onChange={(e) => {
+                upload(e.target.files?.[0] ?? null);
+                e.target.value = "";
+              }}
+            />
+          </label>
+          {value && (
+            <button type="button" className="btn secondary" onClick={() => onChange("")} disabled={!!busy}>
+              Wissen
+            </button>
+          )}
+        </div>
+        <input style={{ marginTop: 6 }} placeholder="of plak een afbeeldings-URL" value={value} onChange={(e) => onChange(e.target.value)} />
+        {error && <p style={{ color: "var(--rust)", fontSize: 12, margin: "4px 0 0" }}>{error}</p>}
+      </div>
+    </div>
+  );
 }
 
 type Usage = { productId: string; productName: string; variations: number };
@@ -174,9 +258,36 @@ export default function MaterialsPage() {
 
   async function addMaterial(e: React.FormEvent) {
     e.preventDefault();
-    await supabase.from("materials").insert(toPayload(form));
+    const { data: created } = await supabase.from("materials").insert(toPayload(form)).select("id").single();
+    const link = form.supplier_url.trim();
+    const needsImage = !!created && !form.image_url.trim() && !!link;
     setForm({ ...BLANK_FORM });
     load();
+    // Nog geen foto maar wel een link: foto automatisch ophalen (lukt het niet, dan blijft het icoon staan).
+    if (needsImage) fetchMaterialImage(link, created.id).then(load, () => {});
+  }
+
+  const [bulkImages, setBulkImages] = useState("");
+  /** Haalt een foto op voor alle materialen met een leverancierslink maar nog zonder foto. */
+  async function fetchMissingImages() {
+    const todo = materials.filter((m) => !m.image_url && m.supplier_url);
+    let ok = 0;
+    const failed: string[] = [];
+    for (let i = 0; i < todo.length; i++) {
+      setBulkImages(`${i + 1}/${todo.length}...`);
+      try {
+        await fetchMaterialImage(todo[i].supplier_url as string, todo[i].id);
+        ok++;
+      } catch {
+        failed.push(todo[i].name);
+      }
+    }
+    setBulkImages("");
+    load();
+    await alertDialog(
+      `${ok} van ${todo.length} foto's opgehaald.` +
+        (failed.length ? `\n\nGeen foto gevonden voor:\n${failed.join("\n")}\n\nLaad die zelf op via Bewerken.` : "")
+    );
   }
 
   function startEdit(m: Material) {
@@ -191,6 +302,7 @@ export default function MaterialsPage() {
       supplier_name: m.supplier_name ?? "",
       supplier_url: m.supplier_url ?? "",
       ink_coverage_ml_per_m2: m.ink_coverage_ml_per_m2 != null ? String(m.ink_coverage_ml_per_m2) : "",
+      image_url: m.image_url ?? "",
     });
   }
 
@@ -360,6 +472,8 @@ export default function MaterialsPage() {
               <input type="url" value={form.supplier_url} onChange={(e) => setForm({ ...form, supplier_url: e.target.value })} placeholder="https://..." />
             </div>
           </div>
+          <label>Foto (optioneel -- leeg met een link = automatisch van de link)</label>
+          <MaterialImageField value={form.image_url} supplierUrl={form.supplier_url} onChange={(url) => setForm({ ...form, image_url: url })} />
           <button className="btn" type="submit" style={{ marginTop: 16 }}>Materiaal toevoegen</button>
         </form>
       </div>
@@ -377,6 +491,18 @@ export default function MaterialsPage() {
         {lowStock.length > 0 && (
           <button type="button" className={`tab${filter === "low" ? " active" : ""}`} onClick={() => setFilter("low")} style={{ color: filter === "low" ? undefined : "var(--rust)" }}>
             Bijna op <span className="tab-count">{lowStock.length}</span>
+          </button>
+        )}
+        {materials.some((m) => !m.image_url && m.supplier_url) && (
+          <button
+            type="button"
+            className="btn secondary"
+            style={{ marginLeft: "auto" }}
+            disabled={!!bulkImages}
+            onClick={fetchMissingImages}
+            title="Foto ophalen voor alle materialen met een link naar de leverancier maar nog zonder foto"
+          >
+            {bulkImages ? `Foto's ophalen ${bulkImages}` : `Foto's ophalen (${materials.filter((m) => !m.image_url && m.supplier_url).length})`}
           </button>
         )}
       </div>
@@ -440,6 +566,8 @@ export default function MaterialsPage() {
                     <input placeholder="https://..." value={editForm.supplier_url} onChange={(e) => setEditForm({ ...editForm, supplier_url: e.target.value })} />
                   </div>
                 </div>
+                <label>Foto</label>
+                <MaterialImageField value={editForm.image_url} supplierUrl={editForm.supplier_url} onChange={(url) => setEditForm({ ...editForm, image_url: url })} />
                 <div style={{ marginTop: 14 }}>
                   <button className="btn" onClick={() => saveEdit(m.id)} disabled={saving} style={{ marginRight: 6 }}>{saving ? "..." : "Opslaan"}</button>
                   <button className="btn secondary" onClick={() => setEditingId(null)}>Annuleer</button>
@@ -454,7 +582,13 @@ export default function MaterialsPage() {
             <Fragment key={m.id}>
               <div className={`mat-card${isLowStock(m) ? " low" : ""}`} style={{ "--mat-color": color } as React.CSSProperties}>
                 <div className="mat-head">
-                  <div className="mat-icon"><CategoryIcon category={m.category} size={26} /></div>
+                  {m.image_url ? (
+                    <a className="mat-photo" href={m.image_url} target="_blank" rel="noopener noreferrer" title="Foto openen">
+                      <img src={m.image_url} alt="" loading="lazy" />
+                    </a>
+                  ) : (
+                    <div className="mat-icon"><CategoryIcon category={m.category} size={26} /></div>
+                  )}
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div className="mat-name">{m.name}</div>
                     <div className="mat-cat">{CATEGORIES.find((c) => c.value === m.category)?.label ?? m.category}</div>
