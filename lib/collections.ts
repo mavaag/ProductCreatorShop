@@ -23,7 +23,7 @@ export function inSeason(c: Pick<Collection, "season_start" | "season_end">, d: 
   return a <= b ? today >= a && today <= b : today >= a || today <= b;
 }
 
-/** Wordt de collectie nu uitgelicht op de homepage? */
+/** Is de collectie nu zichtbaar in de shop (menu, Collecties-pagina, homepage)? */
 export function isHighlighted(c: Pick<Collection, "highlight" | "season_start" | "season_end">, d: Date = new Date()): boolean {
   if (c.highlight === "always") return true;
   if (c.highlight === "never") return false;

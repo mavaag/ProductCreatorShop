@@ -236,11 +236,11 @@ function CollectionForm({ form, setForm, onSubmit, onCancel, submitLabel, busy }
           <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="bv. Kerst" />
         </div>
         <div>
-          <label>Uitlichten op de homepage</label>
+          <label>Zichtbaar in de shop</label>
           <select value={form.highlight} onChange={(e) => setForm({ ...form, highlight: e.target.value as Form["highlight"] })}>
             <option value="season">Tijdens het seizoen</option>
             <option value="always">Altijd</option>
-            <option value="never">Nooit</option>
+            <option value="never">Nooit (enkel via de rechtstreekse link)</option>
           </select>
         </div>
       </div>
@@ -349,7 +349,7 @@ export default function CollectionsPage() {
     const b = joinMmDd(f.end_day, f.end_month);
     const anyFilled = f.start_day || f.start_month || f.end_day || f.end_month;
     if (anyFilled && (!a || !b)) return "Vul het seizoen volledig in (dag én maand, van en tot), of laat het helemaal leeg.";
-    if (f.highlight === "season" && !a) return 'Kies een seizoen, of zet "Uitlichten op de homepage" op Altijd of Nooit.';
+    if (f.highlight === "season" && !a) return 'Kies een seizoen, of zet "Zichtbaar in de shop" op Altijd of Nooit.';
     return "";
   }
 
@@ -522,7 +522,7 @@ export default function CollectionsPage() {
 
       <div className="coll-toolbar">
         <span className="muted">
-          Nu uitgelicht: {highlighted.length > 0 ? highlighted.map((c) => c.name).join(", ") : "geen"}
+          Nu zichtbaar in de shop: {highlighted.length > 0 ? highlighted.map((c) => c.name).join(", ") : "geen"}
         </span>
         {!showNew && (
           <button className="btn" onClick={() => setShowNew(true)} style={{ marginLeft: "auto" }}>
@@ -582,12 +582,12 @@ export default function CollectionsPage() {
               <div className="coll-body">
                 <div className="coll-title">
                   <strong>{c.name}</strong>
-                  {live && <span className="pill cyan">Nu uitgelicht</span>}
+                  {live && <span className="pill cyan">Nu zichtbaar</span>}
                 </div>
                 <div className="muted coll-meta">
                   {season ? `Seizoen ${season}` : "Geen seizoen"}
                   {" · "}
-                  {c.highlight === "always" ? "altijd uitgelicht" : c.highlight === "never" ? "nooit uitgelicht" : "uitgelicht tijdens het seizoen"}
+                  {c.highlight === "always" ? "altijd zichtbaar" : c.highlight === "never" ? "verborgen (enkel via link)" : "zichtbaar tijdens het seizoen"}
                 </div>
                 <div className="muted coll-meta">{n} product{n === 1 ? "" : "en"}</div>
                 <div className={`coll-status${nPending ? " pending" : ""}`} title={pend.productIds.map((id) => productById.get(id)?.name).filter(Boolean).join("\n")}>
