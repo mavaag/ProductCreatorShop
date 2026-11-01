@@ -830,3 +830,9 @@ button.folder-link:hover { color: var(--cyan); }
 }
 .customer-file-pdf { display: flex; align-items: center; justify-content: center; color: #222; font-weight: 700; }
 .customer-file:hover img { outline: 2px solid var(--cyan, #00e5ff); }
+/* opties van een bestelregel (Bestellingen > Productie): per onderwerp een lijn, naam vet */
+.order-options { margin: 6px 0 4px; display: grid; gap: 3px; font-size: 14px; }
+.order-option { display: grid; grid-template-columns: minmax(140px, max-content) 1fr; gap: 14px; }
+.order-option dt { font-weight: 700; color: var(--ink); }
+.order-option dd { margin: 0; white-space: pre-line; color: var(--ink-soft); }
+@media (max-width: 640px) { .order-option { grid-template-columns: 1fr; gap: 0; } }
