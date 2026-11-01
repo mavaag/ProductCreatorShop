@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { gravureSettingsMeta, gravureImageMeta, withExistingMetaIds, metaUpToDate } from "@/lib/gravure";
+import { gravureSettingsMeta, gravureImageMeta, withExistingMetaIds, metaUpToDate, variationGravureMeta } from "@/lib/gravure";
 
 // Synchroniseert rechtstreeks met WooCommerce via de REST API, zonder CSV-import:
 //   * producten die al in de shop staan (zelfde SKU): update product metadata (naam, beschrijving, categorieën,
@@ -107,7 +107,7 @@ export async function POST(request: Request) {
 
   let query = supabase
     .from("products")
-    .select("id, sku, name, published, last_exported_published, attribute_names, default_attribute_values, description, short_description, categories, image_url, weight_kg, shipping_class, personalization, product_variations(id, sku, attribute_values, suggested_price, image_url)")
+    .select("id, sku, name, published, last_exported_published, attribute_names, default_attribute_values, description, short_description, categories, image_url, weight_kg, shipping_class, personalization, product_variations(id, sku, attribute_values, suggested_price, image_url, gravure)")
     .order("name");
   if (type) query = query.eq("process_type", type);
   if (productIds) query = query.in("id", productIds);
@@ -296,6 +296,12 @@ export async function POST(request: Request) {
       }
       report.updated += updates.length;
 
+      // 3DP Gravure Preview 1.9.0: eigen zone/vorm/kleur/foto per variant (na de updates, want de foto-URL
+      // van de variant is pas gekend nadat WooCommerce de afbeelding heeft opgeslagen).
+      if (!dryRun && p.personalization?.plugin === "gravure_uv") {
+        await syncVariationGravure(wc, parent.id, p, report);
+      }
+
       if (!dryRun) {
         const now = new Date().toISOString();
         await supabase.from("products").update({ last_exported_at: now, published: effectivePublished, last_exported_published: effectivePublished }).eq("id", p.id);
@@ -477,6 +483,38 @@ async function createProduct(wc: WcFn, base: string, p: any, report: Report, cat
     return false;
   }
   return true;
+}
+
+/**
+ * Zet de gravure-meta (_tdp_image, _tdp_x, ...) op elke variant volgens product_variations.gravure.
+ * Varianten zonder eigen instellingen krijgen lege velden (= zoals het product). Enkel varianten waarvan
+ * de meta afwijkt worden bijgewerkt.
+ */
+async function syncVariationGravure(wc: WcFn, parentId: number, p: any, report: Report): Promise<void> {
+  const local = p.product_variations as { sku: string; gravure: any }[];
+  try {
+    const remote: any[] = [];
+    for (let page = 1; ; page++) {
+      const chunk = await wc(`/products/${parentId}/variations?per_page=100&page=${page}`);
+      remote.push(...chunk);
+      if (chunk.length < 100) break;
+    }
+    const updates: { id: number; meta_data: { id?: number; key: string; value: string }[] }[] = [];
+    for (const v of local) {
+      const rv = remote.find((r) => r.sku === v.sku);
+      if (!rv) continue;
+      const meta = variationGravureMeta(v.gravure, v.gravure?.rect ? String(rv.image?.src ?? "") : "");
+      const existing: { id: number; key: string; value: unknown }[] = rv.meta_data ?? [];
+      if (metaUpToDate(existing, meta)) continue;
+      updates.push({ id: rv.id, meta_data: withExistingMetaIds(existing, meta) });
+    }
+    for (let i = 0; i < updates.length; i += 100) {
+      await wc(`/products/${parentId}/variations/batch`, { method: "POST", body: JSON.stringify({ update: updates.slice(i, i + 100) }) });
+    }
+    if (updates.length > 0) report.notes.push(`${p.sku}: gravure-instellingen van ${updates.length} variant(en) bijgewerkt.`);
+  } catch (e: any) {
+    report.notes.push(`${p.sku}: gravure-instellingen per variant niet ingesteld (${e.message})`);
+  }
 }
 
 /** Payloads om varianten aan te maken in WooCommerce (sku, prijs, foto, attributen). attributeCache moet al gevuld zijn. */

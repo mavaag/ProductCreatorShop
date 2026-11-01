@@ -188,7 +188,7 @@ function circleFromCenter(cx: number, cy: number, size: number, aspect: number):
 
 type Action = { type: "move"; dx: number; dy: number } | { type: "resize" | "draw"; ax: number; ay: number };
 
-function ZoneImageEditor({
+export function ZoneImageEditor({
   title,
   zoneKey,
   rect,
@@ -206,7 +206,11 @@ function ZoneImageEditor({
   onChangeDimensions,
   onChangeImage,
   onUpload,
+  imageNote,
+  hideImageSelect,
 }: {
+  imageNote?: string; // eigen uitleg onder de foto-upload (bv. bij een variant)
+  hideImageSelect?: boolean; // geen keuzelijst met productafbeeldingen (variant: één foto)
   title: string;
   zoneKey: string;
   rect: ZoneRect;
@@ -365,7 +369,7 @@ function ZoneImageEditor({
   return (
     <div style={{ minWidth: 260 }}>
       <label>{title} -- foto</label>
-      <select value={imageIndex} onChange={(e) => onChangeImage(parseInt(e.target.value))}>
+      {!hideImageSelect && <select value={imageIndex} onChange={(e) => onChangeImage(parseInt(e.target.value))}>
         {imageUrls.map((_, i) => (
           <option key={i} value={i}>
             Productafbeelding {i + 1}
@@ -373,7 +377,7 @@ function ZoneImageEditor({
           </option>
         ))}
         {imageIndex >= imageUrls.length && <option value={imageIndex}>Productafbeelding {imageIndex + 1} (ontbreekt)</option>}
-      </select>
+      </select>}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
         <input
           type="file"
@@ -388,9 +392,9 @@ function ZoneImageEditor({
         {uploading && <span className="muted">Opladen...</span>}
       </div>
       <p className="muted" style={{ fontSize: 12, margin: "4px 0 8px" }}>
-        {zoneKey === "front"
+        {imageNote ?? (zoneKey === "front"
           ? "Gebruik liefst een foto recht van voren. Een nieuwe foto wordt achteraan bij de productafbeeldingen gezet."
-          : "Gebruik liefst een foto recht van achteren, in hetzelfde formaat als de voorkant."}
+          : "Gebruik liefst een foto recht van achteren, in hetzelfde formaat als de voorkant.")}
       </p>
 
       <label>Vorm van de zone</label>

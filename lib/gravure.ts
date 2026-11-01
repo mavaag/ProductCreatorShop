@@ -1,5 +1,5 @@
 import { EMPTY_COST_INPUTS } from "@/lib/types";
-import type { GravureSettings, Personalization, PersonalizationZone, ZoneRect, ZoneShape } from "@/lib/types";
+import type { GravureSettings, Personalization, PersonalizationZone, VariationGravure, ZoneRect, ZoneShape } from "@/lib/types";
 
 /**
  * Alles rond de instellingen van de 3DP Gravure Preview-plugin (zone, soort, kleur, ...), gedeeld door
@@ -134,6 +134,27 @@ export function gravureImageMeta(
     ],
     warnings,
   };
+}
+
+/**
+ * Variant-meta voor de 3DP Gravure Preview-plugin (1.9.0+): eigen zone, vorm, kleur en preview-afbeelding.
+ * imageSrc = de afbeelding van de variant zoals WooCommerce ze teruggeeft (eigen site), of "" (= productfoto).
+ * Zonder eigen instellingen worden alle velden leeg gezet: dan volgt de variant gewoon het product.
+ */
+export function variationGravureMeta(g: VariationGravure | null | undefined, imageSrc: string): { key: string; value: string }[] {
+  const keys = ["image", "x", "y", "w", "h", "shape", "color", "max_chars"];
+  if (!g?.rect) return keys.map((k) => ({ key: `_tdp_${k}`, value: "" }));
+  const r = { ...DEFAULT_ZONE_RECT, ...g.rect };
+  return [
+    { key: "_tdp_image", value: imageSrc },
+    { key: "_tdp_x", value: num(r.x) },
+    { key: "_tdp_y", value: num(r.y) },
+    { key: "_tdp_w", value: num(r.w) },
+    { key: "_tdp_h", value: num(r.h) },
+    { key: "_tdp_shape", value: g.shape === "ellipse" ? "ellipse" : "rect" },
+    { key: "_tdp_color", value: g.color && /^#[0-9a-f]{3}([0-9a-f]{3})?$/i.test(g.color) ? g.color : "" },
+    { key: "_tdp_max_chars", value: num(g.max_chars ?? null) },
+  ];
 }
 
 /** Koppelt de nieuwe meta aan bestaande meta-rijen (zelfde id), zodat WooCommerce ze bijwerkt i.p.v. dupliceert. */
