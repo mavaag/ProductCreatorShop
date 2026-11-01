@@ -1,4 +1,5 @@
 import { SupabaseClient } from "@supabase/supabase-js";
+import { defaultWeightKg } from "@/lib/shippingWeight";
 import { CostInputs, EMPTY_COST_INPUTS, Product } from "@/lib/types";
 import { nextAvailableSku, slugifyForSku } from "@/lib/sku";
 
@@ -183,6 +184,7 @@ export async function createProductFromDoc(supabase: SupabaseClient, doc: MakerD
       short_description: p.short_description,
       categories: opts.categories?.trim() || p.categories,
       image_url: (p.image_urls ?? []).join(","),
+      weight_kg: defaultWeightKg(opts.categories?.trim() || p.categories, p.name), // verzendgewicht incl. verpakking
     })
     .select()
     .single();

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { gravureSettingsMeta, gravureImageMeta, withExistingMetaIds, metaUpToDate, variationGravureMeta } from "@/lib/gravure";
 import { COLLECTIONS_PARENT, collectionCategoryPath, collectionMarker } from "@/lib/collections";
+import { defaultWeightKg } from "@/lib/shippingWeight";
 
 // Synchroniseert rechtstreeks met WooCommerce via de REST API, zonder CSV-import:
 //   * producten die al in de shop staan (zelfde SKU): update product metadata (naam, beschrijving, categorieën,
@@ -549,7 +550,7 @@ async function createProduct(wc: WcFn, base: string, p: any, report: Report, cat
     payload.attributes = attributes;
     if (defaultAttributes.length > 0) payload.default_attributes = defaultAttributes;
   }
-  if (p.weight_kg != null) payload.weight = String(p.weight_kg);
+  payload.weight = String(p.weight_kg ?? defaultWeightKg(p.categories, p.name)); // leeg = standaardgewicht (anders telt het als 0 kg)
   if (p.shipping_class) payload.shipping_class = p.shipping_class;
   const personalizationMeta = buildPersonalizationMetaData([], p.personalization);
   if (personalizationMeta.length > 0) payload.meta_data = personalizationMeta;
@@ -682,7 +683,7 @@ async function updateProductMetadata(
       categories: categoryIds,
     };
     if (p.short_description) payload.short_description = p.short_description; // leeg = korte beschrijving in WooCommerce ongemoeid laten
-    if (p.weight_kg != null) payload.weight = String(p.weight_kg);
+    payload.weight = String(p.weight_kg ?? defaultWeightKg(p.categories, p.name)); // leeg = standaardgewicht (anders telt het als 0 kg)
     if (p.shipping_class) payload.shipping_class = p.shipping_class;
     if (images.length > 0) payload.images = images;
     if (regularPrice != null) payload.regular_price = regularPrice;
