@@ -196,6 +196,7 @@ export default function CollectionsPage() {
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [syncing, setSyncing] = useState<{ id: string; text: string } | null>(null);
 
   async function load() {
     const [c, pc, p] = await Promise.all([
@@ -268,7 +269,7 @@ export default function CollectionsPage() {
     // Naam gewijzigd: de producten krijgen bij de volgende sync de nieuwe categorienaam.
     await touchProducts(members[editingId] ?? []);
     setEditingId(null);
-    setMessage("Collectie opgeslagen. Synchroniseer om ze in de shop bij te werken.");
+    setMessage('Collectie opgeslagen. Klik "Naar de shop" om ze in de shop bij te werken.');
     load();
   }
 
@@ -293,6 +294,60 @@ export default function CollectionsPage() {
     setMessage(`Collectie "${c.name}" verwijderd${body.note ? ` (${body.note})` : ""}.`);
     if (openId === c.id) setOpenId(null);
     load();
+  }
+
+  /**
+   * "Naar de shop": werkt de collectie(s) in WooCommerce bij en synchroniseert de producten van deze collectie,
+   * plus de producten die er in de shop nog in staan (net weggehaald), zodat ze er daar ook uit gaan.
+   */
+  async function syncCollection(c: Collection) {
+    if (!(await confirmDialog(`Collectie "${c.name}" naar de shop sturen?\n\nDe collectiepagina (tekst, banner) en de producten van de collectie worden bijgewerkt in WooCommerce (ook hun prijzen, beschrijving, categorieën en foto's).`))) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      const { data: s } = await supabase.auth.getSession();
+      const headers = { "Content-Type": "application/json", Authorization: `Bearer ${s.session?.access_token}` };
+      setSyncing({ id: c.id, text: "Voorbereiden..." });
+      const tRes = await fetch("/api/collections", { method: "POST", headers, body: JSON.stringify({ id: c.id }) });
+      const t = await tRes.json().catch(() => ({}));
+      if (!tRes.ok) throw new Error(t.error ?? `fout ${tRes.status}`);
+      const productIds: string[] = t.productIds ?? [];
+      const agg = { updated: 0, unchanged: 0, missing: [] as string[], notes: [] as string[], errors: [] as string[] };
+      let offset = 0;
+      for (let guard = 0; guard < 1000; guard++) {
+        const res = await fetch("/api/sync", {
+          method: "POST",
+          headers,
+          body: JSON.stringify(
+            productIds.length > 0
+              ? { createMissing: false, dryRun: false, productIds, offset, limit: 12 }
+              : { createMissing: false, dryRun: false, collectionsOnly: true }
+          ),
+        });
+        const b = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(b.error ?? `Synchronisatie mislukt (${res.status})`);
+        agg.updated += b.updated ?? 0;
+        agg.unchanged += b.unchanged ?? 0;
+        agg.missing.push(...(b.missingProducts ?? []));
+        agg.notes.push(...(b.notes ?? []));
+        agg.errors.push(...(b.errors ?? []));
+        const done = (b.offset ?? offset) + (b.processed ?? 0);
+        setSyncing({ id: c.id, text: productIds.length ? `Synchroniseren... ${Math.min(done, productIds.length)}/${productIds.length}` : "Collectie bijwerken..." });
+        if (b.done || b.nextOffset == null) break;
+        offset = b.nextOffset;
+      }
+      const parts = [`${productIds.length} product(en) gesynchroniseerd`];
+      if (agg.missing.length) parts.push(`nog niet in de shop (eerst aanmaken via Producten): ${agg.missing.join(", ")}`);
+      if (agg.errors.length) parts.push(`fouten: ${agg.errors.join("; ")}`);
+      setMessage(`"${c.name}" naar de shop gestuurd: ${parts.join(" -- ")}.`);
+      if (agg.errors.length) await alertDialog(`Niet alles lukte:\n\n${agg.errors.join("\n")}`);
+    } catch (e: any) {
+      setMessage(`Naar de shop mislukt: ${e?.message ?? String(e)}`);
+    } finally {
+      setSyncing(null);
+      setBusy(false);
+      load();
+    }
   }
 
   /** Markeert producten als gewijzigd, zodat ze bij de volgende sync hun (collectie)categorieën meekrijgen. */
@@ -343,7 +398,7 @@ export default function CollectionsPage() {
       <h1>Collecties</h1>
       <p className="sub">
         Thema&apos;s zoals Kerst, Halloween of Moederdag. Elke collectie wordt in de shop een eigen pagina (categorie <i>Collecties &gt; naam</i>) met tekst en banner.
-        Een product kan in meerdere collecties zitten en blijft ook in zijn gewone categorie. Wijzigingen gaan naar de shop bij de volgende <Link href="/products">synchronisatie</Link>.
+        Een product kan in meerdere collecties zitten en blijft ook in zijn gewone categorie. Met <b>Naar de shop</b> stuur je een collectie en haar producten meteen naar de shop (ook de gewone <Link href="/products">synchronisatie</Link> neemt ze mee).
       </p>
 
       {message && <p className="mono" style={{ marginBottom: 16 }}>{message}</p>}
@@ -419,6 +474,9 @@ export default function CollectionsPage() {
                 <div className="coll-actions">
                   <button className="btn secondary" onClick={() => { setOpenId(openId === c.id ? null : c.id); setSearch(""); }}>
                     {openId === c.id ? "Producten sluiten" : "Producten"}
+                  </button>
+                  <button className="btn" disabled={busy} onClick={() => syncCollection(c)} title="Collectie en haar producten bijwerken in WooCommerce">
+                    {syncing?.id === c.id ? syncing.text : "Naar de shop"}
                   </button>
                   <button className="btn secondary" onClick={() => { setEditingId(c.id); setEditForm(toForm(c)); }}>Bewerken</button>
                   <button className="btn danger" disabled={busy} onClick={() => removeCollection(c)}>Verwijderen</button>

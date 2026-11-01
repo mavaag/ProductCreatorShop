@@ -105,6 +105,8 @@ export async function POST(request: Request) {
   const productIds: string[] | undefined = Array.isArray(body.productIds) && body.productIds.length > 0 ? body.productIds : undefined;
   const dryRun = body.dryRun === true;
   const createMissing = body.createMissing === true;
+  // collectionsOnly: enkel de collecties zelf bijwerken (bv. "Naar de shop" van een collectie zonder producten).
+  const collectionsOnly = body.collectionsOnly === true;
   // Batching: verwerk slechts een deel (offset..offset+limit) zodat één aanvraag kort blijft (Cloudflare kapt na 100s af).
   const offset = Number.isFinite(body.offset) && body.offset > 0 ? Math.floor(body.offset) : 0;
   const limit = Number.isFinite(body.limit) && body.limit > 0 ? Math.floor(body.limit) : null;
@@ -115,7 +117,7 @@ export async function POST(request: Request) {
     .order("name");
   if (type) query = query.eq("process_type", type);
   if (productIds) query = query.in("id", productIds);
-  const { data: products, error } = await query;
+  const { data: products, error } = collectionsOnly ? { data: [] as any[], error: null } : await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const auth = "Basic " + Buffer.from(`${key}:${secret}`).toString("base64");
