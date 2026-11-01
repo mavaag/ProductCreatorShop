@@ -508,8 +508,9 @@ export default function ProductsPage() {
     const ids = Array.from(selected);
     setBusy(true);
     const { error } = add
-      ? await supabase.from("product_collections").upsert(ids.map((product_id) => ({ product_id, collection_id: col.id })), { onConflict: "product_id,collection_id", ignoreDuplicates: true })
-      : await supabase.from("product_collections").delete().eq("collection_id", col.id).in("product_id", ids);
+      ? await supabase.from("product_collections").upsert(ids.map((product_id) => ({ product_id, collection_id: col.id, removed_at: null })), { onConflict: "product_id,collection_id" })
+      : // Niet meteen wissen: removed_at zorgt dat de volgende sync de categorie in de shop weghaalt.
+        await supabase.from("product_collections").update({ removed_at: new Date().toISOString() }).eq("collection_id", col.id).in("product_id", ids).is("removed_at", null);
     if (!error) await supabase.from("products").update({ updated_at: new Date().toISOString() }).in("id", ids);
     setBusy(false);
     if (error) return setMessage(`Collectie niet bijgewerkt: ${error.message}`);

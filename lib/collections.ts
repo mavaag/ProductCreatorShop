@@ -43,7 +43,19 @@ export function formatSeason(c: Pick<Collection, "season_start" | "season_end">)
  * Onzichtbare markering in de beschrijving van de WooCommerce-categorie, zodat de shop (homepage) weet wanneer de
  * collectie uitgelicht moet worden, ook als er een tijd niet gesynct wordt. Bv. <!-- tdp-collection highlight=season season=11-15..12-26 -->
  */
-export function collectionMarker(c: Pick<Collection, "highlight" | "season_start" | "season_end" | "sort_order">): string {
+export function collectionMarker(
+  c: Pick<Collection, "highlight" | "season_start" | "season_end" | "sort_order"> & Partial<Pick<Collection, "background" | "background_url" | "background_color">>
+): string {
   const season = isValidMmDd(c.season_start) && isValidMmDd(c.season_end) ? ` season=${c.season_start}..${c.season_end}` : "";
-  return `<!-- tdp-collection highlight=${c.highlight}${season} order=${c.sort_order} -->`;
+  let bg = "";
+  const theme = c.background && /^[a-z]+$/.test(c.background) ? c.background : "none";
+  if (theme === "custom") {
+    // Spaties en "--" mogen niet in een HTML-commentaar: URL coderen.
+    const url = c.background_url ? encodeURI(c.background_url.trim()).replace(/--/g, "-%2D") : "";
+    bg = url ? ` bg=custom bgimg=${url}` : "";
+  } else if (theme !== "none") {
+    bg = ` bg=${theme}`;
+  }
+  if (bg && c.background_color && /^#[0-9a-fA-F]{6}$/.test(c.background_color)) bg += ` bgcolor=${c.background_color}`;
+  return `<!-- tdp-collection highlight=${c.highlight}${season} order=${c.sort_order}${bg} -->`;
 }

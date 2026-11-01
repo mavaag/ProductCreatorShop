@@ -133,7 +133,7 @@ export default function ProductEditPage() {
     // Collecties (migratie 035) -- ontbreekt de tabel nog, dan blijft dit leeg.
     const [{ data: cols }, { data: pc }] = await Promise.all([
       supabase.from("collections").select("id, name").order("sort_order").order("name"),
-      supabase.from("product_collections").select("collection_id").eq("product_id", productId),
+      supabase.from("product_collections").select("collection_id").eq("product_id", productId).is("removed_at", null),
     ]);
     setAllCollections((cols as { id: string; name: string }[]) ?? []);
     setProductCollections(new Set(((pc as { collection_id: string }[]) ?? []).map((r) => r.collection_id)));
@@ -142,8 +142,8 @@ export default function ProductEditPage() {
   /** Product in/uit een collectie (meteen bewaard; gaat naar de shop bij de volgende sync). */
   async function toggleCollection(collectionId: string, on: boolean) {
     const { error } = on
-      ? await supabase.from("product_collections").insert({ product_id: productId, collection_id: collectionId })
-      : await supabase.from("product_collections").delete().eq("product_id", productId).eq("collection_id", collectionId);
+      ? await supabase.from("product_collections").upsert({ product_id: productId, collection_id: collectionId, removed_at: null }, { onConflict: "product_id,collection_id" })
+      : await supabase.from("product_collections").update({ removed_at: new Date().toISOString() }).eq("product_id", productId).eq("collection_id", collectionId);
     if (error && !error.message.includes("duplicate")) {
       setNotice(`Collectie niet bijgewerkt: ${error.message}`);
       return;

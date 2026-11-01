@@ -8,6 +8,7 @@ import { Collection } from "@/lib/types";
 import { alertDialog, confirmDialog } from "@/components/DialogHost";
 import { uploadProductImage } from "@/lib/uploadImage";
 import { formatSeason, isHighlighted, isValidMmDd } from "@/lib/collections";
+import { COLLECTION_BACKGROUNDS, backgroundCss } from "@/lib/collectionBackgrounds";
 
 type Form = {
   name: string;
@@ -19,8 +20,14 @@ type Form = {
   end_month: string;
   highlight: Collection["highlight"];
   sort_order: string;
+  background: string;
+  background_url: string;
+  background_color: string;
 };
-const BLANK: Form = { name: "", description: "", banner_url: "", start_day: "", start_month: "", end_day: "", end_month: "", highlight: "season", sort_order: "0" };
+const BLANK: Form = {
+  name: "", description: "", banner_url: "", start_day: "", start_month: "", end_day: "", end_month: "", highlight: "season", sort_order: "0",
+  background: "none", background_url: "", background_color: "",
+};
 
 const MONTHS = ["januari", "februari", "maart", "april", "mei", "juni", "juli", "augustus", "september", "oktober", "november", "december"];
 
@@ -57,13 +64,21 @@ function toForm(c: Collection): Form {
     end_month: em,
     highlight: c.highlight,
     sort_order: String(c.sort_order ?? 0),
+    background: c.background ?? "none",
+    background_url: c.background_url ?? "",
+    background_color: c.background_color ?? "",
   };
 }
 function firstImage(urls: string | null | undefined): string {
   return String(urls ?? "").split(",").map((u) => u.trim()).filter(Boolean)[0] ?? "";
 }
 
-type ProductLite = { id: string; name: string; sku: string; image_url: string; published: boolean };
+type ProductLite = { id: string; name: string; sku: string; image_url: string; published: boolean; updated_at: string; last_exported_at: string | null };
+
+/** Product heeft wijzigingen die nog niet in de shop staan (zelfde regel als het label "Gewijzigd" op Producten). */
+function productChanged(p: ProductLite | undefined): boolean {
+  return !!p && (!p.last_exported_at || p.updated_at > p.last_exported_at);
+}
 
 /** Dag + maand kiezen (zonder jaar: een seizoen komt elk jaar terug). */
 function DayMonth({ day, month, onChange }: { day: string; month: string; onChange: (day: string, month: string) => void }) {
@@ -81,6 +96,81 @@ function DayMonth({ day, month, onChange }: { day: string; month: string; onChan
           <option key={m} value={String(i + 1)}>{m}</option>
         ))}
       </select>
+    </div>
+  );
+}
+
+/** Achtergrond van de collectiepagina: thema, eigen afbeelding of geen -- met voorbeeld. */
+function BackgroundField({ form, setForm }: { form: Form; setForm: (f: Form) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const theme = COLLECTION_BACKGROUNDS.find((t) => t.key === form.background);
+  async function upload(file: File | null) {
+    if (!file) return;
+    setBusy(true);
+    setError("");
+    try {
+      setForm({ ...form, background: "custom", background_url: await uploadProductImage(file) });
+    } catch (e: any) {
+      setError("Opladen mislukt: " + (e?.message ?? String(e)));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="coll-bg-field">
+      <div className="coll-bg-preview" style={backgroundCss(form.background, form.background_url, form.background_color)}>
+        <div className="coll-bg-card" />
+        <div className="coll-bg-card" />
+        <div className="coll-bg-card" />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <select value={form.background} onChange={(e) => setForm({ ...form, background: e.target.value })}>
+          <option value="none">Geen (gewone achtergrond van de shop)</option>
+          {COLLECTION_BACKGROUNDS.map((t) => (
+            <option key={t.key} value={t.key}>{t.label}</option>
+          ))}
+          <option value="custom">Eigen afbeelding</option>
+        </select>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 6 }}>
+          <label className="btn secondary" style={{ margin: 0, cursor: busy ? "default" : "pointer" }}>
+            {busy ? "Opladen..." : "Eigen afbeelding opladen"}
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              style={{ display: "none" }}
+              disabled={busy}
+              onChange={(e) => {
+                upload(e.target.files?.[0] ?? null);
+                e.target.value = "";
+              }}
+            />
+          </label>
+          {form.background !== "none" && (
+            <>
+              <input
+                type="color"
+                value={form.background_color || theme?.color || "#eef2f5"}
+                onChange={(e) => setForm({ ...form, background_color: e.target.value })}
+                title="Achtergrondkleur"
+                style={{ width: 44, height: 32, padding: 2 }}
+              />
+              {form.background_color && (
+                <button type="button" className="btn secondary" onClick={() => setForm({ ...form, background_color: "" })}>
+                  Standaardkleur
+                </button>
+              )}
+            </>
+          )}
+        </div>
+        {form.background === "custom" && (
+          <input style={{ marginTop: 6 }} placeholder="of plak een afbeeldings-URL" value={form.background_url} onChange={(e) => setForm({ ...form, background_url: e.target.value })} />
+        )}
+        <p className="muted" style={{ fontSize: 12, margin: "4px 0 0" }}>
+          Achter de producten op de collectiepagina. Eigen afbeelding: rustig beeld, wordt over de hele pagina uitgerekt (bv. 1920 × 1080).
+        </p>
+        {error && <p style={{ color: "var(--rust)", fontSize: 12, margin: "4px 0 0" }}>{error}</p>}
+      </div>
     </div>
   );
 }
@@ -172,6 +262,8 @@ function CollectionForm({ form, setForm, onSubmit, onCancel, submitLabel, busy }
       </div>
       <label>Banner</label>
       <BannerField value={form.banner_url} onChange={(url) => setForm({ ...form, banner_url: url })} />
+      <label>Achtergrond van de collectiepagina</label>
+      <BackgroundField form={form} setForm={setForm} />
       <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
         <button className="btn" type="submit" disabled={busy}>{busy ? "Opslaan..." : submitLabel}</button>
         {onCancel && (
@@ -186,6 +278,7 @@ export default function CollectionsPage() {
   const ready = useAuthGuard();
   const [collections, setCollections] = useState<Collection[]>([]);
   const [members, setMembers] = useState<Record<string, string[]>>({}); // collection_id -> product_ids
+  const [removed, setRemoved] = useState<Record<string, string[]>>({}); // collection_id -> uit de collectie gehaald, nog niet gesynct
   const [products, setProducts] = useState<ProductLite[]>([]);
   const [loadError, setLoadError] = useState("");
   const [form, setForm] = useState<Form>(BLANK);
@@ -201,8 +294,8 @@ export default function CollectionsPage() {
   async function load() {
     const [c, pc, p] = await Promise.all([
       supabase.from("collections").select("*").order("sort_order").order("name"),
-      supabase.from("product_collections").select("product_id, collection_id"),
-      supabase.from("products").select("id, name, sku, image_url, published").order("name"),
+      supabase.from("product_collections").select("product_id, collection_id, removed_at"),
+      supabase.from("products").select("id, name, sku, image_url, published, updated_at, last_exported_at").order("name"),
     ]);
     if (c.error) {
       setLoadError(c.error.message);
@@ -211,8 +304,12 @@ export default function CollectionsPage() {
     setLoadError("");
     setCollections((c.data ?? []) as Collection[]);
     const m: Record<string, string[]> = {};
-    for (const r of (pc.data ?? []) as { product_id: string; collection_id: string }[]) (m[r.collection_id] ??= []).push(r.product_id);
+    const r: Record<string, string[]> = {};
+    for (const row of (pc.data ?? []) as { product_id: string; collection_id: string; removed_at: string | null }[]) {
+      ((row.removed_at ? r : m)[row.collection_id] ??= []).push(row.product_id);
+    }
     setMembers(m);
+    setRemoved(r);
     setProducts((p.data ?? []) as ProductLite[]);
   }
 
@@ -221,6 +318,15 @@ export default function CollectionsPage() {
   }, [ready]);
 
   const productById = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+
+  /** Wat van een collectie nog niet in de shop staat: gewijzigde producten (ook net weggehaalde) en/of de collectie zelf. */
+  function pendingFor(c: Collection): { productIds: string[]; collectionChanged: boolean } {
+    const ids = [...(members[c.id] ?? []), ...(removed[c.id] ?? [])];
+    return {
+      productIds: Array.from(new Set(ids)).filter((id) => productChanged(productById.get(id))),
+      collectionChanged: !c.synced_at || c.updated_at > c.synced_at,
+    };
+  }
 
   function payload(f: Form) {
     return {
@@ -231,6 +337,9 @@ export default function CollectionsPage() {
       season_end: joinMmDd(f.end_day, f.end_month),
       highlight: f.highlight,
       sort_order: Number.parseInt(f.sort_order, 10) || 0,
+      background: f.background === "custom" && !f.background_url.trim() ? "none" : f.background,
+      background_url: f.background === "custom" ? f.background_url.trim() || null : null,
+      background_color: f.background !== "none" ? f.background_color || null : null,
       updated_at: new Date().toISOString(),
     };
   }
@@ -266,8 +375,7 @@ export default function CollectionsPage() {
     const { error } = await supabase.from("collections").update(payload(editForm)).eq("id", editingId);
     setBusy(false);
     if (error) return alertDialog(error.message.includes("duplicate") ? `Er bestaat al een collectie "${editForm.name.trim()}".` : error.message);
-    // Naam gewijzigd: de producten krijgen bij de volgende sync de nieuwe categorienaam.
-    await touchProducts(members[editingId] ?? []);
+    // Naam gewijzigd: de categorie wordt in de shop hernoemd, de producten blijven eraan gekoppeld (geen product-sync nodig).
     setEditingId(null);
     setMessage('Collectie opgeslagen. Klik "Naar de shop" om ze in de shop bij te werken.');
     load();
@@ -297,21 +405,29 @@ export default function CollectionsPage() {
   }
 
   /**
-   * "Naar de shop": werkt de collectie(s) in WooCommerce bij en synchroniseert de producten van deze collectie,
-   * plus de producten die er in de shop nog in staan (net weggehaald), zodat ze er daar ook uit gaan.
+   * "Naar de shop": werkt de collectie in WooCommerce bij en synchroniseert enkel de producten met wijzigingen
+   * (toegevoegd, weggehaald of aangepast). Alles gesynct: niets te doen.
    */
   async function syncCollection(c: Collection) {
-    if (!(await confirmDialog(`Collectie "${c.name}" naar de shop sturen?\n\nDe collectiepagina (tekst, banner) en de producten van de collectie worden bijgewerkt in WooCommerce (ook hun prijzen, beschrijving, categorieën en foto's).`))) return;
+    const pending = pendingFor(c);
+    if (pending.productIds.length === 0 && !pending.collectionChanged) {
+      setMessage(`"${c.name}" staat al helemaal in de shop.`);
+      return;
+    }
+    const what = [
+      pending.collectionChanged ? "de collectiepagina (tekst, banner, seizoen)" : "",
+      pending.productIds.length ? `${pending.productIds.length} gewijzigd(e) product(en) (ook hun prijs, beschrijving, categorieën en foto's)` : "",
+    ]
+      .filter(Boolean)
+      .join(" en ");
+    if (!(await confirmDialog(`Collectie "${c.name}" naar de shop sturen?\n\nWordt bijgewerkt in WooCommerce: ${what}.`))) return;
     setBusy(true);
     setMessage("");
     try {
       const { data: s } = await supabase.auth.getSession();
       const headers = { "Content-Type": "application/json", Authorization: `Bearer ${s.session?.access_token}` };
       setSyncing({ id: c.id, text: "Voorbereiden..." });
-      const tRes = await fetch("/api/collections", { method: "POST", headers, body: JSON.stringify({ id: c.id }) });
-      const t = await tRes.json().catch(() => ({}));
-      if (!tRes.ok) throw new Error(t.error ?? `fout ${tRes.status}`);
-      const productIds: string[] = t.productIds ?? [];
+      const productIds = pending.productIds;
       const agg = { updated: 0, unchanged: 0, missing: [] as string[], notes: [] as string[], errors: [] as string[] };
       let offset = 0;
       for (let guard = 0; guard < 1000; guard++) {
@@ -336,7 +452,7 @@ export default function CollectionsPage() {
         if (b.done || b.nextOffset == null) break;
         offset = b.nextOffset;
       }
-      const parts = [`${productIds.length} product(en) gesynchroniseerd`];
+      const parts = [productIds.length ? `${productIds.length} product(en) gesynchroniseerd` : "collectiepagina bijgewerkt"];
       if (agg.missing.length) parts.push(`nog niet in de shop (eerst aanmaken via Producten): ${agg.missing.join(", ")}`);
       if (agg.errors.length) parts.push(`fouten: ${agg.errors.join("; ")}`);
       setMessage(`"${c.name}" naar de shop gestuurd: ${parts.join(" -- ")}.`);
@@ -357,17 +473,18 @@ export default function CollectionsPage() {
   }
 
   async function addProduct(collectionId: string, productId: string) {
-    const { error } = await supabase.from("product_collections").insert({ collection_id: collectionId, product_id: productId });
-    if (error && !error.message.includes("duplicate")) return alertDialog(error.message);
+    const { error } = await supabase.from("product_collections").upsert({ collection_id: collectionId, product_id: productId, removed_at: null }, { onConflict: "product_id,collection_id" });
+    if (error) return alertDialog(error.message);
     await touchProducts([productId]);
-    setMembers((m) => ({ ...m, [collectionId]: [...(m[collectionId] ?? []), productId] }));
+    load();
   }
 
   async function removeProduct(collectionId: string, productId: string) {
-    const { error } = await supabase.from("product_collections").delete().eq("collection_id", collectionId).eq("product_id", productId);
+    // Niet meteen wissen: removed_at zorgt dat "Naar de shop" de categorie in de shop weghaalt.
+    const { error } = await supabase.from("product_collections").update({ removed_at: new Date().toISOString() }).eq("collection_id", collectionId).eq("product_id", productId);
     if (error) return alertDialog(error.message);
     await touchProducts([productId]);
-    setMembers((m) => ({ ...m, [collectionId]: (m[collectionId] ?? []).filter((id) => id !== productId) }));
+    load();
   }
 
   if (!ready) return null;
@@ -427,7 +544,8 @@ export default function CollectionsPage() {
                 onClick={() => {
                   const [sd, sm] = splitMmDd(pr.start);
                   const [ed, em] = splitMmDd(pr.end);
-                  setForm({ ...BLANK, name: pr.name, description: pr.description, start_day: sd, start_month: sm, end_day: ed, end_month: em });
+                  const bg = COLLECTION_BACKGROUNDS.some((t) => t.key === pr.name.toLowerCase()) ? pr.name.toLowerCase() : "none";
+                  setForm({ ...BLANK, name: pr.name, description: pr.description, start_day: sd, start_month: sm, end_day: ed, end_month: em, background: bg });
                 }}
               >
                 {pr.name}
@@ -445,6 +563,8 @@ export default function CollectionsPage() {
           const n = members[c.id]?.length ?? 0;
           const season = formatSeason(c);
           const live = isHighlighted(c);
+          const pend = pendingFor(c);
+          const nPending = pend.productIds.length + (pend.collectionChanged ? 1 : 0);
           if (editingId === c.id) {
             return (
               <div key={c.id} className="card coll-card coll-card-wide">
@@ -455,7 +575,10 @@ export default function CollectionsPage() {
           }
           return (
             <div key={c.id} className={`card coll-card${openId === c.id ? " open" : ""}`}>
-              <div className="coll-banner">{c.banner_url ? <img src={c.banner_url} alt="" loading="lazy" /> : <span>{c.name}</span>}</div>
+              <div className="coll-banner" style={c.banner_url ? undefined : backgroundCss(c.background, c.background_url, c.background_color)}>
+                {c.banner_url ? <img src={c.banner_url} alt="" loading="lazy" /> : <span style={{ color: "#222" }}>{c.name}</span>}
+              </div>
+              {c.background !== "none" && <div className="coll-bg-strip" style={backgroundCss(c.background, c.background_url, c.background_color)} title="Achtergrond van de collectiepagina" />}
               <div className="coll-body">
                 <div className="coll-title">
                   <strong>{c.name}</strong>
@@ -466,16 +589,19 @@ export default function CollectionsPage() {
                   {" · "}
                   {c.highlight === "always" ? "altijd uitgelicht" : c.highlight === "never" ? "nooit uitgelicht" : "uitgelicht tijdens het seizoen"}
                 </div>
-                <div className="muted coll-meta">
-                  {n} product{n === 1 ? "" : "en"}
-                  {" · "}
-                  {c.woo_category_id ? "in de shop" : "nog niet gesynct"}
+                <div className="muted coll-meta">{n} product{n === 1 ? "" : "en"}</div>
+                <div className={`coll-status${nPending ? " pending" : ""}`} title={pend.productIds.map((id) => productById.get(id)?.name).filter(Boolean).join("\n")}>
+                  {nPending === 0
+                    ? "In de shop ✓"
+                    : !c.woo_category_id
+                      ? "Nog niet in de shop"
+                      : [pend.collectionChanged ? "collectie gewijzigd" : "", pend.productIds.length ? `${pend.productIds.length} product${pend.productIds.length === 1 ? "" : "en"} gewijzigd` : ""].filter(Boolean).join(" · ") + " -- nog niet in de shop"}
                 </div>
                 <div className="coll-actions">
                   <button className="btn secondary" onClick={() => { setOpenId(openId === c.id ? null : c.id); setSearch(""); }}>
                     {openId === c.id ? "Producten sluiten" : "Producten"}
                   </button>
-                  <button className="btn" disabled={busy} onClick={() => syncCollection(c)} title="Collectie en haar producten bijwerken in WooCommerce">
+                  <button className={nPending ? "btn" : "btn secondary"} disabled={busy} onClick={() => syncCollection(c)} title="Wijzigingen van de collectie en haar producten naar WooCommerce sturen">
                     {syncing?.id === c.id ? syncing.text : "Naar de shop"}
                   </button>
                   <button className="btn secondary" onClick={() => { setEditingId(c.id); setEditForm(toForm(c)); }}>Bewerken</button>
@@ -490,6 +616,12 @@ export default function CollectionsPage() {
       {openCollection && (
         <div className="card" style={{ marginTop: 20 }}>
           <h2 style={{ marginTop: 0 }}>Producten in {openCollection.name} ({openMembers.length})</h2>
+          {(removed[openCollection.id] ?? []).length > 0 && (
+            <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>
+              Weggehaald, gaat er in de shop uit bij <b>Naar de shop</b>:{" "}
+              {(removed[openCollection.id] ?? []).map((id) => productById.get(id)?.name).filter(Boolean).join(", ")}
+            </p>
+          )}
           {openMembers.length === 0 ? (
             <p className="muted">Nog geen producten. Zoek hieronder, of selecteer producten op de pagina <Link href="/products">Producten</Link> en kies <i>Aan collectie toevoegen</i>.</p>
           ) : (
@@ -503,6 +635,7 @@ export default function CollectionsPage() {
                     {firstImage(p.image_url) ? <img src={firstImage(p.image_url)} alt="" loading="lazy" /> : <div className="coll-product-noimg" />}
                     <Link href={`/products/${p.id}`} className="coll-product-name" title={p.sku}>{p.name}</Link>
                     {!p.published && <span className="muted" style={{ fontSize: 11 }}>niet gepubliceerd</span>}
+                    {productChanged(p) && <span className="coll-dot" title="Wijziging nog niet in de shop" />}
                     <button className="btn secondary coll-remove" title="Uit de collectie halen" onClick={() => removeProduct(openCollection.id, p.id)}>×</button>
                   </div>
                 ))}

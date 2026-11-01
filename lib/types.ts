@@ -137,6 +137,10 @@ export type Collection = {
   sort_order: number;
   woo_category_id: number | null;
   woo_image_src: string | null;
+  synced_at: string | null; // migratie 036 -- laatst naar de shop
+  background: string; // migratie 036 -- thema (zie lib/collectionBackgrounds.ts), 'custom' of 'none'
+  background_url: string | null; // eigen achtergrondafbeelding (background = 'custom')
+  background_color: string | null; // '#rrggbb', leeg = kleur van het thema
   created_at: string;
   updated_at: string;
 };

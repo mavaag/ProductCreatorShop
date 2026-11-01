@@ -113,7 +113,7 @@ export async function POST(request: Request) {
 
   let query = supabase
     .from("products")
-    .select("id, sku, name, published, last_exported_published, attribute_names, default_attribute_values, description, short_description, categories, image_url, weight_kg, shipping_class, personalization, product_variations(id, sku, attribute_values, suggested_price, image_url, gravure), product_collections(collections(name))")
+    .select("id, sku, name, published, last_exported_published, attribute_names, default_attribute_values, description, short_description, categories, image_url, weight_kg, shipping_class, personalization, product_variations(id, sku, attribute_values, suggested_price, image_url, gravure), product_collections(removed_at, collections(name))")
     .order("name");
   if (type) query = query.eq("process_type", type);
   if (productIds) query = query.in("id", productIds);
@@ -137,7 +137,9 @@ export async function POST(request: Request) {
   const allProducts = (products ?? []) as any[];
   // Collecties komen er als extra categorie "Collecties > <naam>" bij (de eigen categorieën blijven).
   for (const p of allProducts) {
-    const paths = ((p.product_collections ?? []) as { collections: { name: string } | null }[])
+    // Rijen met removed_at: uit de collectie gehaald -- de categorie gaat er in de shop af (en de rij weg na de sync).
+    const paths = ((p.product_collections ?? []) as { removed_at: string | null; collections: { name: string } | null }[])
+      .filter((pc) => !pc.removed_at)
       .map((pc) => pc.collections?.name)
       .filter((n): n is string => !!n)
       .map(collectionCategoryPath);
@@ -153,6 +155,7 @@ export async function POST(request: Request) {
   const total = allProducts.length;
   const batch = limit != null ? allProducts.slice(offset, offset + limit) : allProducts.slice(offset);
 
+  const exported: string[] = []; // producten die in deze batch naar de shop gingen
   console.log(`[WooCommerce Sync] Start: ${batch.length}/${total} producten (offset ${offset})`);
 
   for (let i = 0; i < batch.length; i++) {
@@ -175,6 +178,7 @@ export async function POST(request: Request) {
           report.created.push(p.sku);
           const now = new Date().toISOString();
           await supabase.from("products").update({ last_exported_at: now, last_exported_published: p.published }).eq("id", p.id);
+          exported.push(p.id);
           await Promise.all(
             (p.product_variations as { id: string; suggested_price: number | null }[])
               .filter((v) => v.suggested_price != null)
@@ -203,6 +207,7 @@ export async function POST(request: Request) {
         else report.unchanged++;
         if (!dryRun) {
           await supabase.from("products").update({ last_exported_at: new Date().toISOString(), published: effectivePublished, last_exported_published: effectivePublished }).eq("id", p.id);
+          exported.push(p.id);
           await supabase.from("product_variations").update({ exported_price: v.suggested_price }).eq("id", v.id);
         }
         continue;
@@ -329,6 +334,7 @@ export async function POST(request: Request) {
       if (!dryRun) {
         const now = new Date().toISOString();
         await supabase.from("products").update({ last_exported_at: now, published: effectivePublished, last_exported_published: effectivePublished }).eq("id", p.id);
+        exported.push(p.id);
         if (synced.length > 0) {
           const vs = (p.product_variations as { id: string; suggested_price: number | null }[]).filter((v) => synced.includes(v.id));
           await Promise.all(vs.map((v) => supabase.from("product_variations").update({ exported_price: v.suggested_price }).eq("id", v.id)));
@@ -338,6 +344,11 @@ export async function POST(request: Request) {
       console.error(`[WooCommerce Sync] Fout bij ${p.sku}:`, e.message);
       report.errors.push(`${p.sku}: ${e.message}`);
     }
+  }
+
+  // Uit een collectie gehaalde producten staan nu ook in de shop niet meer in die collectie: rij opruimen.
+  if (exported.length > 0) {
+    await supabase.from("product_collections").delete().in("product_id", exported).not("removed_at", "is", null);
   }
 
   console.log(`[WooCommerce Sync] Voltooid: ${report.updated} bijgewerkt, ${report.created.length} aangemaakt, ${report.errors.length} fouten`);
@@ -404,9 +415,8 @@ async function syncCollections(wc: WcFn, supabase: any, report: Report, category
         id = saved.id as number;
       }
       categoryCache.set(`/${COLLECTIONS_PARENT.toLowerCase()}/${String(c.name).trim().toLowerCase()}`, id as number);
-      if (id !== c.woo_category_id || banner !== (c.woo_image_src || null)) {
-        await supabase.from("collections").update({ woo_category_id: id, woo_image_src: banner }).eq("id", c.id);
-      }
+      // synced_at = updated_at van de versie die nu in de shop staat (zo blijft "gewijzigd" = updated_at > synced_at).
+      await supabase.from("collections").update({ woo_category_id: id, woo_image_src: banner, synced_at: c.updated_at }).eq("id", c.id);
       changed++;
     } catch (e: any) {
       report.errors.push(`Collectie "${c.name}": ${e.message}`);
