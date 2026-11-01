@@ -807,3 +807,6 @@ button.folder-link:hover { color: var(--cyan); }
 .coll-add { color: var(--cyan); font-weight: 800; font-size: 18px; }
 .prod-collections { display: flex; flex-wrap: wrap; gap: 6px 14px; }
 .prod-collections label { display: flex; align-items: center; gap: 6px; margin: 0; font-weight: 400; text-transform: none; letter-spacing: 0; }
+.coll-status { font-size: 12.5px; color: var(--moss); }
+.coll-status.pending { color: #ffb347; }
+.coll-dot { width: 8px; height: 8px; border-radius: 50%; background: #ffb347; flex: 0 0 auto; }

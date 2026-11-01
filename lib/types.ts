@@ -137,6 +137,7 @@ export type Collection = {
   sort_order: number;
   woo_category_id: number | null;
   woo_image_src: string | null;
+  synced_at: string | null; // migratie 036 -- laatst naar de shop
   created_at: string;
   updated_at: string;
 };

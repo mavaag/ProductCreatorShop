@@ -63,7 +63,12 @@ function firstImage(urls: string | null | undefined): string {
   return String(urls ?? "").split(",").map((u) => u.trim()).filter(Boolean)[0] ?? "";
 }
 
-type ProductLite = { id: string; name: string; sku: string; image_url: string; published: boolean };
+type ProductLite = { id: string; name: string; sku: string; image_url: string; published: boolean; updated_at: string; last_exported_at: string | null };
+
+/** Product heeft wijzigingen die nog niet in de shop staan (zelfde regel als het label "Gewijzigd" op Producten). */
+function productChanged(p: ProductLite | undefined): boolean {
+  return !!p && (!p.last_exported_at || p.updated_at > p.last_exported_at);
+}
 
 /** Dag + maand kiezen (zonder jaar: een seizoen komt elk jaar terug). */
 function DayMonth({ day, month, onChange }: { day: string; month: string; onChange: (day: string, month: string) => void }) {
@@ -186,6 +191,7 @@ export default function CollectionsPage() {
   const ready = useAuthGuard();
   const [collections, setCollections] = useState<Collection[]>([]);
   const [members, setMembers] = useState<Record<string, string[]>>({}); // collection_id -> product_ids
+  const [removed, setRemoved] = useState<Record<string, string[]>>({}); // collection_id -> uit de collectie gehaald, nog niet gesynct
   const [products, setProducts] = useState<ProductLite[]>([]);
   const [loadError, setLoadError] = useState("");
   const [form, setForm] = useState<Form>(BLANK);
@@ -201,8 +207,8 @@ export default function CollectionsPage() {
   async function load() {
     const [c, pc, p] = await Promise.all([
       supabase.from("collections").select("*").order("sort_order").order("name"),
-      supabase.from("product_collections").select("product_id, collection_id"),
-      supabase.from("products").select("id, name, sku, image_url, published").order("name"),
+      supabase.from("product_collections").select("product_id, collection_id, removed_at"),
+      supabase.from("products").select("id, name, sku, image_url, published, updated_at, last_exported_at").order("name"),
     ]);
     if (c.error) {
       setLoadError(c.error.message);
@@ -211,8 +217,12 @@ export default function CollectionsPage() {
     setLoadError("");
     setCollections((c.data ?? []) as Collection[]);
     const m: Record<string, string[]> = {};
-    for (const r of (pc.data ?? []) as { product_id: string; collection_id: string }[]) (m[r.collection_id] ??= []).push(r.product_id);
+    const r: Record<string, string[]> = {};
+    for (const row of (pc.data ?? []) as { product_id: string; collection_id: string; removed_at: string | null }[]) {
+      ((row.removed_at ? r : m)[row.collection_id] ??= []).push(row.product_id);
+    }
     setMembers(m);
+    setRemoved(r);
     setProducts((p.data ?? []) as ProductLite[]);
   }
 
@@ -221,6 +231,15 @@ export default function CollectionsPage() {
   }, [ready]);
 
   const productById = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+
+  /** Wat van een collectie nog niet in de shop staat: gewijzigde producten (ook net weggehaalde) en/of de collectie zelf. */
+  function pendingFor(c: Collection): { productIds: string[]; collectionChanged: boolean } {
+    const ids = [...(members[c.id] ?? []), ...(removed[c.id] ?? [])];
+    return {
+      productIds: Array.from(new Set(ids)).filter((id) => productChanged(productById.get(id))),
+      collectionChanged: !c.synced_at || c.updated_at > c.synced_at,
+    };
+  }
 
   function payload(f: Form) {
     return {
@@ -266,8 +285,7 @@ export default function CollectionsPage() {
     const { error } = await supabase.from("collections").update(payload(editForm)).eq("id", editingId);
     setBusy(false);
     if (error) return alertDialog(error.message.includes("duplicate") ? `Er bestaat al een collectie "${editForm.name.trim()}".` : error.message);
-    // Naam gewijzigd: de producten krijgen bij de volgende sync de nieuwe categorienaam.
-    await touchProducts(members[editingId] ?? []);
+    // Naam gewijzigd: de categorie wordt in de shop hernoemd, de producten blijven eraan gekoppeld (geen product-sync nodig).
     setEditingId(null);
     setMessage('Collectie opgeslagen. Klik "Naar de shop" om ze in de shop bij te werken.');
     load();
@@ -297,21 +315,29 @@ export default function CollectionsPage() {
   }
 
   /**
-   * "Naar de shop": werkt de collectie(s) in WooCommerce bij en synchroniseert de producten van deze collectie,
-   * plus de producten die er in de shop nog in staan (net weggehaald), zodat ze er daar ook uit gaan.
+   * "Naar de shop": werkt de collectie in WooCommerce bij en synchroniseert enkel de producten met wijzigingen
+   * (toegevoegd, weggehaald of aangepast). Alles gesynct: niets te doen.
    */
   async function syncCollection(c: Collection) {
-    if (!(await confirmDialog(`Collectie "${c.name}" naar de shop sturen?\n\nDe collectiepagina (tekst, banner) en de producten van de collectie worden bijgewerkt in WooCommerce (ook hun prijzen, beschrijving, categorieën en foto's).`))) return;
+    const pending = pendingFor(c);
+    if (pending.productIds.length === 0 && !pending.collectionChanged) {
+      setMessage(`"${c.name}" staat al helemaal in de shop.`);
+      return;
+    }
+    const what = [
+      pending.collectionChanged ? "de collectiepagina (tekst, banner, seizoen)" : "",
+      pending.productIds.length ? `${pending.productIds.length} gewijzigd(e) product(en) (ook hun prijs, beschrijving, categorieën en foto's)` : "",
+    ]
+      .filter(Boolean)
+      .join(" en ");
+    if (!(await confirmDialog(`Collectie "${c.name}" naar de shop sturen?\n\nWordt bijgewerkt in WooCommerce: ${what}.`))) return;
     setBusy(true);
     setMessage("");
     try {
       const { data: s } = await supabase.auth.getSession();
       const headers = { "Content-Type": "application/json", Authorization: `Bearer ${s.session?.access_token}` };
       setSyncing({ id: c.id, text: "Voorbereiden..." });
-      const tRes = await fetch("/api/collections", { method: "POST", headers, body: JSON.stringify({ id: c.id }) });
-      const t = await tRes.json().catch(() => ({}));
-      if (!tRes.ok) throw new Error(t.error ?? `fout ${tRes.status}`);
-      const productIds: string[] = t.productIds ?? [];
+      const productIds = pending.productIds;
       const agg = { updated: 0, unchanged: 0, missing: [] as string[], notes: [] as string[], errors: [] as string[] };
       let offset = 0;
       for (let guard = 0; guard < 1000; guard++) {
@@ -336,7 +362,7 @@ export default function CollectionsPage() {
         if (b.done || b.nextOffset == null) break;
         offset = b.nextOffset;
       }
-      const parts = [`${productIds.length} product(en) gesynchroniseerd`];
+      const parts = [productIds.length ? `${productIds.length} product(en) gesynchroniseerd` : "collectiepagina bijgewerkt"];
       if (agg.missing.length) parts.push(`nog niet in de shop (eerst aanmaken via Producten): ${agg.missing.join(", ")}`);
       if (agg.errors.length) parts.push(`fouten: ${agg.errors.join("; ")}`);
       setMessage(`"${c.name}" naar de shop gestuurd: ${parts.join(" -- ")}.`);
@@ -357,17 +383,18 @@ export default function CollectionsPage() {
   }
 
   async function addProduct(collectionId: string, productId: string) {
-    const { error } = await supabase.from("product_collections").insert({ collection_id: collectionId, product_id: productId });
-    if (error && !error.message.includes("duplicate")) return alertDialog(error.message);
+    const { error } = await supabase.from("product_collections").upsert({ collection_id: collectionId, product_id: productId, removed_at: null }, { onConflict: "product_id,collection_id" });
+    if (error) return alertDialog(error.message);
     await touchProducts([productId]);
-    setMembers((m) => ({ ...m, [collectionId]: [...(m[collectionId] ?? []), productId] }));
+    load();
   }
 
   async function removeProduct(collectionId: string, productId: string) {
-    const { error } = await supabase.from("product_collections").delete().eq("collection_id", collectionId).eq("product_id", productId);
+    // Niet meteen wissen: removed_at zorgt dat "Naar de shop" de categorie in de shop weghaalt.
+    const { error } = await supabase.from("product_collections").update({ removed_at: new Date().toISOString() }).eq("collection_id", collectionId).eq("product_id", productId);
     if (error) return alertDialog(error.message);
     await touchProducts([productId]);
-    setMembers((m) => ({ ...m, [collectionId]: (m[collectionId] ?? []).filter((id) => id !== productId) }));
+    load();
   }
 
   if (!ready) return null;
@@ -445,6 +472,8 @@ export default function CollectionsPage() {
           const n = members[c.id]?.length ?? 0;
           const season = formatSeason(c);
           const live = isHighlighted(c);
+          const pend = pendingFor(c);
+          const nPending = pend.productIds.length + (pend.collectionChanged ? 1 : 0);
           if (editingId === c.id) {
             return (
               <div key={c.id} className="card coll-card coll-card-wide">
@@ -466,16 +495,19 @@ export default function CollectionsPage() {
                   {" · "}
                   {c.highlight === "always" ? "altijd uitgelicht" : c.highlight === "never" ? "nooit uitgelicht" : "uitgelicht tijdens het seizoen"}
                 </div>
-                <div className="muted coll-meta">
-                  {n} product{n === 1 ? "" : "en"}
-                  {" · "}
-                  {c.woo_category_id ? "in de shop" : "nog niet gesynct"}
+                <div className="muted coll-meta">{n} product{n === 1 ? "" : "en"}</div>
+                <div className={`coll-status${nPending ? " pending" : ""}`} title={pend.productIds.map((id) => productById.get(id)?.name).filter(Boolean).join("\n")}>
+                  {nPending === 0
+                    ? "In de shop ✓"
+                    : !c.woo_category_id
+                      ? "Nog niet in de shop"
+                      : [pend.collectionChanged ? "collectie gewijzigd" : "", pend.productIds.length ? `${pend.productIds.length} product${pend.productIds.length === 1 ? "" : "en"} gewijzigd` : ""].filter(Boolean).join(" · ") + " -- nog niet in de shop"}
                 </div>
                 <div className="coll-actions">
                   <button className="btn secondary" onClick={() => { setOpenId(openId === c.id ? null : c.id); setSearch(""); }}>
                     {openId === c.id ? "Producten sluiten" : "Producten"}
                   </button>
-                  <button className="btn" disabled={busy} onClick={() => syncCollection(c)} title="Collectie en haar producten bijwerken in WooCommerce">
+                  <button className={nPending ? "btn" : "btn secondary"} disabled={busy} onClick={() => syncCollection(c)} title="Wijzigingen van de collectie en haar producten naar WooCommerce sturen">
                     {syncing?.id === c.id ? syncing.text : "Naar de shop"}
                   </button>
                   <button className="btn secondary" onClick={() => { setEditingId(c.id); setEditForm(toForm(c)); }}>Bewerken</button>
@@ -490,6 +522,12 @@ export default function CollectionsPage() {
       {openCollection && (
         <div className="card" style={{ marginTop: 20 }}>
           <h2 style={{ marginTop: 0 }}>Producten in {openCollection.name} ({openMembers.length})</h2>
+          {(removed[openCollection.id] ?? []).length > 0 && (
+            <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>
+              Weggehaald, gaat er in de shop uit bij <b>Naar de shop</b>:{" "}
+              {(removed[openCollection.id] ?? []).map((id) => productById.get(id)?.name).filter(Boolean).join(", ")}
+            </p>
+          )}
           {openMembers.length === 0 ? (
             <p className="muted">Nog geen producten. Zoek hieronder, of selecteer producten op de pagina <Link href="/products">Producten</Link> en kies <i>Aan collectie toevoegen</i>.</p>
           ) : (
@@ -503,6 +541,7 @@ export default function CollectionsPage() {
                     {firstImage(p.image_url) ? <img src={firstImage(p.image_url)} alt="" loading="lazy" /> : <div className="coll-product-noimg" />}
                     <Link href={`/products/${p.id}`} className="coll-product-name" title={p.sku}>{p.name}</Link>
                     {!p.published && <span className="muted" style={{ fontSize: 11 }}>niet gepubliceerd</span>}
+                    {productChanged(p) && <span className="coll-dot" title="Wijziging nog niet in de shop" />}
                     <button className="btn secondary coll-remove" title="Uit de collectie halen" onClick={() => removeProduct(openCollection.id, p.id)}>×</button>
                   </div>
                 ))}
