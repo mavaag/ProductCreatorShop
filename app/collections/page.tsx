@@ -8,6 +8,7 @@ import { Collection } from "@/lib/types";
 import { alertDialog, confirmDialog } from "@/components/DialogHost";
 import { uploadProductImage } from "@/lib/uploadImage";
 import { formatSeason, isHighlighted, isValidMmDd } from "@/lib/collections";
+import { COLLECTION_BACKGROUNDS, backgroundCss } from "@/lib/collectionBackgrounds";
 
 type Form = {
   name: string;
@@ -19,8 +20,14 @@ type Form = {
   end_month: string;
   highlight: Collection["highlight"];
   sort_order: string;
+  background: string;
+  background_url: string;
+  background_color: string;
 };
-const BLANK: Form = { name: "", description: "", banner_url: "", start_day: "", start_month: "", end_day: "", end_month: "", highlight: "season", sort_order: "0" };
+const BLANK: Form = {
+  name: "", description: "", banner_url: "", start_day: "", start_month: "", end_day: "", end_month: "", highlight: "season", sort_order: "0",
+  background: "none", background_url: "", background_color: "",
+};
 
 const MONTHS = ["januari", "februari", "maart", "april", "mei", "juni", "juli", "augustus", "september", "oktober", "november", "december"];
 
@@ -57,6 +64,9 @@ function toForm(c: Collection): Form {
     end_month: em,
     highlight: c.highlight,
     sort_order: String(c.sort_order ?? 0),
+    background: c.background ?? "none",
+    background_url: c.background_url ?? "",
+    background_color: c.background_color ?? "",
   };
 }
 function firstImage(urls: string | null | undefined): string {
@@ -86,6 +96,81 @@ function DayMonth({ day, month, onChange }: { day: string; month: string; onChan
           <option key={m} value={String(i + 1)}>{m}</option>
         ))}
       </select>
+    </div>
+  );
+}
+
+/** Achtergrond van de collectiepagina: thema, eigen afbeelding of geen -- met voorbeeld. */
+function BackgroundField({ form, setForm }: { form: Form; setForm: (f: Form) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const theme = COLLECTION_BACKGROUNDS.find((t) => t.key === form.background);
+  async function upload(file: File | null) {
+    if (!file) return;
+    setBusy(true);
+    setError("");
+    try {
+      setForm({ ...form, background: "custom", background_url: await uploadProductImage(file) });
+    } catch (e: any) {
+      setError("Opladen mislukt: " + (e?.message ?? String(e)));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="coll-bg-field">
+      <div className="coll-bg-preview" style={backgroundCss(form.background, form.background_url, form.background_color)}>
+        <div className="coll-bg-card" />
+        <div className="coll-bg-card" />
+        <div className="coll-bg-card" />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <select value={form.background} onChange={(e) => setForm({ ...form, background: e.target.value })}>
+          <option value="none">Geen (gewone achtergrond van de shop)</option>
+          {COLLECTION_BACKGROUNDS.map((t) => (
+            <option key={t.key} value={t.key}>{t.label}</option>
+          ))}
+          <option value="custom">Eigen afbeelding</option>
+        </select>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 6 }}>
+          <label className="btn secondary" style={{ margin: 0, cursor: busy ? "default" : "pointer" }}>
+            {busy ? "Opladen..." : "Eigen afbeelding opladen"}
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              style={{ display: "none" }}
+              disabled={busy}
+              onChange={(e) => {
+                upload(e.target.files?.[0] ?? null);
+                e.target.value = "";
+              }}
+            />
+          </label>
+          {form.background !== "none" && (
+            <>
+              <input
+                type="color"
+                value={form.background_color || theme?.color || "#eef2f5"}
+                onChange={(e) => setForm({ ...form, background_color: e.target.value })}
+                title="Achtergrondkleur"
+                style={{ width: 44, height: 32, padding: 2 }}
+              />
+              {form.background_color && (
+                <button type="button" className="btn secondary" onClick={() => setForm({ ...form, background_color: "" })}>
+                  Standaardkleur
+                </button>
+              )}
+            </>
+          )}
+        </div>
+        {form.background === "custom" && (
+          <input style={{ marginTop: 6 }} placeholder="of plak een afbeeldings-URL" value={form.background_url} onChange={(e) => setForm({ ...form, background_url: e.target.value })} />
+        )}
+        <p className="muted" style={{ fontSize: 12, margin: "4px 0 0" }}>
+          Achter de producten op de collectiepagina. Eigen afbeelding: rustig beeld, wordt over de hele pagina uitgerekt (bv. 1920 × 1080).
+        </p>
+        {error && <p style={{ color: "var(--rust)", fontSize: 12, margin: "4px 0 0" }}>{error}</p>}
+      </div>
     </div>
   );
 }
@@ -177,6 +262,8 @@ function CollectionForm({ form, setForm, onSubmit, onCancel, submitLabel, busy }
       </div>
       <label>Banner</label>
       <BannerField value={form.banner_url} onChange={(url) => setForm({ ...form, banner_url: url })} />
+      <label>Achtergrond van de collectiepagina</label>
+      <BackgroundField form={form} setForm={setForm} />
       <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
         <button className="btn" type="submit" disabled={busy}>{busy ? "Opslaan..." : submitLabel}</button>
         {onCancel && (
@@ -250,6 +337,9 @@ export default function CollectionsPage() {
       season_end: joinMmDd(f.end_day, f.end_month),
       highlight: f.highlight,
       sort_order: Number.parseInt(f.sort_order, 10) || 0,
+      background: f.background === "custom" && !f.background_url.trim() ? "none" : f.background,
+      background_url: f.background === "custom" ? f.background_url.trim() || null : null,
+      background_color: f.background !== "none" ? f.background_color || null : null,
       updated_at: new Date().toISOString(),
     };
   }
@@ -454,7 +544,8 @@ export default function CollectionsPage() {
                 onClick={() => {
                   const [sd, sm] = splitMmDd(pr.start);
                   const [ed, em] = splitMmDd(pr.end);
-                  setForm({ ...BLANK, name: pr.name, description: pr.description, start_day: sd, start_month: sm, end_day: ed, end_month: em });
+                  const bg = COLLECTION_BACKGROUNDS.some((t) => t.key === pr.name.toLowerCase()) ? pr.name.toLowerCase() : "none";
+                  setForm({ ...BLANK, name: pr.name, description: pr.description, start_day: sd, start_month: sm, end_day: ed, end_month: em, background: bg });
                 }}
               >
                 {pr.name}
@@ -484,7 +575,10 @@ export default function CollectionsPage() {
           }
           return (
             <div key={c.id} className={`card coll-card${openId === c.id ? " open" : ""}`}>
-              <div className="coll-banner">{c.banner_url ? <img src={c.banner_url} alt="" loading="lazy" /> : <span>{c.name}</span>}</div>
+              <div className="coll-banner" style={c.banner_url ? undefined : backgroundCss(c.background, c.background_url, c.background_color)}>
+                {c.banner_url ? <img src={c.banner_url} alt="" loading="lazy" /> : <span style={{ color: "#222" }}>{c.name}</span>}
+              </div>
+              {c.background !== "none" && <div className="coll-bg-strip" style={backgroundCss(c.background, c.background_url, c.background_color)} title="Achtergrond van de collectiepagina" />}
               <div className="coll-body">
                 <div className="coll-title">
                   <strong>{c.name}</strong>
