@@ -730,3 +730,19 @@ button.folder-link:hover { color: var(--cyan); }
 .file-badge.none { color: var(--rust); border-color: var(--rust); }
 .file-badge:hover { background: var(--panel-2); }
 .prod-files { margin-top: 6px; }
+
+/* Ster "Uitgelicht" (WooCommerce featured -> homepage "Populair in de shop") */
+.featured-star {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  padding: 0; margin-right: 6px; vertical-align: middle;
+  background: transparent; border: 0; cursor: pointer; color: var(--ink-faint);
+  transition: color 0.15s, filter 0.15s, transform 0.1s;
+}
+.featured-star svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+.featured-star:hover { color: var(--yellow); }
+.featured-star.on { color: var(--yellow); filter: drop-shadow(0 0 4px rgba(252, 238, 10, 0.6)); }
+.featured-star.on svg { fill: currentColor; }
+.featured-star:active { transform: scale(0.9); }
+.featured-star:disabled { opacity: 0.5; cursor: wait; }
+.featured-star:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }
+.prod-name-row { display: flex; align-items: flex-start; gap: 2px; }

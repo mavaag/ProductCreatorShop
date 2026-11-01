@@ -12,6 +12,7 @@ import { nextAvailableSku, skuExists } from "@/lib/sku";
 import { PromptModal } from "@/components/PromptModal";
 import { confirmDialog } from "@/components/DialogHost";
 import FileBadges from "@/components/FileBadges";
+import FeaturedStar, { useFeaturedSkus } from "@/components/FeaturedStar";
 import { FileFilter, FileStatus, loadFileStatus, matchesFileFilter } from "@/lib/productionFiles";
 
 type ProcessType = Product["process_type"];
@@ -167,6 +168,7 @@ export default function ProductsPage() {
   const [publishFilter, setPublishFilter] = useState<PublishFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [fileFilter, setFileFilter] = useState<FileFilter>("all");
+  const [featuredFilter, setFeaturedFilter] = useState<"all" | "featured" | "not">("all");
   const [fileStatus, setFileStatus] = useState<Map<string, FileStatus>>(new Map());
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkMargin, setBulkMargin] = useState("");
@@ -181,6 +183,8 @@ export default function ProductsPage() {
   const [exportOpen, toggleExportOpen] = useCollapsible("woo-export-collapsed");
   const [syncOpen, toggleSyncOpen] = useCollapsible("woo-sync-collapsed");
   const [viewMode, setViewMode] = useViewMode();
+  const { skus: featuredSkus, setFeatured } = useFeaturedSkus(ready);
+  const isFeatured = (sku: string) => (featuredSkus ? featuredSkus.has(sku) : undefined);
 
   async function load() {
     const { data } = await supabase
@@ -630,6 +634,7 @@ export default function ProductsPage() {
     if (publishFilter !== "all") list = list.filter((p) => (publishFilter === "published" ? p.published : !p.published));
     if (categoryFilter !== "all") list = list.filter((p) => inCategory(p, categoryFilter));
     if (fileFilter !== "all") list = list.filter((p) => matchesFileFilter(fileStatus.get(p.id), fileFilter));
+    if (featuredFilter !== "all" && featuredSkus) list = list.filter((p) => featuredSkus.has(p.sku) === (featuredFilter === "featured"));
     const q = search.trim().toLowerCase();
     if (q) list = list.filter((p) => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q));
 
@@ -650,7 +655,7 @@ export default function ProductsPage() {
       }
     });
     return withPrices.map((x) => x.p);
-  }, [products, activeTab, publishFilter, categoryFilter, fileFilter, fileStatus, search, sortKey]);
+  }, [products, activeTab, publishFilter, categoryFilter, fileFilter, fileStatus, featuredFilter, featuredSkus, search, sortKey]);
 
   if (!ready) return null;
 
@@ -882,6 +887,14 @@ export default function ProductsPage() {
             <option value="none">Zonder bestanden</option>
           </select>
         </div>
+        <div style={{ flex: 1, minWidth: 160 }}>
+          <label>Homepage</label>
+          <select value={featuredFilter} onChange={(e) => setFeaturedFilter(e.target.value as "all" | "featured" | "not")}>
+            <option value="all">Alles</option>
+            <option value="featured">Enkel uitgelicht (ster)</option>
+            <option value="not">Niet uitgelicht</option>
+          </select>
+        </div>
       </div>
 
       {selected.size > 0 && (
@@ -974,7 +987,10 @@ export default function ProductsPage() {
                   {isChanged(p) && <span className="prod-export">{p.last_exported_at ? "Gewijzigd" : "Nieuw"}</span>}
 
                   <div className="prod-body">
-                    <Link href={`/products/${p.id}`} className="prod-name">{p.name}</Link>
+                    <div className="prod-name-row">
+                      <FeaturedStar sku={p.sku} featured={isFeatured(p.sku)} onChange={setFeatured} />
+                      <Link href={`/products/${p.id}`} className="prod-name">{p.name}</Link>
+                    </div>
                     <div className="prod-sku mono">{p.sku}</div>
                     <div className="prod-price mono">
                       {min == null
@@ -1044,7 +1060,7 @@ export default function ProductsPage() {
                   <td>
                     <input type="checkbox" style={{ width: "auto" }} aria-label={`Selecteer ${p.name}`} checked={selected.has(p.id)} onChange={() => toggle(p.id)} />
                   </td>
-                  <td><Link href={`/products/${p.id}`}>{p.name}</Link></td>
+                  <td><FeaturedStar sku={p.sku} featured={isFeatured(p.sku)} onChange={setFeatured} size={14} /><Link href={`/products/${p.id}`}>{p.name}</Link></td>
                   <td><span className="pill">{PROCESS_TYPE_LABELS[p.process_type]}</span></td>
                   <td>
                     {productCategories(p).length > 0

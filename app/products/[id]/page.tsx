@@ -16,6 +16,7 @@ import { slugifyForSku, nextAvailableSku, skuExists } from "@/lib/sku";
 import { uploadProductImage } from "@/lib/uploadImage";
 import { GravureSettingsEditor } from "@/components/GravureSettingsEditor";
 import ProductFilesCard from "@/components/ProductFilesCard";
+import FeaturedStar, { useFeaturedSkus } from "@/components/FeaturedStar";
 import { DEFAULT_GRAVURE_SETTINGS, splitImageUrls, stableStringify } from "@/lib/gravure";
 import {
   Product,
@@ -62,6 +63,7 @@ function reconcilePersonalizationZones(personalization: Personalization): Person
 
 export default function ProductEditPage() {
   const ready = useAuthGuard();
+  const { skus: featuredSkus, setFeatured } = useFeaturedSkus(ready);
   const params = useParams();
   const router = useRouter();
   const productId = params.id as string;
@@ -615,6 +617,7 @@ export default function ProductEditPage() {
         </div>
       ) : (
         <h1>
+          <FeaturedStar sku={product.sku} featured={featuredSkus ? featuredSkus.has(product.sku) : undefined} onChange={setFeatured} size={22} />
           {product.name}{" "}
           <button
             className="icon-btn"

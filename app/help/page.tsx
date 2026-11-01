@@ -51,6 +51,7 @@ const SECTIONS: Section[] = [
           </li>
           <li><b>Importeren uit WooCommerce</b>: haalt producten die je rechtstreeks in de shop maakte of wijzigde naar hier (naam, beschrijving, categorieën, afbeeldingen, gewicht, verzendklasse). De prijs blijft die van de beheertool.</li>
           <li><b>CSV-export</b>: <i>Alles exporteren</i> of enkel de wijzigingen, voor het actieve tabblad. Handig als backup of voor een handmatige import.</li>
+          <li><b>Ster (uitgelicht)</b>: klik op de ster voor de naam (op een kaartje, in de lijst of bovenaan de productpagina) om een product <b>uit te lichten op de homepage</b>, in het blok <i>Populair in de shop</i>. Dat gebeurt meteen in WooCommerce, er is geen sync voor nodig. Het is hetzelfde sterretje als in WP-admin &gt; Producten, dus wat je daar aanklikt, zie je hier ook. Het product moet al in de shop staan. Filter <i>Homepage</i> toont enkel de uitgelichte producten.</li>
         </ul>
         <h3>Een product bewerken</h3>
         <ul>
