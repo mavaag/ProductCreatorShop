@@ -1,5 +1,6 @@
 "use client";
 
+import { defaultWeightKg } from "@/lib/shippingWeight";
 import Link from "next/link";
 import { useEffect, useState, useCallback, useRef, forwardRef, useImperativeHandle } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -784,8 +785,8 @@ export default function ProductEditPage() {
             <input value={wc.shipping_class} onChange={(e) => setWc({ ...wc, shipping_class: e.target.value })} placeholder="slug uit WooCommerce, bv. klein-pakket" />
           </div>
           <div>
-            <label>Gewicht (kg)</label>
-            <input value={wc.weight_kg} onChange={(e) => setWc({ ...wc, weight_kg: e.target.value })} placeholder="bv. 0.25" />
+            <label>Gewicht (kg) <span className="muted">incl. verpakking -- bepaalt de verzending</span></label>
+            <input value={wc.weight_kg} onChange={(e) => setWc({ ...wc, weight_kg: e.target.value })} placeholder={`leeg = standaard ${String(defaultWeightKg(wc.categories, product?.name)).replace(".", ",")} kg`} />
           </div>
         </div>
         <label>Collecties <span className="muted">(meteen bewaard -- in de shop na de volgende sync)</span></label>
