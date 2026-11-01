@@ -159,9 +159,14 @@ export default function ProductionQueue() {
                     {p && <> · <span className="pill cyan">{PROCESS_TYPE_LABELS[p.process_type as keyof typeof PROCESS_TYPE_LABELS] ?? p.process_type}</span> <Link href={`/products/${p.id}`}>product</Link></>}
                   </div>
                   {options.length > 0 && (
-                    <div className="muted" style={{ fontSize: 12.5 }}>
-                      {options.map((m) => `${m.key}: ${String(m.value).split(/\r?\n/).join(" / ")}`).join(" · ")}
-                    </div>
+                    <dl className="order-options">
+                      {options.map((m, i) => (
+                        <div key={i} className="order-option">
+                          <dt>{m.key}</dt>
+                          <dd>{String(m.value)}</dd>
+                        </div>
+                      ))}
+                    </dl>
                   )}
                   {files.length > 0 && <CustomerFiles files={files} zipName={`bestelling-${o.order_number}-regel-${l.wc_line_id ?? l.id}`} />}
                   {!p ? <p className="muted" style={{ margin: "4px 0" }}>Geen product met deze SKU in de beheertool.</p>
