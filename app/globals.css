@@ -596,6 +596,26 @@ input[type="checkbox"] { accent-color: var(--magenta); }
 .mat-card.editing label { margin-top: 8px; }
 .mat-card.editing .row > * { min-width: 110px; }
 .mat-head { display: flex; align-items: flex-start; gap: 11px; }
+/* Foto van het materiaal (i.p.v. het categorie-icoon) */
+.mat-photo {
+  flex: 0 0 auto;
+  width: 64px; height: 64px;
+  background: #fff;
+  border: 1px solid color-mix(in srgb, var(--mat-color) 45%, transparent);
+  overflow: hidden;
+}
+.mat-photo img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.mat-image-field { display: flex; gap: 10px; align-items: flex-start; }
+.mat-image-preview {
+  flex: 0 0 auto;
+  width: 84px; height: 84px;
+  display: flex; align-items: center; justify-content: center;
+  background: #fff;
+  border: 1px solid var(--line);
+  font-size: 11px;
+  overflow: hidden;
+}
+.mat-image-preview img { width: 100%; height: 100%; object-fit: contain; }
 .mat-icon {
   flex: 0 0 auto;
   display: flex; align-items: center; justify-content: center;

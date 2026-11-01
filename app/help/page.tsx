@@ -143,6 +143,7 @@ const SECTIONS: Section[] = [
           <li><b>Bestellingen</b> per materiaal: aantal verpakkingen, inhoud, totale prijs, leverancier en link. De prijs per eenheid volgt uit je aankopen; met <i>Markeer ontvangen</i> komt de hoeveelheid bij de voorraad.</li>
           <li><b>Voorraad</b> met een <i>waarschuwing onder</i>-grens: je ziet wanneer je moet bijbestellen.</li>
           <li>Voor UV-inkt: <i>inktverbruik bij volledige dekking (ml/m²)</i>, om de inktkost per print te schatten.</li>
+          <li><b>Foto</b> (sinds 01/11/2026): elk materiaal kan een foto krijgen, die op het kaartje staat i.p.v. het icoon. Bij <i>Bewerken</i>: <i>Foto van link ophalen</i> zoekt de productfoto op de link naar de leverancier, <i>Zelf opladen</i> gebruikt je eigen foto, of plak een afbeeldings-URL. Een nieuw materiaal met een link krijgt automatisch een foto. De knop <b>Foto&apos;s ophalen</b> (naast de tabbladen) doet dit voor alle materialen met een link maar nog zonder foto. Ophalen lukt niet bij elke winkel (bv. Amazon en sommige Temu-links): laad dan zelf een foto op. De foto wordt in de opslag van de beheertool bewaard, dus ze blijft ook als de winkel haar pagina wijzigt.</li>
         </ul>
       </>
     ),
