@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState, useCallback, useRef, forwardRef, useImperativeHandle } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
@@ -101,6 +102,8 @@ export default function ProductEditPage() {
   const [bulkMargin, setBulkMargin] = useState<string>("");
   const editorRefs = useRef<Map<string, VariationEditorHandle>>(new Map());
   const [wooAttributeTerms, setWooAttributeTerms] = useState<Record<string, string[]>>({});
+  const [allCollections, setAllCollections] = useState<{ id: string; name: string }[]>([]);
+  const [productCollections, setProductCollections] = useState<Set<string>>(new Set());
 
   const isSimple = (product?.attribute_names.length ?? 0) === 0;
 
@@ -127,7 +130,32 @@ export default function ProductEditPage() {
     setVariations(v ?? []);
     setMachines(m ?? []);
     setMaterials(mat ?? []);
+    // Collecties (migratie 035) -- ontbreekt de tabel nog, dan blijft dit leeg.
+    const [{ data: cols }, { data: pc }] = await Promise.all([
+      supabase.from("collections").select("id, name").order("sort_order").order("name"),
+      supabase.from("product_collections").select("collection_id").eq("product_id", productId),
+    ]);
+    setAllCollections((cols as { id: string; name: string }[]) ?? []);
+    setProductCollections(new Set(((pc as { collection_id: string }[]) ?? []).map((r) => r.collection_id)));
   }, [productId]);
+
+  /** Product in/uit een collectie (meteen bewaard; gaat naar de shop bij de volgende sync). */
+  async function toggleCollection(collectionId: string, on: boolean) {
+    const { error } = on
+      ? await supabase.from("product_collections").insert({ product_id: productId, collection_id: collectionId })
+      : await supabase.from("product_collections").delete().eq("product_id", productId).eq("collection_id", collectionId);
+    if (error && !error.message.includes("duplicate")) {
+      setNotice(`Collectie niet bijgewerkt: ${error.message}`);
+      return;
+    }
+    await supabase.from("products").update({ updated_at: new Date().toISOString() }).eq("id", productId);
+    setProductCollections((cur) => {
+      const next = new Set(cur);
+      if (on) next.add(collectionId);
+      else next.delete(collectionId);
+      return next;
+    });
+  }
 
   useEffect(() => {
     if (ready) {
@@ -760,6 +788,21 @@ export default function ProductEditPage() {
             <input value={wc.weight_kg} onChange={(e) => setWc({ ...wc, weight_kg: e.target.value })} placeholder="bv. 0.25" />
           </div>
         </div>
+        <label>Collecties <span className="muted">(meteen bewaard -- in de shop na de volgende sync)</span></label>
+        {allCollections.length === 0 ? (
+          <p className="muted" style={{ marginTop: 0, fontSize: 12 }}>
+            Nog geen collecties. Maak er een aan op de pagina <Link href="/collections">Collecties</Link>.
+          </p>
+        ) : (
+          <div className="prod-collections">
+            {allCollections.map((c) => (
+              <label key={c.id}>
+                <input type="checkbox" checked={productCollections.has(c.id)} onChange={(e) => toggleCollection(c.id, e.target.checked)} style={{ width: "auto" }} />
+                {c.name}
+              </label>
+            ))}
+          </div>
+        )}
         <label>Afbeelding(en) -- URL, meerdere gescheiden door een komma</label>
         <input value={wc.image_url} onChange={(e) => setWc({ ...wc, image_url: e.target.value })} placeholder="https://..." />
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>

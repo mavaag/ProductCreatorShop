@@ -1,0 +1,471 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { supabase } from "@/lib/supabaseClient";
+import { useAuthGuard } from "@/lib/useAuthGuard";
+import { Collection } from "@/lib/types";
+import { alertDialog, confirmDialog } from "@/components/DialogHost";
+import { uploadProductImage } from "@/lib/uploadImage";
+import { formatSeason, isHighlighted, isValidMmDd } from "@/lib/collections";
+
+type Form = {
+  name: string;
+  description: string;
+  banner_url: string;
+  start_day: string;
+  start_month: string;
+  end_day: string;
+  end_month: string;
+  highlight: Collection["highlight"];
+  sort_order: string;
+};
+const BLANK: Form = { name: "", description: "", banner_url: "", start_day: "", start_month: "", end_day: "", end_month: "", highlight: "season", sort_order: "0" };
+
+const MONTHS = ["januari", "februari", "maart", "april", "mei", "juni", "juli", "augustus", "september", "oktober", "november", "december"];
+
+/** Veelgebruikte collecties met een voorstel voor het seizoen (pas gerust aan). */
+const PRESETS: { name: string; start: string; end: string; description: string }[] = [
+  { name: "Kerst", start: "11-15", end: "12-26", description: "Cadeaus en decoratie voor de feestdagen." },
+  { name: "Sinterklaas", start: "11-01", end: "12-06", description: "Leuke cadeautjes voor in de schoen." },
+  { name: "Halloween", start: "10-01", end: "10-31", description: "Griezelige decoratie en gadgets." },
+  { name: "Valentijn", start: "01-20", end: "02-14", description: "Gepersonaliseerde cadeaus voor je lief." },
+  { name: "Pasen", start: "03-01", end: "04-21", description: "Paasdecoratie en cadeautjes." },
+  { name: "Moederdag", start: "04-20", end: "05-12", description: "Een persoonlijk cadeau voor mama." },
+  { name: "Vaderdag", start: "05-20", end: "06-15", description: "Een persoonlijk cadeau voor papa." },
+];
+
+function splitMmDd(v: string | null): [string, string] {
+  if (!isValidMmDd(v)) return ["", ""];
+  return [String(Number((v as string).slice(3))), String(Number((v as string).slice(0, 2)))];
+}
+function joinMmDd(day: string, month: string): string | null {
+  if (!day || !month) return null;
+  const v = `${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  return isValidMmDd(v) ? v : null;
+}
+function toForm(c: Collection): Form {
+  const [sd, sm] = splitMmDd(c.season_start);
+  const [ed, em] = splitMmDd(c.season_end);
+  return {
+    name: c.name,
+    description: c.description ?? "",
+    banner_url: c.banner_url ?? "",
+    start_day: sd,
+    start_month: sm,
+    end_day: ed,
+    end_month: em,
+    highlight: c.highlight,
+    sort_order: String(c.sort_order ?? 0),
+  };
+}
+function firstImage(urls: string | null | undefined): string {
+  return String(urls ?? "").split(",").map((u) => u.trim()).filter(Boolean)[0] ?? "";
+}
+
+type ProductLite = { id: string; name: string; sku: string; image_url: string; published: boolean };
+
+/** Dag + maand kiezen (zonder jaar: een seizoen komt elk jaar terug). */
+function DayMonth({ day, month, onChange }: { day: string; month: string; onChange: (day: string, month: string) => void }) {
+  return (
+    <div style={{ display: "flex", gap: 6 }}>
+      <select value={day} onChange={(e) => onChange(e.target.value, month)} style={{ width: 80 }}>
+        <option value="">dag</option>
+        {Array.from({ length: 31 }, (_, i) => String(i + 1)).map((d) => (
+          <option key={d} value={d}>{d}</option>
+        ))}
+      </select>
+      <select value={month} onChange={(e) => onChange(day, e.target.value)}>
+        <option value="">maand</option>
+        {MONTHS.map((m, i) => (
+          <option key={m} value={String(i + 1)}>{m}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function BannerField({ value, onChange }: { value: string; onChange: (url: string) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function upload(file: File | null) {
+    if (!file) return;
+    setBusy(true);
+    setError("");
+    try {
+      onChange(await uploadProductImage(file));
+    } catch (e: any) {
+      setError("Opladen mislukt: " + (e?.message ?? String(e)));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="coll-banner-field">
+      <div className="coll-banner-preview">{value ? <img src={value} alt="" /> : <span className="muted">Geen banner</span>}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <label className="btn secondary" style={{ margin: 0, cursor: busy ? "default" : "pointer" }}>
+            {busy ? "Opladen..." : "Foto opladen"}
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              style={{ display: "none" }}
+              disabled={busy}
+              onChange={(e) => {
+                upload(e.target.files?.[0] ?? null);
+                e.target.value = "";
+              }}
+            />
+          </label>
+          {value && (
+            <button type="button" className="btn secondary" onClick={() => onChange("")} disabled={busy}>
+              Wissen
+            </button>
+          )}
+        </div>
+        <input style={{ marginTop: 6 }} placeholder="of plak een afbeeldings-URL" value={value} onChange={(e) => onChange(e.target.value)} />
+        <p className="muted" style={{ fontSize: 12, margin: "4px 0 0" }}>Breed beeld werkt het best (bv. 1600 × 500).</p>
+        {error && <p style={{ color: "var(--rust)", fontSize: 12, margin: "4px 0 0" }}>{error}</p>}
+      </div>
+    </div>
+  );
+}
+
+function CollectionForm({ form, setForm, onSubmit, onCancel, submitLabel, busy }: { form: Form; setForm: (f: Form) => void; onSubmit: () => void; onCancel?: () => void; submitLabel: string; busy: boolean }) {
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSubmit();
+      }}
+    >
+      <div className="row">
+        <div>
+          <label>Naam</label>
+          <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="bv. Kerst" />
+        </div>
+        <div>
+          <label>Uitlichten op de homepage</label>
+          <select value={form.highlight} onChange={(e) => setForm({ ...form, highlight: e.target.value as Form["highlight"] })}>
+            <option value="season">Tijdens het seizoen</option>
+            <option value="always">Altijd</option>
+            <option value="never">Nooit</option>
+          </select>
+        </div>
+      </div>
+      <label>Tekst (bovenaan de collectiepagina in de shop)</label>
+      <textarea rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+      <div className="row">
+        <div>
+          <label>Seizoen van</label>
+          <DayMonth day={form.start_day} month={form.start_month} onChange={(d, m) => setForm({ ...form, start_day: d, start_month: m })} />
+        </div>
+        <div>
+          <label>tot en met</label>
+          <DayMonth day={form.end_day} month={form.end_month} onChange={(d, m) => setForm({ ...form, end_day: d, end_month: m })} />
+        </div>
+        <div style={{ maxWidth: 120 }}>
+          <label>Volgorde</label>
+          <input type="number" value={form.sort_order} onChange={(e) => setForm({ ...form, sort_order: e.target.value })} />
+        </div>
+      </div>
+      <label>Banner</label>
+      <BannerField value={form.banner_url} onChange={(url) => setForm({ ...form, banner_url: url })} />
+      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        <button className="btn" type="submit" disabled={busy}>{busy ? "Opslaan..." : submitLabel}</button>
+        {onCancel && (
+          <button className="btn secondary" type="button" onClick={onCancel}>Annuleren</button>
+        )}
+      </div>
+    </form>
+  );
+}
+
+export default function CollectionsPage() {
+  const ready = useAuthGuard();
+  const [collections, setCollections] = useState<Collection[]>([]);
+  const [members, setMembers] = useState<Record<string, string[]>>({}); // collection_id -> product_ids
+  const [products, setProducts] = useState<ProductLite[]>([]);
+  const [loadError, setLoadError] = useState("");
+  const [form, setForm] = useState<Form>(BLANK);
+  const [showNew, setShowNew] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<Form>(BLANK);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+
+  async function load() {
+    const [c, pc, p] = await Promise.all([
+      supabase.from("collections").select("*").order("sort_order").order("name"),
+      supabase.from("product_collections").select("product_id, collection_id"),
+      supabase.from("products").select("id, name, sku, image_url, published").order("name"),
+    ]);
+    if (c.error) {
+      setLoadError(c.error.message);
+      return;
+    }
+    setLoadError("");
+    setCollections((c.data ?? []) as Collection[]);
+    const m: Record<string, string[]> = {};
+    for (const r of (pc.data ?? []) as { product_id: string; collection_id: string }[]) (m[r.collection_id] ??= []).push(r.product_id);
+    setMembers(m);
+    setProducts((p.data ?? []) as ProductLite[]);
+  }
+
+  useEffect(() => {
+    if (ready) load();
+  }, [ready]);
+
+  const productById = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+
+  function payload(f: Form) {
+    return {
+      name: f.name.trim(),
+      description: f.description.trim(),
+      banner_url: f.banner_url.trim() || null,
+      season_start: joinMmDd(f.start_day, f.start_month),
+      season_end: joinMmDd(f.end_day, f.end_month),
+      highlight: f.highlight,
+      sort_order: Number.parseInt(f.sort_order, 10) || 0,
+      updated_at: new Date().toISOString(),
+    };
+  }
+
+  function seasonProblem(f: Form): string {
+    const a = joinMmDd(f.start_day, f.start_month);
+    const b = joinMmDd(f.end_day, f.end_month);
+    const anyFilled = f.start_day || f.start_month || f.end_day || f.end_month;
+    if (anyFilled && (!a || !b)) return "Vul het seizoen volledig in (dag én maand, van en tot), of laat het helemaal leeg.";
+    if (f.highlight === "season" && !a) return 'Kies een seizoen, of zet "Uitlichten op de homepage" op Altijd of Nooit.';
+    return "";
+  }
+
+  async function addCollection() {
+    const problem = seasonProblem(form);
+    if (problem) return alertDialog(problem);
+    setBusy(true);
+    const { data, error } = await supabase.from("collections").insert(payload(form)).select("id").single();
+    setBusy(false);
+    if (error) return alertDialog(error.message.includes("duplicate") ? `Er bestaat al een collectie "${form.name.trim()}".` : error.message);
+    setForm(BLANK);
+    setShowNew(false);
+    setMessage(`Collectie "${form.name.trim()}" aangemaakt. Voeg nu producten toe.`);
+    await load();
+    setOpenId(data.id);
+  }
+
+  async function saveEdit() {
+    if (!editingId) return;
+    const problem = seasonProblem(editForm);
+    if (problem) return alertDialog(problem);
+    setBusy(true);
+    const { error } = await supabase.from("collections").update(payload(editForm)).eq("id", editingId);
+    setBusy(false);
+    if (error) return alertDialog(error.message.includes("duplicate") ? `Er bestaat al een collectie "${editForm.name.trim()}".` : error.message);
+    // Naam gewijzigd: de producten krijgen bij de volgende sync de nieuwe categorienaam.
+    await touchProducts(members[editingId] ?? []);
+    setEditingId(null);
+    setMessage("Collectie opgeslagen. Synchroniseer om ze in de shop bij te werken.");
+    load();
+  }
+
+  async function removeCollection(c: Collection) {
+    const n = members[c.id]?.length ?? 0;
+    const ok = await confirmDialog(
+      `Collectie "${c.name}" verwijderen?\n\n${n} product(en) worden uit de collectie gehaald (de producten zelf blijven bestaan).` +
+        (c.woo_category_id ? `\nDe collectiepagina in de shop (categorie "Collecties > ${c.name}") wordt ook verwijderd.` : ""),
+      { confirmLabel: "Verwijderen", danger: true }
+    );
+    if (!ok) return;
+    setBusy(true);
+    const { data: s } = await supabase.auth.getSession();
+    const res = await fetch("/api/collections", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${s.session?.access_token}` },
+      body: JSON.stringify({ id: c.id }),
+    });
+    const body = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (!res.ok) return alertDialog(body.error ?? `Verwijderen mislukt (${res.status}).`);
+    setMessage(`Collectie "${c.name}" verwijderd${body.note ? ` (${body.note})` : ""}.`);
+    if (openId === c.id) setOpenId(null);
+    load();
+  }
+
+  /** Markeert producten als gewijzigd, zodat ze bij de volgende sync hun (collectie)categorieën meekrijgen. */
+  async function touchProducts(ids: string[]) {
+    if (ids.length === 0) return;
+    await supabase.from("products").update({ updated_at: new Date().toISOString() }).in("id", ids);
+  }
+
+  async function addProduct(collectionId: string, productId: string) {
+    const { error } = await supabase.from("product_collections").insert({ collection_id: collectionId, product_id: productId });
+    if (error && !error.message.includes("duplicate")) return alertDialog(error.message);
+    await touchProducts([productId]);
+    setMembers((m) => ({ ...m, [collectionId]: [...(m[collectionId] ?? []), productId] }));
+  }
+
+  async function removeProduct(collectionId: string, productId: string) {
+    const { error } = await supabase.from("product_collections").delete().eq("collection_id", collectionId).eq("product_id", productId);
+    if (error) return alertDialog(error.message);
+    await touchProducts([productId]);
+    setMembers((m) => ({ ...m, [collectionId]: (m[collectionId] ?? []).filter((id) => id !== productId) }));
+  }
+
+  if (!ready) return null;
+
+  if (loadError) {
+    return (
+      <div>
+        <h1>Collecties</h1>
+        <div className="warning">
+          Collecties kunnen niet geladen worden: {loadError}
+          <br />
+          Is migratie <code>supabase/migration_035_collections.sql</code> al uitgevoerd?
+        </div>
+      </div>
+    );
+  }
+
+  const highlighted = collections.filter((c) => isHighlighted(c));
+  const openCollection = collections.find((c) => c.id === openId) ?? null;
+  const openMembers = openCollection ? members[openCollection.id] ?? [] : [];
+  const q = search.trim().toLowerCase();
+  const candidates = openCollection
+    ? products.filter((p) => !openMembers.includes(p.id) && (!q || p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q))).slice(0, 40)
+    : [];
+
+  return (
+    <div>
+      <h1>Collecties</h1>
+      <p className="sub">
+        Thema&apos;s zoals Kerst, Halloween of Moederdag. Elke collectie wordt in de shop een eigen pagina (categorie <i>Collecties &gt; naam</i>) met tekst en banner.
+        Een product kan in meerdere collecties zitten en blijft ook in zijn gewone categorie. Wijzigingen gaan naar de shop bij de volgende <Link href="/products">synchronisatie</Link>.
+      </p>
+
+      {message && <p className="mono" style={{ marginBottom: 16 }}>{message}</p>}
+
+      <div className="coll-toolbar">
+        <span className="muted">
+          Nu uitgelicht: {highlighted.length > 0 ? highlighted.map((c) => c.name).join(", ") : "geen"}
+        </span>
+        {!showNew && (
+          <button className="btn" onClick={() => setShowNew(true)} style={{ marginLeft: "auto" }}>
+            Nieuwe collectie
+          </button>
+        )}
+      </div>
+
+      {showNew && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h2 style={{ marginTop: 0 }}>Nieuwe collectie</h2>
+          <div className="coll-presets">
+            <span className="muted">Snel starten:</span>
+            {PRESETS.filter((pr) => !collections.some((c) => c.name.toLowerCase() === pr.name.toLowerCase())).map((pr) => (
+              <button
+                key={pr.name}
+                type="button"
+                className="btn secondary"
+                onClick={() => {
+                  const [sd, sm] = splitMmDd(pr.start);
+                  const [ed, em] = splitMmDd(pr.end);
+                  setForm({ ...BLANK, name: pr.name, description: pr.description, start_day: sd, start_month: sm, end_day: ed, end_month: em });
+                }}
+              >
+                {pr.name}
+              </button>
+            ))}
+          </div>
+          <CollectionForm form={form} setForm={setForm} onSubmit={addCollection} onCancel={() => { setShowNew(false); setForm(BLANK); }} submitLabel="Collectie aanmaken" busy={busy} />
+        </div>
+      )}
+
+      {collections.length === 0 && !showNew && <p className="muted">Nog geen collecties. Klik op <b>Nieuwe collectie</b> om te beginnen.</p>}
+
+      <div className="coll-grid">
+        {collections.map((c) => {
+          const n = members[c.id]?.length ?? 0;
+          const season = formatSeason(c);
+          const live = isHighlighted(c);
+          if (editingId === c.id) {
+            return (
+              <div key={c.id} className="card coll-card coll-card-wide">
+                <h2 style={{ marginTop: 0 }}>{c.name} bewerken</h2>
+                <CollectionForm form={editForm} setForm={setEditForm} onSubmit={saveEdit} onCancel={() => setEditingId(null)} submitLabel="Opslaan" busy={busy} />
+              </div>
+            );
+          }
+          return (
+            <div key={c.id} className={`card coll-card${openId === c.id ? " open" : ""}`}>
+              <div className="coll-banner">{c.banner_url ? <img src={c.banner_url} alt="" loading="lazy" /> : <span>{c.name}</span>}</div>
+              <div className="coll-body">
+                <div className="coll-title">
+                  <strong>{c.name}</strong>
+                  {live && <span className="pill cyan">Nu uitgelicht</span>}
+                </div>
+                <div className="muted coll-meta">
+                  {season ? `Seizoen ${season}` : "Geen seizoen"}
+                  {" · "}
+                  {c.highlight === "always" ? "altijd uitgelicht" : c.highlight === "never" ? "nooit uitgelicht" : "uitgelicht tijdens het seizoen"}
+                </div>
+                <div className="muted coll-meta">
+                  {n} product{n === 1 ? "" : "en"}
+                  {" · "}
+                  {c.woo_category_id ? "in de shop" : "nog niet gesynct"}
+                </div>
+                <div className="coll-actions">
+                  <button className="btn secondary" onClick={() => { setOpenId(openId === c.id ? null : c.id); setSearch(""); }}>
+                    {openId === c.id ? "Producten sluiten" : "Producten"}
+                  </button>
+                  <button className="btn secondary" onClick={() => { setEditingId(c.id); setEditForm(toForm(c)); }}>Bewerken</button>
+                  <button className="btn danger" disabled={busy} onClick={() => removeCollection(c)}>Verwijderen</button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {openCollection && (
+        <div className="card" style={{ marginTop: 20 }}>
+          <h2 style={{ marginTop: 0 }}>Producten in {openCollection.name} ({openMembers.length})</h2>
+          {openMembers.length === 0 ? (
+            <p className="muted">Nog geen producten. Zoek hieronder, of selecteer producten op de pagina <Link href="/products">Producten</Link> en kies <i>Aan collectie toevoegen</i>.</p>
+          ) : (
+            <div className="coll-products">
+              {openMembers
+                .map((id) => productById.get(id))
+                .filter((p): p is ProductLite => !!p)
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map((p) => (
+                  <div key={p.id} className="coll-product">
+                    {firstImage(p.image_url) ? <img src={firstImage(p.image_url)} alt="" loading="lazy" /> : <div className="coll-product-noimg" />}
+                    <Link href={`/products/${p.id}`} className="coll-product-name" title={p.sku}>{p.name}</Link>
+                    {!p.published && <span className="muted" style={{ fontSize: 11 }}>niet gepubliceerd</span>}
+                    <button className="btn secondary coll-remove" title="Uit de collectie halen" onClick={() => removeProduct(openCollection.id, p.id)}>×</button>
+                  </div>
+                ))}
+            </div>
+          )}
+
+          <h3>Product toevoegen</h3>
+          <input placeholder="Zoek op naam of SKU..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          <div className="coll-products" style={{ marginTop: 10 }}>
+            {candidates.map((p) => (
+              <button key={p.id} type="button" className="coll-product coll-candidate" onClick={() => addProduct(openCollection.id, p.id)} title={`${p.sku} toevoegen`}>
+                {firstImage(p.image_url) ? <img src={firstImage(p.image_url)} alt="" loading="lazy" /> : <div className="coll-product-noimg" />}
+                <span className="coll-product-name">{p.name}</span>
+                <span className="coll-add">+</span>
+              </button>
+            ))}
+          </div>
+          {q && candidates.length === 0 && <p className="muted">Geen producten gevonden.</p>}
+          {!q && <p className="muted" style={{ fontSize: 12 }}>De eerste 40 producten worden getoond; typ om te zoeken.</p>}
+        </div>
+      )}
+    </div>
+  );
+}

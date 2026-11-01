@@ -79,7 +79,10 @@ export async function GET(request: Request) {
     }
 
     for (const cat of allCategories) {
-      paths.push(buildPath(cat));
+      const path = buildPath(cat);
+      // Collecties beheer je op de pagina Collecties, niet als gewone categorie.
+      if (path === "Collecties" || path.startsWith("Collecties > ")) continue;
+      paths.push(path);
     }
 
     // Sorteer alfabetisch
