@@ -160,8 +160,10 @@ const SECTIONS: Section[] = [
     title: "Prijzen",
     href: "/prices",
     body: (
+      <>
       <p>Na een wijziging aan machines of materialen: <b>Prijzen herberekenen</b> toont welke varianten een andere prijs krijgen (oud &rarr; nieuw). Bevestig om ze bij te werken; de oude prijzen blijven in de prijsgeschiedenis van het product. Synchroniseer daarna naar WooCommerce zodat de shop de nieuwe prijzen toont.</p>
       <p>Pas je de prijs van een materiaal of een machine aan, dan vraagt de beheertool meteen of de prijzen herberekend mogen worden -- <b>enkel voor de varianten die dat materiaal of die machine gebruiken</b> (sinds 01/11/2026). Varianten zonder kostenopbouw (geen materialen, machinetijd, arbeid of andere kosten, bv. geïmporteerde producten met een vaste prijs) worden nooit herberekend, ook niet via <b>Prijzen herberekenen</b>: hun prijs zou anders naar €0 gaan.</p>
+      </>
     ),
   },
   {
