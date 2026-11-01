@@ -14,10 +14,10 @@ import { cartesian, comboKey } from "@/lib/variants";
 import { toHours } from "@/lib/types";
 import { slugifyForSku, nextAvailableSku, skuExists } from "@/lib/sku";
 import { uploadProductImage } from "@/lib/uploadImage";
-import { GravureSettingsEditor } from "@/components/GravureSettingsEditor";
+import { GravureSettingsEditor, ZoneImageEditor } from "@/components/GravureSettingsEditor";
 import ProductFilesCard from "@/components/ProductFilesCard";
 import FeaturedStar, { useFeaturedSkus } from "@/components/FeaturedStar";
-import { DEFAULT_GRAVURE_SETTINGS, splitImageUrls, stableStringify } from "@/lib/gravure";
+import { DEFAULT_GRAVURE_SETTINGS, splitImageUrls, stableStringify, zoneImageIndex, zoneRect, zoneShape } from "@/lib/gravure";
 import {
   Product,
   ProductVariation,
@@ -37,6 +37,9 @@ import {
   PERSONALIZATION_ZONES,
   GravureSettings,
   PersonalizationZone,
+  VariationGravure,
+  ZoneRect,
+  ZoneShape,
 } from "@/lib/types";
 
 /**
@@ -217,6 +220,7 @@ export default function ProductEditPage() {
       attribute_values: source.attribute_values,
       cost_inputs: source.cost_inputs,
       image_url: source.image_url,
+      gravure: source.gravure ?? null,
     });
     if (error) await alertDialog(error.message);
     load();
@@ -984,6 +988,16 @@ export default function ProductEditPage() {
           machinesById={machinesById}
           materialsById={materialsById}
           minMargin={minMargin}
+          gravureBase={
+            personalization.plugin === "gravure_uv" && personalization.gravure
+              ? {
+                  rect: zoneRect(personalization.zones.find((z) => z.key === "front")),
+                  shape: zoneShape(personalization.zones.find((z) => z.key === "front")),
+                  color: personalization.gravure.color,
+                  image: splitImageUrls(wc.image_url)[zoneImageIndex(personalization.zones.find((z) => z.key === "front"), "front")] ?? "",
+                }
+              : null
+          }
           onSaved={() => {
             supabase.from("products").update({ updated_at: new Date().toISOString() }).eq("id", productId).then(() => load());
           }}
@@ -1025,6 +1039,9 @@ const VariationEditor = forwardRef<VariationEditorHandle, {
   machinesById: Map<string, Machine>;
   materialsById: Map<string, Material>;
   minMargin: number;
+  // Gravure Preview-instellingen van het product (voorkant), als vertrekpunt voor een eigen zone per variant.
+  // null = product gebruikt de gravure-plugin niet (of de instellingen worden niet in de app beheerd).
+  gravureBase: { rect: ZoneRect; shape: ZoneShape; color: string; image: string } | null;
   onSaved: () => void;
   onDelete: () => void;
   onDuplicate: () => void;
@@ -1039,6 +1056,7 @@ const VariationEditor = forwardRef<VariationEditorHandle, {
   machinesById,
   materialsById,
   minMargin,
+  gravureBase,
   onSaved,
   onDelete,
   onDuplicate,
@@ -1047,6 +1065,7 @@ const VariationEditor = forwardRef<VariationEditorHandle, {
   const [attributeValues, setAttributeValues] = useState<Record<string, string>>(variation.attribute_values ?? {});
   const [inputs, setInputs] = useState<CostInputs>({ ...EMPTY_COST_INPUTS, ...(variation.cost_inputs ?? {}) });
   const [imageUrl, setImageUrl] = useState(variation.image_url ?? "");
+  const [gravure, setGravure] = useState<VariationGravure | null>(variation.gravure ?? null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [saving, setSaving] = useState(false);
   // Enkel varianten die net met "+ Variant toevoegen" zijn aangemaakt (herkenbaar aan
@@ -1062,7 +1081,8 @@ const VariationEditor = forwardRef<VariationEditorHandle, {
     setAttributeValues(variation.attribute_values ?? {});
     setInputs({ ...EMPTY_COST_INPUTS, ...(variation.cost_inputs ?? {}) });
     setImageUrl(variation.image_url ?? "");
-  }, [variation.sku, variation.attribute_values, variation.cost_inputs, variation.image_url]);
+    setGravure(variation.gravure ?? null);
+  }, [variation.sku, variation.attribute_values, variation.cost_inputs, variation.image_url, variation.gravure]);
 
   useEffect(() => {
     if (!skuAuto) return;
@@ -1149,6 +1169,7 @@ const VariationEditor = forwardRef<VariationEditorHandle, {
         sale_price: salePrice,
         suggested_price: suggestedPrice,
         image_url: imageUrl.trim() || null,
+        gravure: gravure?.rect ? gravure : null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", variation.id);
@@ -1178,6 +1199,7 @@ const VariationEditor = forwardRef<VariationEditorHandle, {
     JSON.stringify(attributeValues) !== JSON.stringify(variation.attribute_values ?? {}) ||
     JSON.stringify(inputs) !== JSON.stringify(baselineInputs) ||
     imageUrl !== (variation.image_url ?? "") ||
+    JSON.stringify(gravure ?? null) !== JSON.stringify(variation.gravure ?? null) ||
     // kostenopbouw al ingevuld bij het aanmaken (bv. vanuit de Catalogus) maar de prijs nooit bewaard: de sync gebruikt
     // de bewaarde suggested_price, dus anders gaat er geen prijs naar WooCommerce
     (suggestedPrice != null && variation.suggested_price == null);
@@ -1261,6 +1283,56 @@ const VariationEditor = forwardRef<VariationEditorHandle, {
               />
             )}
           </div>
+        </div>
+      )}
+
+      {!isSimple && gravureBase && (
+        <div style={{ marginTop: 12 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              style={{ width: "auto" }}
+              checked={!!gravure}
+              onChange={(e) => setGravure(e.target.checked ? { rect: gravureBase.rect, shape: gravureBase.shape, color: null, max_chars: null } : null)}
+            />
+            Eigen gravurezone voor deze variant (bv. ander formaat of andere vorm)
+          </label>
+          {gravure && (
+            <div className="row" style={{ marginTop: 8, alignItems: "flex-start" }}>
+              <ZoneImageEditor
+                title="Deze variant"
+                zoneKey={`var-${variation.id}`}
+                rect={gravure.rect}
+                shape={gravure.shape}
+                printWidthMm={null}
+                printHeightMm={null}
+                showDimensions={false}
+                imageIndex={0}
+                imageUrls={[imageUrl.trim() || gravureBase.image].filter(Boolean)}
+                color={gravure.color || gravureBase.color}
+                sampleText="Voorbeeld"
+                uploading={uploadingImage}
+                hideImageSelect
+                imageNote={imageUrl.trim() ? "De foto van deze variant is ook de preview in de shop. Een nieuwe foto vervangt de variantfoto." : "Deze variant heeft nog geen eigen foto: de zone komt op de productfoto. Laad een foto recht van voren op (wordt de variantfoto)."}
+                onChangeRect={(rect) => setGravure((g) => (g ? { ...g, rect } : g))}
+                onChangeShape={(shape, rect) => setGravure((g) => (g ? { ...g, shape, rect } : g))}
+                onChangeDimensions={() => {}}
+                onChangeImage={() => {}}
+                onUpload={(f) => onImageFileChosen(f)}
+              />
+              <div style={{ minWidth: 160 }}>
+                <label>Gravurekleur (leeg = zoals product)</label>
+                <input value={gravure.color ?? ""} onChange={(e) => setGravure({ ...gravure, color: e.target.value.trim() || null })} placeholder={gravureBase.color} />
+                <label style={{ marginTop: 8 }}>Max. tekens (leeg = zoals product)</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={gravure.max_chars ?? ""}
+                  onChange={(e) => setGravure({ ...gravure, max_chars: e.target.value === "" ? null : parseInt(e.target.value) || null })}
+                />
+              </div>
+            </div>
+          )}
         </div>
       )}
 

@@ -211,6 +211,18 @@ export type ProductVariation = {
   suggested_price: number | null; // afgeronde ,95-prijs incl. btw -- dit wordt geëxporteerd naar WooCommerce
   exported_price: number | null; // suggested_price zoals die de laatste keer geëxporteerd werd
   image_url: string | null; // één URL -- WooCommerce-varianten ondersteunen (i.t.t. producten) maar 1 afbeelding
+  gravure?: VariationGravure | null; // migratie 033 -- eigen gravurezone voor deze variant (null = zoals het product)
+};
+
+/**
+ * Gravure-instellingen die een variant zelf kan hebben (3DP Gravure Preview 1.9.0+), bv. leisteen rond vs.
+ * vierkant. De afbeelding van de variant is dan ook de preview-afbeelding. Wat leeg is, komt van het product.
+ */
+export type VariationGravure = {
+  rect: ZoneRect;
+  shape: ZoneShape;
+  color?: string | null; // leeg = gravurekleur van het product
+  max_chars?: number | null; // leeg = zoals het product
 };
 
 /** Techniek van een mockup-template = tabblad in de mockup-generator. */
