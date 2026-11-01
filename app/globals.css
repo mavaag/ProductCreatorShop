@@ -836,3 +836,8 @@ button.folder-link:hover { color: var(--cyan); }
 .order-option dt { font-weight: 700; color: var(--ink); }
 .order-option dd { margin: 0; white-space: pre-line; color: var(--ink-soft); }
 @media (max-width: 640px) { .order-option { grid-template-columns: 1fr; gap: 0; } }
+/* bedragen van een bestelling (Bestellingen > Productie) */
+.order-amounts { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 8px 0 2px; font-size: 14px; color: var(--ink-soft); }
+.order-amounts b { color: var(--ink); margin-right: 4px; }
+.order-amounts .order-profit, .order-amounts .order-profit b { color: var(--moss); }
+.order-amounts .order-loss, .order-amounts .order-loss b { color: var(--rust); }

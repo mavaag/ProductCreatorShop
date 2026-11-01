@@ -43,6 +43,8 @@ def order_row(o):
         'date_created': o['date_created_gmt'] + 'Z', 'date_modified': o['date_modified_gmt'] + 'Z',
         'customer_name': name, 'customer_note': o.get('customer_note') or '',
         'shipping_method': ', '.join(x.get('method_title', '') for x in o.get('shipping_lines') or []),
+        'shipping_total': float(o.get('shipping_total') or 0), 'shipping_tax': float(o.get('shipping_tax') or 0),
+        'total_tax': float(o.get('total_tax') or 0), 'discount_total': float(o.get('discount_total') or 0),
     }
 
 
@@ -68,7 +70,8 @@ def main():
             supa.rest('DELETE', 'wc_order_items?order_id=in.(' + ','.join(ids.values()) + ')', prefer='return=minimal')
         items = [{'order_id': ids[o['id']], 'wc_line_id': li.get('id'), 'wc_product_id': li.get('product_id') or None,
                   'wc_variation_id': li.get('variation_id') or None, 'sku': li.get('sku') or None, 'name': li['name'],
-                  'quantity': li.get('quantity') or 0, 'total': float(li.get('total') or 0), 'meta': line_meta(li)}
+                  'quantity': li.get('quantity') or 0, 'total': float(li.get('total') or 0),
+                  'total_tax': float(li.get('total_tax') or 0), 'meta': line_meta(li)}
                  for o in orders if o['id'] in ids for li in o.get('line_items') or []]
         if items: supa.rest('POST', 'wc_order_items', items, prefer='return=minimal')
         for o in orders:
