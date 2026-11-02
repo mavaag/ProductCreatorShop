@@ -1,5 +1,6 @@
 // Standaard verzendgewicht (kg, inclusief verpakking) per soort product. De verzending in de shop (Flexible Shipping)
-// rekent op het gewicht van het mandje: tot 0,25 kg brievenbus (€ 3,95), tot 10 kg pakje (€ 6,99), daarboven groot.
+// rekent op het gewicht van het mandje: in België tot 0,25 kg brievenbus (€ 3,95), tot 10 kg pakje (€ 8,95), daarboven groot;
+// naar de buurlanden tot 0,10 / 0,25 kg grote brief, daarboven pakje. 0,25 kg is dus overal de grens brief/pakje.
 // Een product zonder gewicht zou als 0 kg tellen en dus altijd aan het brievenbustarief verstuurd worden; daarom krijgt
 // een nieuw product (uit de Catalogus) dit gewicht, en valt de sync erop terug als het veld leeg is.
 
