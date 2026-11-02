@@ -104,8 +104,9 @@ def _bump(material_id, delta, stock):
 
 
 def consume_materials():
-    """Trekt per bestelregel de materialen van de variant (kostenopbouw x aantal) één keer af van de voorraad;
-    geannuleerde/terugbetaalde bestellingen geven hun verbruik terug. Werkt op de bestellingen in de database,
+    """Verwerkt elke bestelregel één keer: eerst uit "klaar op voorraad" (product_variations.ready_stock, migratie 039),
+    de rest wordt gemaakt en dan gaan de materialen van de variant (kostenopbouw x aantal) van de voorraad.
+    Geannuleerde/terugbetaalde/mislukte bestellingen geven beide terug. Werkt op de bestellingen in de database,
     dus ook wat via de knop in de beheertool gesynct werd."""
     try:
         since = supa.rest('GET', 'settings?key=eq.stock_tracking_since&select=value') or []
@@ -116,44 +117,78 @@ def consume_materials():
     since = _ts(since[0]['value'])
     orders = [o for o in supa.select_all('wc_orders', 'id,wc_order_id,status,date_created') if _ts(o['date_created']) >= since]
     if not orders: return
+    try:
+        lines_done = {(r['wc_order_id'], r['wc_line_id']): r for r in supa.select_all('order_line_stock', 'wc_order_id,wc_line_id,variation_id,from_stock')}
+        has_ready = True
+    except Exception:        # migratie 039 nog niet uitgevoerd: enkel materialen
+        lines_done, has_ready = {}, False
     done = {}
     for r in supa.select_all('material_consumption', 'wc_order_id,wc_line_id,material_id,quantity'):
         done.setdefault(r['wc_order_id'], []).append(r)
     stock = {m['id']: m['stock_quantity'] for m in supa.select_all('materials', 'id,stock_quantity')}
-    by_sku = {}
-    for v in supa.select_all('product_variations', 'sku,cost_inputs'):
+    by_sku, ready = {}, {}
+    for v in supa.select_all('product_variations', 'id,sku,cost_inputs' + (',ready_stock' if has_ready else '')):
         mats = [(m['material_id'], float(m.get('quantity') or 0)) for m in ((v.get('cost_inputs') or {}).get('materials') or [])
                 if m.get('material_id') in stock and float(m.get('quantity') or 0) > 0]
-        if v.get('sku'): by_sku[v['sku']] = mats
+        if v.get('sku'): by_sku[v['sku']] = (v['id'], mats)
+        ready[v['id']] = int(v.get('ready_stock') or 0)
     items = {}
     for it in supa.select_all('wc_order_items', 'order_id,wc_line_id,sku,quantity'):
         items.setdefault(it['order_id'], []).append(it)
-    used = restored = 0
+
+    def set_ready(vid, value):
+        supa.rest('PATCH', f'product_variations?id=eq.{vid}', {'ready_stock': value}, prefer='return=minimal')
+        ready[vid] = value
+
+    used = restored = picked = 0
     for o in orders:
         wid = o['wc_order_id']
-        if o['status'] in RESTORES and done.get(wid):
-            for r in done[wid]:
+        if o['status'] in RESTORES:
+            for r in done.get(wid, []):
                 _bump(r['material_id'], float(r['quantity']), stock)
                 restored += 1
-            supa.rest('DELETE', f'material_consumption?wc_order_id=eq.{wid}', prefer='return=minimal')
+            if done.get(wid):
+                supa.rest('DELETE', f'material_consumption?wc_order_id=eq.{wid}', prefer='return=minimal')
+            back = [r for (w, _), r in lines_done.items() if w == wid]
+            for r in back:
+                if r['from_stock'] and r['variation_id'] in ready:
+                    set_ready(r['variation_id'], ready[r['variation_id']] + int(r['from_stock']))
+                    restored += 1
+            if back:
+                supa.rest('DELETE', f'order_line_stock?wc_order_id=eq.{wid}', prefer='return=minimal')
             continue
         if o['status'] not in COUNTS: continue
         have = {(r['wc_line_id'], r['material_id']) for r in done.get(wid, [])}
         rows = []
         for it in items.get(o['id'], []):
-            if it.get('wc_line_id') is None: continue
-            for mid, q in by_sku.get(it.get('sku') or '', []):
-                if (it['wc_line_id'], mid) in have: continue
-                rows.append({'wc_order_id': wid, 'wc_line_id': it['wc_line_id'], 'material_id': mid,
-                             'quantity': round(q * float(it.get('quantity') or 0), 4)})
+            lid = it.get('wc_line_id')
+            if lid is None: continue
+            vid, mats = by_sku.get(it.get('sku') or '', (None, []))
+            qty = int(float(it.get('quantity') or 0))
+            if has_ready:
+                if (wid, lid) in lines_done: continue
+                old = any(l == lid for l, _ in have)     # al verwerkt vóór migratie 039
+                take = 0 if old or vid is None else min(ready.get(vid, 0), qty)
+                supa.rest('POST', 'order_line_stock?on_conflict=wc_order_id,wc_line_id',
+                          {'wc_order_id': wid, 'wc_line_id': lid, 'variation_id': vid, 'from_stock': take},
+                          prefer='resolution=ignore-duplicates,return=minimal')
+                lines_done[(wid, lid)] = {'from_stock': take, 'variation_id': vid}
+                if take:
+                    set_ready(vid, ready[vid] - take)
+                    picked += take
+                if old: continue
+                qty -= take
+            for mid, q in mats:
+                if (lid, mid) in have or qty <= 0: continue
+                rows.append({'wc_order_id': wid, 'wc_line_id': lid, 'material_id': mid, 'quantity': round(q * qty, 4)})
         if rows:
             supa.rest('POST', 'material_consumption?on_conflict=wc_order_id,wc_line_id,material_id', rows,
                       prefer='resolution=ignore-duplicates,return=minimal')
             for r in rows:
                 _bump(r['material_id'], -r['quantity'], stock)
                 used += 1
-    if used or restored:
-        print(f'materiaalverbruik: {used} regel(s) afgetrokken, {restored} teruggezet')
+    if used or restored or picked:
+        print(f'voorraad: {picked} stuk(s) uit klaar-op-voorraad, {used} materiaalregel(s) afgetrokken, {restored} teruggezet')
 
 
 if __name__ == '__main__':

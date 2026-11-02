@@ -233,6 +233,7 @@ export type ProductVariation = {
   exported_price: number | null; // suggested_price zoals die de laatste keer geëxporteerd werd
   image_url: string | null; // één URL -- WooCommerce-varianten ondersteunen (i.t.t. producten) maar 1 afbeelding
   gravure?: VariationGravure | null; // migratie 033 -- eigen gravurezone voor deze variant (null = zoals het product)
+  ready_stock?: number; // migratie 039 -- afgewerkte stuks klaar op voorraad
 };
 
 /**
