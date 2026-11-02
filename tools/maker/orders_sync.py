@@ -118,7 +118,9 @@ def consume_materials():
     orders = [o for o in supa.select_all('wc_orders', 'id,wc_order_id,status,date_created') if _ts(o['date_created']) >= since]
     if not orders: return
     try:
-        lines_done = {(r['wc_order_id'], r['wc_line_id']): r for r in supa.select_all('order_line_stock', 'wc_order_id,wc_line_id,variation_id,from_stock')}
+        # geen id-kolom (sleutel = bestelling + regel), dus niet via select_all (die sorteert op id)
+        olsr = supa.rest('GET', f'order_line_stock?select=wc_order_id,wc_line_id,variation_id,from_stock&wc_order_id=in.({",".join(str(o["wc_order_id"]) for o in orders)})') or []
+        lines_done = {(r['wc_order_id'], r['wc_line_id']): r for r in olsr}
         has_ready = True
     except Exception:        # migratie 039 nog niet uitgevoerd: enkel materialen
         lines_done, has_ready = {}, False
