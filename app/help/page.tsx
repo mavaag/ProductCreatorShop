@@ -211,6 +211,22 @@ const SECTIONS: Section[] = [
     ),
   },
   {
+    id: "klanten",
+    title: "Klanten",
+    href: "/customers",
+    body: (
+      <>
+        <p>Iedereen die in de shop besteld heeft (ook als gast) of een account heeft, uit de plugin <b>3DP Klanten</b> in de shop. Per klant: naam, e-mail, gemeente, aantal bestellingen, besteed bedrag (min terugbetalingen), eerste en laatste bestelling, verjaardag, account ja/gast en toestemming voor reclame.</p>
+        <ul>
+          <li><b>Toestemming</b>: bij het afrekenen en in <i>Mijn account &gt; Accountgegevens</i> kan de klant het vakje <i>Ja, stuur me af en toe kortingen en nieuws</i> aanvinken (staat standaard uit). Uitvinken of de afmeldlink gebruiken = <i>afgemeld</i>. Wie geen toestemming gaf, mail je niet met reclame (enkel over hun bestelling).</li>
+          <li><b>Verjaardag</b>: vrijwillig veld (dag/maand) bij het afrekenen en in Mijn account.</li>
+          <li><b>Tabjes</b>: <i>Jarig deze maand</i>, <i>Jarig volgende maand</i>, <i>Trouwe klanten</i> (min. aantal bestellingen), <i>Grote kopers</i> (min. bedrag), <i>Lang niets besteld</i> (aantal maanden), <i>Nieuw</i>. <i>Enkel met toestemming</i> staat standaard aan.</li>
+          <li><b>Kopieer e-mails</b> kopieert de adressen (enkel met toestemming) om in BCC te plakken. Per klant kopieer je ook de persoonlijke <b>afmeldlink</b>: zet die onderaan elke reclame-mail.</li>
+        </ul>
+      </>
+    ),
+  },
+  {
     id: "mockup",
     title: "Mockup",
     href: "/mockup",
