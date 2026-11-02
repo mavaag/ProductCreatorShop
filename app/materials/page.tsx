@@ -213,6 +213,7 @@ export default function MaterialsPage() {
 
   const [suppliers, setSuppliers] = useState<string[]>([]);
   const [filter, setFilter] = useState<string>("all");
+  const [used30, setUsed30] = useState<Record<string, number>>({});
 
   async function load() {
     const { data } = await supabase.from("materials").select("*").order("category").order("name");
@@ -250,6 +251,22 @@ export default function MaterialsPage() {
       (perMaterialOrders[o.material_id] ??= []).push(o);
     }
     setOrders(perMaterialOrders);
+
+    // Verbruik door bestellingen, laatste 30 dagen (migratie 038; ontbreekt de tabel nog, dan gewoon leeg).
+    const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+    const { data: consumption } = await supabase.from("material_consumption").select("material_id, quantity").gte("created_at", since);
+    const perMaterialUse: Record<string, number> = {};
+    for (const c of (consumption ?? []) as { material_id: string; quantity: number }[]) {
+      perMaterialUse[c.material_id] = (perMaterialUse[c.material_id] ?? 0) + Number(c.quantity);
+    }
+    setUsed30(perMaterialUse);
+  }
+
+  /** Vanuit de TODO naar het materiaal springen met zijn bestellingen open. */
+  function goOrder(id: string) {
+    setFilter("low");
+    setOpenOrders(id);
+    setTimeout(() => document.getElementById(`mat-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
   }
 
   useEffect(() => {
@@ -389,14 +406,35 @@ export default function MaterialsPage() {
       </div>
 
       {lowStock.length > 0 && (
-        <div className="warning mat-lowstock">
-          <strong>Voorraad bijna op:</strong>
-          {lowStock.map((m) => (
-            <button key={m.id} type="button" className="mat-lowstock-chip" onClick={() => setFilter("low")} title={`minimum ${m.min_stock} ${m.unit}`}>
-              <CategoryIcon category={m.category} size={14} />
-              {m.name} <span className="mono">{m.stock_quantity} {m.unit}</span>
-            </button>
-          ))}
+        <div className="card mat-todo">
+          <h2 style={{ marginTop: 0 }}>TODO: bijbestellen</h2>
+          <p className="muted" style={{ marginTop: -4 }}>
+            Voorraad op of onder het minimum. De voorraad daalt vanzelf bij elke bestelling in de shop (materialen van de varianten × aantal).
+          </p>
+          {lowStock.map((m) => {
+            const onTheWay = (orders[m.id] ?? []).filter((o) => !o.received_at);
+            const supplier = m.supplier_url || null;
+            return (
+              <div key={m.id} className={`mat-todo-row${onTheWay.length ? " ordered" : ""}`}>
+                <span className="mat-todo-check" aria-hidden="true">{onTheWay.length ? "✓" : "!"}</span>
+                <CategoryIcon category={m.category} size={16} />
+                <span className="mat-todo-name">{m.name}</span>
+                <span className="mono">{m.stock_quantity} {m.unit}</span>
+                <span className="muted mono">min. {m.min_stock}</span>
+                {used30[m.id] ? <span className="muted">verbruikt (30 d): <span className="mono">{Math.round(used30[m.id] * 100) / 100} {m.unit}</span></span> : null}
+                <span className="mat-todo-actions">
+                  {onTheWay.length > 0 ? (
+                    <span className="pill cyan">besteld, onderweg</span>
+                  ) : (
+                    <>
+                      {supplier && <a className="btn secondary" href={supplier} target="_blank" rel="noopener noreferrer">Leverancier</a>}
+                      <button type="button" className="btn" onClick={() => goOrder(m.id)}>Bestelling registreren</button>
+                    </>
+                  )}
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -580,7 +618,7 @@ export default function MaterialsPage() {
           const used = usage[m.id] ?? [];
           return (
             <Fragment key={m.id}>
-              <div className={`mat-card${isLowStock(m) ? " low" : ""}`} style={{ "--mat-color": color } as React.CSSProperties}>
+              <div id={`mat-${m.id}`} className={`mat-card${isLowStock(m) ? " low" : ""}`} style={{ "--mat-color": color } as React.CSSProperties}>
                 <div className="mat-head">
                   {m.image_url ? (
                     <a className="mat-photo" href={m.image_url} target="_blank" rel="noopener noreferrer" title="Foto openen">
