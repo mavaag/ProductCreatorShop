@@ -871,3 +871,10 @@ button.folder-link:hover { color: var(--cyan); }
 .customers-filters label { display: flex; align-items: center; gap: 6px; margin: 0; text-transform: none; letter-spacing: 0; font-size: 13px; }
 .customers-filters label input[type="number"], .customers-filters label input.mono { width: 80px; }
 .customers-table td { vertical-align: top; }
+/* Klanten: kortingscodes */
+.codes-panel { margin-bottom: 16px; border-left: 3px solid var(--cyan); }
+.codes-panel textarea, .codes-auto-block textarea { width: 100%; font-family: inherit; }
+.codes-toggle { background: none; border: none; color: var(--ink); cursor: pointer; padding: 0; font-size: 15px; text-align: left; }
+.codes-auto-block { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
+.codes-row > td { background: rgba(0, 240, 255, 0.03); }
+.codes-row table { margin: 4px 0 8px; font-size: 13px; }
