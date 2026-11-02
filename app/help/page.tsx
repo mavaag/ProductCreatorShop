@@ -218,6 +218,24 @@ const SECTIONS: Section[] = [
     ),
   },
   {
+    id: "acties",
+    title: "Acties",
+    href: "/acties",
+    body: (
+      <>
+        <p>Acties in de shop, via de plugin <b>3DP Acties</b>. Je maakt ze hier; <i>Bewaren en naar de shop</i> zet ze meteen in de shop.</p>
+        <ul>
+          <li><b>Soorten</b>: <i>X kopen + Y gratis</i> (of aan een %, bv. <i>2e aan halve prijs</i>): per groep van X+Y stuks zijn de Y goedkoopste gratis/afgeprijsd. <i>Vanaf X stuks % korting</i>: zodra er genoeg actieproducten in het mandje zitten, gaat het % van al die stuks af. <i>% korting</i>: de prijs zelf zakt, met doorstreepte prijs in de shop. De knoppen bij <i>Snel kiezen</i> vullen de gangbare acties in.</li>
+          <li><b>Producten</b>: standaard de hele shop, en klanten mogen <b>mixen</b> (2 verschillende flexi's + een derde = de goedkoopste gratis). Vink je categorieën of collecties aan, dan geldt de actie enkel daar (subcategorieën horen erbij).</li>
+          <li><b>Periode</b>: <i>Vanaf</i> / <i>Tot en met</i> (leeg = meteen / geen einde) en de schakelaar <i>Actief</i>. Buiten de periode of uitgezet is de actie onzichtbaar in de shop.</li>
+          <li><b>Meerdere acties</b>: per mandje telt de voordeligste van de mandje-acties (X + Y, vanaf X stuks); een % korting op de prijs komt daar nog bij. Persoonlijke kortingscodes mogen erbovenop.</li>
+          <li><b>In de shop</b>: oranje label op de productfoto, kader met uitleg en einddatum op de productpagina, regel <i>Actie: ...</i> met de korting in het mandje, en de pagina <i>Acties</i> (shortcode <span className="mono">[tdp_acties]</span>).</li>
+          <li><b>Opvolging</b>: bij elke actie staat in hoeveel bestellingen ze gebruikt werd.</li>
+        </ul>
+      </>
+    ),
+  },
+  {
     id: "klanten",
     title: "Klanten",
     href: "/customers",
