@@ -889,3 +889,5 @@ button.folder-link:hover { color: var(--cyan); }
 .pill.status-cancelled, .pill.status-failed { color: var(--rust); border-color: var(--rust); }
 .pill.status-refunded { color: var(--magenta); border-color: var(--magenta); }
 .pill.status-trash { color: var(--ink-faint); border-color: var(--ink-faint); }
+.order-day { margin: 20px 0 8px; font-size: 14px; text-transform: capitalize; color: var(--cyan); }
+.order-day .muted { text-transform: none; font-weight: 400; }
