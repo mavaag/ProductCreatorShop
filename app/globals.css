@@ -841,14 +841,25 @@ button.folder-link:hover { color: var(--cyan); }
 .order-amounts b { color: var(--ink); margin-right: 4px; }
 .order-amounts .order-profit, .order-amounts .order-profit b { color: var(--moss); }
 .order-amounts .order-loss, .order-amounts .order-loss b { color: var(--rust); }
-/* Materialen: TODO bijbestellen */
-.mat-todo { margin-bottom: 20px; border-left: 3px solid var(--rust); }
-.mat-todo-row { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; }
-.mat-todo-row:first-of-type { border-top: none; }
-.mat-todo-check { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--rust); color: var(--rust); font-weight: 700; font-size: 12px; }
-.mat-todo-row.ordered .mat-todo-check { border-color: var(--moss); color: var(--moss); }
-.mat-todo-name { font-weight: 700; color: var(--ink); }
-.mat-todo-actions { margin-left: auto; display: flex; gap: 6px; }
+/* Materialen: tab Bij te bestellen */
+.reorder { padding: 12px 16px; }
+.reorder-item { border-top: 1px solid var(--line); }
+.reorder-item:first-of-type { border-top: none; }
+.reorder-row { display: grid; grid-template-columns: 36px minmax(160px, 1fr) auto 110px 150px auto; align-items: center; gap: 8px 14px; padding: 10px 0; font-size: 14px; }
+.reorder-photo { width: 36px; height: 36px; object-fit: cover; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line); color: var(--ink-soft); }
+.reorder-name { font-weight: 700; color: var(--ink); }
+.reorder-stock b { color: var(--rust); }
+.reorder-item.ordered .reorder-stock b { color: var(--ink); }
+.reorder-used { font-size: 12.5px; }
+.reorder-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.reorder-panel { margin: 0 0 12px 50px; padding: 4px 12px; border-left: 2px solid var(--line); }
+.pill.rust { color: var(--rust); border-color: var(--rust); }
+@media (max-width: 800px) {
+  .reorder-row { grid-template-columns: 36px 1fr; }
+  .reorder-row > :nth-child(n+3) { grid-column: 2; }
+  .reorder-actions { justify-content: flex-start; }
+  .reorder-panel { margin-left: 0; }
+}
 /* Klaar op voorraad (variant) + productie */
 .ready-stock { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 16px; padding: 8px 10px; border: 1px dashed var(--line); }
 .ready-stock-label { font-weight: 700; font-size: 13px; }

@@ -262,12 +262,6 @@ export default function MaterialsPage() {
     setUsed30(perMaterialUse);
   }
 
-  /** Vanuit de TODO naar het materiaal springen met zijn bestellingen open. */
-  function goOrder(id: string) {
-    setFilter("low");
-    setOpenOrders(id);
-    setTimeout(() => document.getElementById(`mat-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
-  }
 
   useEffect(() => {
     if (ready) load();
@@ -395,8 +389,8 @@ export default function MaterialsPage() {
           <div className="stat-label">Voorraadwaarde</div>
           <div className="stat-value">€{stockValue.toFixed(0)}</div>
         </div>
-        <div className="card stat-tile">
-          <div className="stat-label">Bijna op</div>
+        <div className="card stat-tile" style={{ cursor: "pointer" }} onClick={() => setFilter("low")} title="Naar Bij te bestellen">
+          <div className="stat-label">Bij te bestellen</div>
           <div className="stat-value" style={lowStock.length > 0 ? { color: "var(--rust)", textShadow: "0 0 10px rgba(255, 56, 96, 0.6)" } : { color: "var(--moss)", textShadow: "none" }}>{lowStock.length}</div>
         </div>
         <div className="card stat-tile">
@@ -404,39 +398,6 @@ export default function MaterialsPage() {
           <div className="stat-value">{pendingOrders}</div>
         </div>
       </div>
-
-      {lowStock.length > 0 && (
-        <div className="card mat-todo">
-          <h2 style={{ marginTop: 0 }}>TODO: bijbestellen</h2>
-          <p className="muted" style={{ marginTop: -4 }}>
-            Voorraad op of onder het minimum. De voorraad daalt vanzelf bij elke bestelling in de shop (materialen van de varianten × aantal).
-          </p>
-          {lowStock.map((m) => {
-            const onTheWay = (orders[m.id] ?? []).filter((o) => !o.received_at);
-            const supplier = m.supplier_url || null;
-            return (
-              <div key={m.id} className={`mat-todo-row${onTheWay.length ? " ordered" : ""}`}>
-                <span className="mat-todo-check" aria-hidden="true">{onTheWay.length ? "✓" : "!"}</span>
-                <CategoryIcon category={m.category} size={16} />
-                <span className="mat-todo-name">{m.name}</span>
-                <span className="mono">{m.stock_quantity} {m.unit}</span>
-                <span className="muted mono">min. {m.min_stock}</span>
-                {used30[m.id] ? <span className="muted">verbruikt (30 d): <span className="mono">{Math.round(used30[m.id] * 100) / 100} {m.unit}</span></span> : null}
-                <span className="mat-todo-actions">
-                  {onTheWay.length > 0 ? (
-                    <span className="pill cyan">besteld, onderweg</span>
-                  ) : (
-                    <>
-                      {supplier && <a className="btn secondary" href={supplier} target="_blank" rel="noopener noreferrer">Leverancier</a>}
-                      <button type="button" className="btn" onClick={() => goOrder(m.id)}>Bestelling registreren</button>
-                    </>
-                  )}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      )}
 
       <div className="card" style={{ marginBottom: 20 }}>
         <h2 style={{ marginTop: 0 }}>Nieuw materiaal</h2>
@@ -526,11 +487,9 @@ export default function MaterialsPage() {
             {c.label} <span className="tab-count">{materials.filter((m) => m.category === c.value).length}</span>
           </button>
         ))}
-        {lowStock.length > 0 && (
-          <button type="button" className={`tab${filter === "low" ? " active" : ""}`} onClick={() => setFilter("low")} style={{ color: filter === "low" ? undefined : "var(--rust)" }}>
-            Bijna op <span className="tab-count">{lowStock.length}</span>
-          </button>
-        )}
+        <button type="button" className={`tab${filter === "low" ? " active" : ""}`} onClick={() => setFilter("low")} style={{ color: filter === "low" || lowStock.length === 0 ? undefined : "var(--rust)" }}>
+          Bij te bestellen <span className="tab-count">{lowStock.length}</span>
+        </button>
         {materials.some((m) => !m.image_url && m.supplier_url) && (
           <button
             type="button"
@@ -545,9 +504,65 @@ export default function MaterialsPage() {
         )}
       </div>
 
-      {visibleMaterials.length === 0 && <p className="muted">Geen materialen in deze selectie.</p>}
+      {filter === "low" && (
+        <div className="card reorder">
+          {lowStock.length === 0 ? (
+            <p className="muted" style={{ margin: 0 }}>Niets bij te bestellen: alle bijgehouden materialen zitten boven hun minimum.</p>
+          ) : (
+            <>
+              <p className="muted" style={{ marginTop: 0 }}>
+                Materialen op of onder hun minimum. Klik <b>Bestellen</b> om een bestelling te registreren; bij <i>Ontvangen</i> komt ze bij de voorraad.
+              </p>
+              {[...lowStock]
+                .sort((a, b) => Number((orders[a.id] ?? []).some((o) => !o.received_at)) - Number((orders[b.id] ?? []).some((o) => !o.received_at)) || a.name.localeCompare(b.name))
+                .map((m) => {
+                  const onTheWay = (orders[m.id] ?? []).filter((o) => !o.received_at);
+                  const open = openOrders === m.id;
+                  return (
+                    <div key={m.id} className={`reorder-item${onTheWay.length ? " ordered" : ""}`}>
+                      <div className="reorder-row">
+                        {m.image_url ? <img className="reorder-photo" src={m.image_url} alt="" loading="lazy" /> : <span className="reorder-photo"><CategoryIcon category={m.category} size={18} /></span>}
+                        <span className="reorder-name">{m.name}</span>
+                        <span className="reorder-stock mono">
+                          <b>{m.stock_quantity}</b> / min. {m.min_stock} {m.unit}
+                        </span>
+                        {used30[m.id] ? <span className="muted reorder-used">30 d: {Math.round(used30[m.id] * 100) / 100} {m.unit}</span> : <span className="reorder-used" />}
+                        <span className="reorder-status">
+                          {onTheWay.length > 0
+                            ? <span className="pill cyan">onderweg: {onTheWay.reduce((t, o) => t + o.quantity, 0)} {m.unit}</span>
+                            : <span className="pill rust">te bestellen</span>}
+                        </span>
+                        <span className="reorder-actions">
+                          {m.supplier_url && <a className="btn secondary" href={m.supplier_url} target="_blank" rel="noopener noreferrer" title={m.supplier_name ?? "Leverancier"}>Leverancier</a>}
+                          <button type="button" className={`btn${open ? " secondary" : ""}`} onClick={() => setOpenOrders(open ? null : m.id)}>
+                            {open ? "Sluiten" : onTheWay.length ? "Ontvangen / bestellen" : "Bestellen"}
+                          </button>
+                        </span>
+                      </div>
+                      {open && (
+                        <div className="reorder-panel">
+                          <MaterialOrdersPanel
+                            material={m}
+                            orders={orders[m.id] ?? []}
+                            suppliers={suppliers}
+                            defaultReceived={false}
+                            onSubmit={(order, markReceived) => submitOrder(m, order, markReceived)}
+                            onReceive={receiveOrder}
+                            onDelete={removeOrder}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+            </>
+          )}
+        </div>
+      )}
 
-      <div className="mat-grid">
+      {filter !== "low" && visibleMaterials.length === 0 && <p className="muted">Geen materialen in deze selectie.</p>}
+
+      <div className="mat-grid" style={filter === "low" ? { display: "none" } : undefined}>
         {visibleMaterials.map((m) => {
           const color = categoryColor(m.category);
           if (editingId === m.id) {
@@ -718,7 +733,9 @@ function MaterialOrdersPanel({
   onSubmit,
   onReceive,
   onDelete,
+  defaultReceived = true,
 }: {
+  defaultReceived?: boolean;
   material: Material;
   orders: MaterialOrder[];
   suppliers: string[];
@@ -731,7 +748,7 @@ function MaterialOrdersPanel({
   const [totalPrice, setTotalPrice] = useState("");
   const [supplierName, setSupplierName] = useState(material.supplier_name ?? "");
   const [orderedAt, setOrderedAt] = useState(todayIso());
-  const [received, setReceived] = useState(true);
+  const [received, setReceived] = useState(defaultReceived);
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
