@@ -98,6 +98,7 @@ export default function ProductionQueue() {
   const [hideDone, setHideDone] = useState(true);
   const [tech, setTech] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [stockByLine, setStockByLine] = useState<Map<string, number>>(new Map());
 
   async function load() {
     const { data, error } = await supabase.from("wc_orders")
@@ -112,6 +113,11 @@ export default function ProductionQueue() {
       skus.length ? supabase.from("product_variations").select("sku, product_id, cost_price").in("sku", skus) : Promise.resolve({ data: [] as any[] }),
       wcIds.length ? supabase.from("wc_production").select("wc_order_id, wc_line_id").in("wc_order_id", wcIds) : Promise.resolve({ data: [] as any[] }),
     ]);
+    // Regels die (deels) uit "klaar op voorraad" komen (migratie 039; ontbreekt de tabel, dan leeg).
+    const { data: fromStock } = wcIds.length
+      ? await supabase.from("order_line_stock").select("wc_order_id, wc_line_id, from_stock").in("wc_order_id", wcIds).gt("from_stock", 0)
+      : { data: [] as any[] };
+    setStockByLine(new Map((fromStock ?? []).map((r: any) => [`${r.wc_order_id}:${r.wc_line_id}`, Number(r.from_stock)])));
     // SKU van een variant -> zijn product; SKU van een simpel product -> dat product
     const byId = new Map<string, ProductInfo>((prod ?? []).map((p: any) => [p.id, p]));
     const varProductIds = Array.from(new Set((vars ?? []).map((v: any) => v.product_id).filter((id: string) => !byId.has(id))));
@@ -201,6 +207,13 @@ export default function ProductionQueue() {
                     <b>{l.quantity} ×</b> {l.name} {l.sku && <span className="muted mono">{l.sku}</span>}
                     {p && <> · <span className="pill cyan">{PROCESS_TYPE_LABELS[p.process_type as keyof typeof PROCESS_TYPE_LABELS] ?? p.process_type}</span> <Link href={`/products/${p.id}`}>product</Link></>}
                   </div>
+                  {(stockByLine.get(key) ?? 0) > 0 && (
+                    <div className="from-stock">
+                      {stockByLine.get(key)! >= l.quantity
+                        ? "Uit voorraad -- enkel inpakken"
+                        : `${stockByLine.get(key)} uit voorraad (enkel inpakken), ${l.quantity - stockByLine.get(key)!} nog te maken`}
+                    </div>
+                  )}
                   {options.length > 0 && (
                     <dl className="order-options">
                       {options.map((m, i) => (

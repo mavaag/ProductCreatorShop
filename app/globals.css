@@ -849,3 +849,9 @@ button.folder-link:hover { color: var(--cyan); }
 .mat-todo-row.ordered .mat-todo-check { border-color: var(--moss); color: var(--moss); }
 .mat-todo-name { font-weight: 700; color: var(--ink); }
 .mat-todo-actions { margin-left: auto; display: flex; gap: 6px; }
+/* Klaar op voorraad (variant) + productie */
+.ready-stock { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 16px; padding: 8px 10px; border: 1px dashed var(--line); }
+.ready-stock-label { font-weight: 700; font-size: 13px; }
+.ready-stock-count { min-width: 28px; text-align: center; font-weight: 700; font-size: 16px; color: var(--ink-soft); }
+.ready-stock-count.has { color: var(--moss); }
+.from-stock { display: inline-block; margin: 6px 0 2px; padding: 3px 8px; border: 1px solid var(--moss); color: var(--moss); font-weight: 700; font-size: 13px; }

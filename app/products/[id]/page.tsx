@@ -1,5 +1,6 @@
 "use client";
 
+import { addMadeToStock, correctReadyStock } from "@/lib/readyStock";
 import { defaultWeightKg } from "@/lib/shippingWeight";
 import Link from "next/link";
 import { useEffect, useState, useCallback, useRef, forwardRef, useImperativeHandle } from "react";
@@ -1110,6 +1111,37 @@ const VariationEditor = forwardRef<VariationEditorHandle, {
   const [inputs, setInputs] = useState<CostInputs>({ ...EMPTY_COST_INPUTS, ...(variation.cost_inputs ?? {}) });
   const [imageUrl, setImageUrl] = useState(variation.image_url ?? "");
   const [gravure, setGravure] = useState<VariationGravure | null>(variation.gravure ?? null);
+  const [ready, setReady] = useState<number>(variation.ready_stock ?? 0);
+  const [madeQty, setMadeQty] = useState("1");
+  const [readyBusy, setReadyBusy] = useState(false);
+  useEffect(() => setReady(variation.ready_stock ?? 0), [variation.ready_stock]);
+
+  async function addMade() {
+    const n = parseInt(madeQty);
+    if (!(n > 0)) return;
+    setReadyBusy(true);
+    try {
+      setReady(await addMadeToStock(supabase, variation.id, n, inputs));
+      setMadeQty("1");
+    } catch (e: any) {
+      alert(`Mislukt: ${e.message ?? e}`);
+    }
+    setReadyBusy(false);
+  }
+  async function correctReady() {
+    const raw = prompt("Hoeveel stuks liggen er echt klaar? (correctie -- materialen blijven ongemoeid)", String(ready));
+    if (raw == null) return;
+    const to = parseInt(raw);
+    if (!(to >= 0)) return;
+    setReadyBusy(true);
+    try {
+      await correctReadyStock(supabase, variation.id, ready, to);
+      setReady(to);
+    } catch (e: any) {
+      alert(`Mislukt: ${e.message ?? e}`);
+    }
+    setReadyBusy(false);
+  }
   const [uploadingImage, setUploadingImage] = useState(false);
   const [saving, setSaving] = useState(false);
   // Enkel varianten die net met "+ Variant toevoegen" zijn aangemaakt (herkenbaar aan
@@ -1379,6 +1411,15 @@ const VariationEditor = forwardRef<VariationEditorHandle, {
           )}
         </div>
       )}
+
+      <div className="ready-stock">
+        <span className="ready-stock-label">Klaar op voorraad</span>
+        <span className={`ready-stock-count mono${ready > 0 ? " has" : ""}`}>{ready}</span>
+        <input type="number" min={1} value={madeQty} onChange={(e) => setMadeQty(e.target.value)} style={{ width: 64 }} aria-label="Aantal gemaakt" />
+        <button type="button" className="btn secondary" onClick={addMade} disabled={readyBusy} title="Stuks op voorhand gemaakt: komen op voorraad, de materialen gaan meteen van de materiaalvoorraad">+ gemaakt</button>
+        <button type="button" className="btn secondary" onClick={correctReady} disabled={readyBusy} title="Aantal rechtzetten (geteld, kapot, ...) zonder materialen">Corrigeren</button>
+        <span className="muted" style={{ fontSize: 12 }}>Een bestelling neemt eerst van deze voorraad (dan enkel inpakken).</span>
+      </div>
 
       <h2 style={{ fontSize: 14, marginTop: 20 }}>Materialen</h2>
       {inputs.materials.map((line, idx) => {
