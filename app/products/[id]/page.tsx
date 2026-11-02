@@ -1115,6 +1115,21 @@ const VariationEditor = forwardRef<VariationEditorHandle, {
   const [madeQty, setMadeQty] = useState("1");
   const [readyBusy, setReadyBusy] = useState(false);
   useEffect(() => setReady(variation.ready_stock ?? 0), [variation.ready_stock]);
+  const [weight, setWeight] = useState(variation.weight_kg != null ? String(variation.weight_kg).replace(".", ",") : "");
+  const [weightMsg, setWeightMsg] = useState("");
+  useEffect(() => setWeight(variation.weight_kg != null ? String(variation.weight_kg).replace(".", ",") : ""), [variation.weight_kg]);
+
+  /** Verzendgewicht van de variant meteen bewaren (los van "Opslaan"); leeg = gewicht van het product. */
+  async function saveWeight() {
+    const raw = weight.trim();
+    const value = raw === "" ? null : parseFloat(raw.replace(",", "."));
+    if (value != null && !(value > 0 && value < 100)) { setWeightMsg("ongeldig gewicht"); return; }
+    if (value === (variation.weight_kg ?? null)) return;
+    const { error } = await supabase.from("product_variations").update({ weight_kg: value }).eq("id", variation.id);
+    if (error) { setWeightMsg(error.message); return; }
+    await supabase.from("products").update({ updated_at: new Date().toISOString() }).eq("id", variation.product_id);
+    setWeightMsg("bewaard -- sync om het in de shop te zetten");
+  }
 
   async function addMade() {
     const n = parseInt(madeQty);
@@ -1411,6 +1426,16 @@ const VariationEditor = forwardRef<VariationEditorHandle, {
           )}
         </div>
       )}
+
+      <div className="ready-stock">
+        <span className="ready-stock-label">Verzendgewicht</span>
+        <input className="mono" value={weight} onChange={(e) => { setWeight(e.target.value); setWeightMsg(""); }} onBlur={saveWeight}
+          placeholder="zoals product" style={{ width: 110 }} aria-label="Verzendgewicht van deze variant in kg" />
+        <span className="muted" style={{ fontSize: 12 }}>
+          kg incl. verpakking. Tot 0,25 kg = brievenbustarief (max. 3 cm dik), daarboven pakje. Leeg = gewicht van het product.
+          {weightMsg && <b> {weightMsg}</b>}
+        </span>
+      </div>
 
       <div className="ready-stock">
         <span className="ready-stock-label">Klaar op voorraad</span>

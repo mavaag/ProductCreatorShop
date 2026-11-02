@@ -114,7 +114,7 @@ export async function POST(request: Request) {
 
   let query = supabase
     .from("products")
-    .select("id, sku, name, published, last_exported_published, attribute_names, default_attribute_values, description, short_description, categories, image_url, weight_kg, shipping_class, personalization, product_variations(id, sku, attribute_values, suggested_price, image_url, gravure), product_collections(removed_at, collections(name))")
+    .select("id, sku, name, published, last_exported_published, attribute_names, default_attribute_values, description, short_description, categories, image_url, weight_kg, shipping_class, personalization, product_variations(id, sku, attribute_values, suggested_price, image_url, gravure, weight_kg), product_collections(removed_at, collections(name))")
     .order("name");
   if (type) query = query.eq("process_type", type);
   if (productIds) query = query.in("id", productIds);
@@ -227,17 +227,17 @@ export async function POST(request: Request) {
         report.notes.push(`${p.sku}: ${dryRun ? "wordt" : "is"} omgezet van simpel naar variabel product met ${p.product_variations.length} varianten`);
       }
 
-      const remote = new Map<string, { id: number; regular_price: string; image_src: string | null; attributes: { id: number; name?: string; option: string }[] }>();
+      const remote = new Map<string, { id: number; regular_price: string; image_src: string | null; weight: string; attributes: { id: number; name?: string; option: string }[] }>();
       for (let page = 1; ; page++) {
         const chunk = await wc(`/products/${parent.id}/variations?per_page=100&page=${page}`);
-        for (const rv of chunk) remote.set(rv.sku, { id: rv.id, regular_price: rv.regular_price, image_src: rv.image?.src ?? null, attributes: rv.attributes ?? [] });
+        for (const rv of chunk) remote.set(rv.sku, { id: rv.id, regular_price: rv.regular_price, image_src: rv.image?.src ?? null, weight: String(rv.weight ?? ""), attributes: rv.attributes ?? [] });
         if (chunk.length < 100) break;
       }
 
-      const updates: { id: number; regular_price?: string; image?: { src: string } | { id: number } }[] = [];
+      const updates: { id: number; regular_price?: string; weight?: string; image?: { src: string } | { id: number } }[] = [];
       const synced: string[] = [];
       const toCreate: any[] = []; // varianten van een omgezet product (zie convert)
-      for (const v of p.product_variations as { id: string; sku: string; suggested_price: number | null; image_url: string | null }[]) {
+      for (const v of p.product_variations as { id: string; sku: string; suggested_price: number | null; image_url: string | null; weight_kg: number | null }[]) {
         if (v.suggested_price == null) continue;
         const rv = remote.get(v.sku);
         // Nieuwe variant (omgezet product, of een variant die je in de app toevoegde aan een bestaand variabel
@@ -257,7 +257,10 @@ export async function POST(request: Request) {
         // Enkel pushen als er lokaal een afbeelding is ingevuld -- een leeg lokaal veld wist nooit
         // een bestaande WooCommerce-afbeelding (zelfde voorzichtige aanpak als bij de productafbeeldingen).
         const imageChanged = !!v.image_url && v.image_url !== rv.image_src;
-        if (!priceChanged && !imageChanged) {
+        // Verzendgewicht van de variant (migratie 040): leeg = zoals het product, ook in WooCommerce.
+        const weight = v.weight_kg != null ? String(v.weight_kg) : "";
+        const weightChanged = (rv.weight === "" ? "" : String(Number(rv.weight))) !== (weight === "" ? "" : String(Number(weight)));
+        if (!priceChanged && !imageChanged && !weightChanged) {
           report.unchanged++;
           synced.push(v.id);
           continue;
@@ -265,6 +268,7 @@ export async function POST(request: Request) {
         updates.push({
           id: rv.id,
           ...(priceChanged ? { regular_price: price } : {}),
+          ...(weightChanged ? { weight } : {}),
           ...(imageChanged ? { image: await resolveImageRef(base, v.image_url as string, mediaCache) } : {}),
         });
         synced.push(v.id);
@@ -625,13 +629,14 @@ async function syncVariationGravure(wc: WcFn, parentId: number, p: any, report: 
 async function newVariationPayloads(
   base: string,
   attrNames: string[],
-  variations: { sku: string; attribute_values: Record<string, string>; suggested_price: number | null; image_url: string | null }[],
+  variations: { sku: string; attribute_values: Record<string, string>; suggested_price: number | null; image_url: string | null; weight_kg?: number | null }[],
   attributeCache: Map<string, number>,
   mediaCache: Map<string, number | null>
 ) {
   return Promise.all(variations.map(async (v) => ({
     sku: v.sku,
     ...(v.suggested_price != null ? { regular_price: Number(v.suggested_price).toFixed(2) } : {}),
+    ...(v.weight_kg != null ? { weight: String(v.weight_kg) } : {}),
     ...(v.image_url ? { image: await resolveImageRef(base, v.image_url, mediaCache) } : {}),
     attributes: attrNames
       .filter((n) => v.attribute_values?.[n])
