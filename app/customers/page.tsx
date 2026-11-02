@@ -24,12 +24,15 @@ type Customer = {
   unsubscribed?: string;
   birthday: string;
   unsubscribe_url: string;
+  newsletter?: "pending" | "confirmed";
+  newsletter_since?: string;
 };
 
-type Preset = "all" | "birthday_month" | "birthday_next" | "loyal" | "big" | "inactive" | "new";
+type Preset = "all" | "newsletter" | "birthday_month" | "birthday_next" | "loyal" | "big" | "inactive" | "new";
 
 const PRESETS: { key: Preset; label: string; title: string }[] = [
   { key: "all", label: "Iedereen", title: "Alle klanten" },
+  { key: "newsletter", label: "Nieuwsbrief", title: "Ingeschreven via het formulier op de homepagina (ook wie nog niet bevestigde)" },
   { key: "birthday_month", label: "Jarig deze maand", title: "Verjaardag in de huidige maand" },
   { key: "birthday_next", label: "Jarig volgende maand", title: "Verjaardag volgende maand -- op tijd een code klaarzetten" },
   { key: "loyal", label: "Trouwe klanten", title: "Minstens het ingestelde aantal bestellingen" },
@@ -76,7 +79,7 @@ export default function CustomersPage() {
     cutoff.setMonth(cutoff.getMonth() - (parseInt(months) || 0));
     const needle = q.trim().toLowerCase();
     return rows
-      .filter((c) => !onlyOptin || c.optin)
+      .filter((c) => !onlyOptin || c.optin || (preset === "newsletter" && c.newsletter === "pending"))
       .filter((c) => !needle || c.email.includes(needle) || c.name.toLowerCase().includes(needle) || c.city.toLowerCase().includes(needle))
       .filter((c) => {
         switch (preset) {
@@ -86,6 +89,7 @@ export default function CustomersPage() {
           case "big": return c.spent >= (parseFloat(minSpent.replace(",", ".")) || 0);
           case "inactive": return c.orders > 0 && !!c.last_order && new Date(c.last_order) < cutoff;
           case "new": return c.orders === 1;
+          case "newsletter": return !!c.newsletter;
           default: return true;
         }
       })
@@ -117,6 +121,7 @@ export default function CustomersPage() {
       <div className="mat-stats">
         <div className="card stat-tile"><div className="stat-label">Klanten</div><div className="stat-value">{total}</div></div>
         <div className="card stat-tile"><div className="stat-label">Met toestemming</div><div className="stat-value">{optins}</div></div>
+        <div className="card stat-tile"><div className="stat-label">Nieuwsbrief</div><div className="stat-value">{rows?.filter((c) => c.newsletter === "confirmed").length ?? 0}</div></div>
         <div className="card stat-tile"><div className="stat-label">Met account</div><div className="stat-value">{withAccount}</div></div>
         <div className="card stat-tile"><div className="stat-label">Verjaardag gekend</div><div className="stat-value">{withBirthday}</div></div>
       </div>
@@ -180,7 +185,8 @@ export default function CustomersPage() {
                   <td className="mono">{c.birthday || <span className="muted">--</span>}</td>
                   <td>{c.account ? "ja" : <span className="muted">gast</span>}</td>
                   <td>
-                    {c.optin ? <span className="pill cyan">ja</span>
+                    {c.newsletter === "pending" ? <span className="pill" title={`ingeschreven op ${fmtDate(c.newsletter_since)}, nog niet bevestigd via de mail`}>wacht op bevestiging</span>
+                      : c.optin ? <span className="pill cyan" title={c.newsletter === "confirmed" ? `nieuwsbrief, bevestigd op ${fmtDate(c.newsletter_since)}` : "aangevinkt bij afrekenen / in Mijn account"}>ja{c.newsletter === "confirmed" ? " (nieuwsbrief)" : ""}</span>
                       : c.unsubscribed ? <span className="pill rust" title={`afgemeld op ${fmtDate(c.unsubscribed)}`}>afgemeld</span>
                       : <span className="muted">nee</span>}
                   </td>

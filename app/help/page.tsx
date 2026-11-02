@@ -220,6 +220,7 @@ const SECTIONS: Section[] = [
         <ul>
           <li><b>Toestemming</b>: bij het afrekenen en in <i>Mijn account &gt; Accountgegevens</i> kan de klant het vakje <i>Ja, stuur me af en toe kortingen en nieuws</i> aanvinken (staat standaard uit). Uitvinken of de afmeldlink gebruiken = <i>afgemeld</i>. Wie geen toestemming gaf, mail je niet met reclame (enkel over hun bestelling).</li>
           <li><b>Verjaardag</b>: vrijwillig veld (dag/maand) bij het afrekenen en in Mijn account.</li>
+          <li><b>Nieuwsbrief</b>: het formulier <i>Mis geen enkele actie</i> op de homepagina (en in de footer) schrijft in. De bezoeker krijgt een <b>bevestigingsmail</b>; pas na klikken op de link staat hij op <i>ja (nieuwsbrief)</i>, ervoor op <i>wacht op bevestiging</i> (niet mailen). Tabje <i>Nieuwsbrief</i> toont alle inschrijvers. Afmelden via de afmeldlink haalt hem er ook af.</li>
           <li><b>Tabjes</b>: <i>Jarig deze maand</i>, <i>Jarig volgende maand</i>, <i>Trouwe klanten</i> (min. aantal bestellingen), <i>Grote kopers</i> (min. bedrag), <i>Lang niets besteld</i> (aantal maanden), <i>Nieuw</i>. <i>Enkel met toestemming</i> staat standaard aan.</li>
           <li><b>Kopieer e-mails</b> kopieert de adressen (enkel met toestemming) om in BCC te plakken. Per klant kopieer je ook de persoonlijke <b>afmeldlink</b>: zet die onderaan elke reclame-mail.</li>
         </ul>
