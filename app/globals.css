@@ -866,3 +866,8 @@ button.folder-link:hover { color: var(--cyan); }
 .ready-stock-count { min-width: 28px; text-align: center; font-weight: 700; font-size: 16px; color: var(--ink-soft); }
 .ready-stock-count.has { color: var(--moss); }
 .from-stock { display: inline-block; margin: 6px 0 2px; padding: 3px 8px; border: 1px solid var(--moss); color: var(--moss); font-weight: 700; font-size: 13px; }
+/* Klanten */
+.customers-filters { display: flex; align-items: center; gap: 10px 16px; flex-wrap: wrap; margin-bottom: 16px; }
+.customers-filters label { display: flex; align-items: center; gap: 6px; margin: 0; text-transform: none; letter-spacing: 0; font-size: 13px; }
+.customers-filters label input[type="number"], .customers-filters label input.mono { width: 80px; }
+.customers-table td { vertical-align: top; }
