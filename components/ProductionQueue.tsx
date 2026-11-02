@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { PROCESS_TYPE_LABELS } from "@/lib/types";
 import { CustomerFile, ProductFolder, downloadCustomerFiles, loadProductFolders, splitOrderMeta } from "@/lib/productionFiles";
 import FolderBrowser from "@/components/FolderBrowser";
+import OrderActions from "@/components/OrderActions";
 
 // Tabblad Bestellingen > Productie: openstaande bestellingen (in verwerking / on hold) met per regel het product,
 // de gekozen opties en de productiebestanden op de NAS; per regel "gemaakt" afvinken (tabel wc_production).
@@ -23,6 +24,17 @@ type Order = {
   customer_name: string | null; shipping_method: string | null; customer_note: string | null; wc_order_items: Line[];
   total: number; shipping_total: number | null; shipping_tax: number | null; discount_total: number | null;
 };
+
+/** Kop boven een groep bestellingen van dezelfde dag: Vandaag, Gisteren of de datum. */
+function dayLabel(iso: string): string {
+  const d = new Date(iso);
+  const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((day(new Date()) - day(d)) / 86400000);
+  if (diff === 0) return "Vandaag";
+  if (diff === 1) return "Gisteren";
+  return d.toLocaleDateString("nl-BE", { weekday: "long", day: "numeric", month: "long", year: d.getFullYear() === new Date().getFullYear() ? undefined : "numeric" });
+}
+const dayKey = (iso: string) => new Date(iso).toDateString();
 
 const euro = (n: number) => n.toLocaleString("nl-BE", { style: "currency", currency: "EUR" });
 
@@ -96,6 +108,7 @@ export default function ProductionQueue() {
   const [costBySku, setCostBySku] = useState<Map<string, number>>(new Map());
   const [folders, setFolders] = useState<Map<string, ProductFolder[]>>(new Map());
   const [hideDone, setHideDone] = useState(true);
+  const [newestFirst, setNewestFirst] = useState(true);
   const [tech, setTech] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [stockByLine, setStockByLine] = useState<Map<string, number>>(new Map());
@@ -150,12 +163,21 @@ export default function ProductionQueue() {
     setDone(next);
   }
 
+  // Een bestelling waarvan alles gemaakt is, blijft staan (klaar om te verzenden) tot ze voltooid is.
+  const allMade = (wcId: number) => {
+    const o = (orders ?? []).find((x) => x.wc_order_id === wcId);
+    return !!o && o.wc_order_items.length > 0 && o.wc_order_items.every((l) => done.has(`${wcId}:${l.wc_line_id}`));
+  };
+
   const visible = useMemo(() => (orders ?? []).map((o) => ({
     ...o,
     wc_order_items: o.wc_order_items.filter((l) =>
       (!hideDone || !done.has(`${o.wc_order_id}:${l.wc_line_id}`)) &&
       (!tech || productBySku.get(l.sku ?? "")?.process_type === tech)),
-  })).filter((o) => o.wc_order_items.length > 0), [orders, done, hideDone, tech, productBySku]);
+  })).filter((o) => o.wc_order_items.length > 0 || (!tech && allMade(o.wc_order_id)))
+    .sort((a, b) => (newestFirst ? -1 : 1) * a.date_created.localeCompare(b.date_created)),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [orders, done, hideDone, tech, productBySku, newestFirst]);
 
   const openLines = (orders ?? []).reduce((n, o) => n + o.wc_order_items.filter((l) => !done.has(`${o.wc_order_id}:${l.wc_line_id}`)).length, 0);
 
@@ -173,6 +195,13 @@ export default function ProductionQueue() {
           <input type="checkbox" style={{ width: "auto" }} checked={hideDone} onChange={(e) => setHideDone(e.target.checked)} />
           Gemaakte regels verbergen
         </label>
+        <div style={{ minWidth: 160 }}>
+          <label>Volgorde</label>
+          <select value={newestFirst ? "new" : "old"} onChange={(e) => setNewestFirst(e.target.value === "new")}>
+            <option value="new">Nieuwste eerst</option>
+            <option value="old">Oudste eerst</option>
+          </select>
+        </div>
         <button className="btn secondary" onClick={load}>Vernieuwen</button>
         <span className="muted" style={{ fontSize: 12 }}>
           {orders && `${orders.length} open bestelling(en), ${openLines} regel(s) nog te maken.`} Nieuwe bestellingen komen elke 10 minuten automatisch binnen.
@@ -181,8 +210,15 @@ export default function ProductionQueue() {
       {error && <p className="warning">{error}</p>}
       {orders === null ? <p className="muted">Laden...</p> : visible.length === 0 ? (
         <div className="card"><p className="muted" style={{ margin: 0 }}>Niets meer te maken. 🎉</p></div>
-      ) : visible.map((o) => (
-        <div key={o.id} className="card" style={{ marginBottom: 12 }}>
+      ) : visible.map((o, i) => (
+        <Fragment key={o.id}>
+        {(i === 0 || dayKey(visible[i - 1].date_created) !== dayKey(o.date_created)) && (
+          <h3 className="order-day">
+            {dayLabel(o.date_created)}
+            <span className="muted"> · {visible.filter((x) => dayKey(x.date_created) === dayKey(o.date_created)).length} bestelling(en)</span>
+          </h3>
+        )}
+        <div className="card" style={{ marginBottom: 12 }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
             <h2 style={{ margin: 0 }}>#{o.order_number} {o.customer_name && <span className="muted" style={{ textTransform: "none", letterSpacing: 0 }}>· {o.customer_name}</span>}</h2>
             <span className="muted mono">
@@ -192,6 +228,7 @@ export default function ProductionQueue() {
           </div>
           <OrderAmounts o={(orders ?? []).find((x) => x.id === o.id) ?? o} costBySku={costBySku} />
           {o.customer_note && <p className="warning" style={{ margin: "8px 0" }}>Opmerking klant: {o.customer_note}</p>}
+          {allMade(o.wc_order_id) && <p className="ready-to-ship">Alles gemaakt -- klaar om in te pakken en te verzenden.</p>}
           {o.wc_order_items.map((l) => {
             const p = productBySku.get(l.sku ?? "");
             const key = `${o.wc_order_id}:${l.wc_line_id}`;
@@ -232,7 +269,10 @@ export default function ProductionQueue() {
               </div>
             );
           })}
+          <OrderActions wcOrderId={o.wc_order_id} status={o.status}
+            onChanged={(status) => setOrders((cur) => (cur ?? []).filter((x) => x.wc_order_id !== o.wc_order_id || OPEN_STATUSES.includes(status)).map((x) => (x.wc_order_id === o.wc_order_id ? { ...x, status } : x)))} />
         </div>
+        </Fragment>
       ))}
     </div>
   );

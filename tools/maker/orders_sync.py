@@ -100,7 +100,7 @@ def run_promos():
 
 # ---------- materiaalverbruik (migratie 038) ----------
 COUNTS = ('processing', 'on-hold', 'completed')     # bestelling telt: materiaal is (of wordt) gebruikt
-RESTORES = ('cancelled', 'refunded', 'failed')      # verbruik terug naar de voorraad
+RESTORES = ('cancelled', 'refunded', 'failed', 'trash')   # verbruik terug naar de voorraad (trash = verwijderd in de beheertool)
 
 
 def _ts(v):
