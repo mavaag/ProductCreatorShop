@@ -82,6 +82,78 @@ def main():
     if latest:
         supa.rest('POST', 'settings?on_conflict=key', [{'key': CURSOR, 'value': latest}], prefer='resolution=merge-duplicates,return=minimal')
     print(f'bestellingen: {fetched} nieuw/gewijzigd')
+    consume_materials()
+
+
+# ---------- materiaalverbruik (migratie 038) ----------
+COUNTS = ('processing', 'on-hold', 'completed')     # bestelling telt: materiaal is (of wordt) gebruikt
+RESTORES = ('cancelled', 'refunded', 'failed')      # verbruik terug naar de voorraad
+
+
+def _ts(v):
+    return datetime.datetime.fromisoformat(str(v).replace('Z', '+00:00'))
+
+
+def _bump(material_id, delta, stock):
+    """Voorraad aanpassen (enkel als die bijgehouden wordt: stock_quantity niet leeg)."""
+    cur = stock.get(material_id)
+    if cur is None: return
+    new = round(float(cur) + delta, 4)
+    supa.rest('PATCH', f'materials?id=eq.{material_id}', {'stock_quantity': new}, prefer='return=minimal')
+    stock[material_id] = new
+
+
+def consume_materials():
+    """Trekt per bestelregel de materialen van de variant (kostenopbouw x aantal) één keer af van de voorraad;
+    geannuleerde/terugbetaalde bestellingen geven hun verbruik terug. Werkt op de bestellingen in de database,
+    dus ook wat via de knop in de beheertool gesynct werd."""
+    try:
+        since = supa.rest('GET', 'settings?key=eq.stock_tracking_since&select=value') or []
+    except Exception as e:   # migratie 038 nog niet uitgevoerd
+        print(f'materiaalverbruik overgeslagen: {e}')
+        return
+    if not since: return
+    since = _ts(since[0]['value'])
+    orders = [o for o in supa.select_all('wc_orders', 'id,wc_order_id,status,date_created') if _ts(o['date_created']) >= since]
+    if not orders: return
+    done = {}
+    for r in supa.select_all('material_consumption', 'wc_order_id,wc_line_id,material_id,quantity'):
+        done.setdefault(r['wc_order_id'], []).append(r)
+    stock = {m['id']: m['stock_quantity'] for m in supa.select_all('materials', 'id,stock_quantity')}
+    by_sku = {}
+    for v in supa.select_all('product_variations', 'sku,cost_inputs'):
+        mats = [(m['material_id'], float(m.get('quantity') or 0)) for m in ((v.get('cost_inputs') or {}).get('materials') or [])
+                if m.get('material_id') in stock and float(m.get('quantity') or 0) > 0]
+        if v.get('sku'): by_sku[v['sku']] = mats
+    items = {}
+    for it in supa.select_all('wc_order_items', 'order_id,wc_line_id,sku,quantity'):
+        items.setdefault(it['order_id'], []).append(it)
+    used = restored = 0
+    for o in orders:
+        wid = o['wc_order_id']
+        if o['status'] in RESTORES and done.get(wid):
+            for r in done[wid]:
+                _bump(r['material_id'], float(r['quantity']), stock)
+                restored += 1
+            supa.rest('DELETE', f'material_consumption?wc_order_id=eq.{wid}', prefer='return=minimal')
+            continue
+        if o['status'] not in COUNTS: continue
+        have = {(r['wc_line_id'], r['material_id']) for r in done.get(wid, [])}
+        rows = []
+        for it in items.get(o['id'], []):
+            if it.get('wc_line_id') is None: continue
+            for mid, q in by_sku.get(it.get('sku') or '', []):
+                if (it['wc_line_id'], mid) in have: continue
+                rows.append({'wc_order_id': wid, 'wc_line_id': it['wc_line_id'], 'material_id': mid,
+                             'quantity': round(q * float(it.get('quantity') or 0), 4)})
+        if rows:
+            supa.rest('POST', 'material_consumption?on_conflict=wc_order_id,wc_line_id,material_id', rows,
+                      prefer='resolution=ignore-duplicates,return=minimal')
+            for r in rows:
+                _bump(r['material_id'], -r['quantity'], stock)
+                used += 1
+    if used or restored:
+        print(f'materiaalverbruik: {used} regel(s) afgetrokken, {restored} teruggezet')
 
 
 if __name__ == '__main__':

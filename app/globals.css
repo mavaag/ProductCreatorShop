@@ -841,3 +841,11 @@ button.folder-link:hover { color: var(--cyan); }
 .order-amounts b { color: var(--ink); margin-right: 4px; }
 .order-amounts .order-profit, .order-amounts .order-profit b { color: var(--moss); }
 .order-amounts .order-loss, .order-amounts .order-loss b { color: var(--rust); }
+/* Materialen: TODO bijbestellen */
+.mat-todo { margin-bottom: 20px; border-left: 3px solid var(--rust); }
+.mat-todo-row { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.mat-todo-row:first-of-type { border-top: none; }
+.mat-todo-check { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--rust); color: var(--rust); font-weight: 700; font-size: 12px; }
+.mat-todo-row.ordered .mat-todo-check { border-color: var(--moss); color: var(--moss); }
+.mat-todo-name { font-weight: 700; color: var(--ink); }
+.mat-todo-actions { margin-left: auto; display: flex; gap: 6px; }
