@@ -7,6 +7,7 @@ import { confirmDialog } from "@/components/DialogHost";
 import { calculatePrice } from "@/lib/pricing";
 import { CostInputs, EMPTY_COST_INPUTS, Machine, Material } from "@/lib/types";
 import ProductionQueue from "@/components/ProductionQueue";
+import AllOrders from "@/components/AllOrders";
 
 type Period = "12m" | "this_year" | "last_year" | "all";
 
@@ -19,7 +20,7 @@ const PERIOD_LABELS: Record<Period, string> = {
 
 // Deze statussen tellen niet mee als "echte" bestelling voor omzet/aantal/topproducten (wel in de
 // statusverdeling hieronder, zodat je ze niet kwijt bent).
-const EXCLUDED_STATUSES = ["cancelled", "failed"];
+const EXCLUDED_STATUSES = ["cancelled", "failed", "trash"];
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "In afwachting",
@@ -86,8 +87,10 @@ function eurCompact(n: number): string {
 export default function OrdersPage() {
   const ready = useAuthGuard();
   const [configured, setConfigured] = useState(true);
-  const [tab, setTab] = useState<"overzicht" | "productie">(() =>
-    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("tab") === "productie" ? "productie" : "overzicht");
+  const [tab, setTab] = useState<"overzicht" | "productie" | "alle">(() => {
+    const t = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("tab") : null;
+    return t === "productie" || t === "alle" ? t : "overzicht";
+  });
   const [period, setPeriod] = useState<Period>("12m");
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [items, setItems] = useState<ItemRow[]>([]);
@@ -269,8 +272,20 @@ export default function OrdersPage() {
     <div className="tabs">
       <button type="button" className={`tab${tab === "overzicht" ? " active" : ""}`} onClick={() => setTab("overzicht")}>Overzicht</button>
       <button type="button" className={`tab${tab === "productie" ? " active" : ""}`} onClick={() => setTab("productie")}>Productie</button>
+      <button type="button" className={`tab${tab === "alle" ? " active" : ""}`} onClick={() => setTab("alle")}>Alle bestellingen</button>
     </div>
   );
+
+  if (tab === "alle") {
+    return (
+      <div>
+        <h1>Bestellingen</h1>
+        <p className="sub">Alle bestellingen met hun status. Zet ze op voltooid, in de wacht of geannuleerd, of verwijder testbestellingen; de wijziging gaat meteen naar WooCommerce.</p>
+        {tabs}
+        <AllOrders />
+      </div>
+    );
+  }
 
   if (tab === "productie") {
     return (

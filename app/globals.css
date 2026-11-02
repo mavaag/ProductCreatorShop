@@ -878,3 +878,14 @@ button.folder-link:hover { color: var(--cyan); }
 .codes-auto-block { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
 .codes-row > td { background: rgba(0, 240, 255, 0.03); }
 .codes-row table { margin: 4px 0 8px; font-size: 13px; }
+/* Bestellingen: statusknoppen */
+.order-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+.order-confirm { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; font-size: 13px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 4px; }
+.all-orders .order-actions { margin-top: 0; }
+.ready-to-ship { margin: 8px 0; color: var(--moss); font-weight: 700; }
+.pill.status-completed { color: var(--moss); border-color: var(--moss); }
+.pill.status-processing { color: var(--cyan); border-color: var(--cyan); }
+.pill.status-on-hold, .pill.status-pending { color: var(--yellow); border-color: var(--yellow); }
+.pill.status-cancelled, .pill.status-failed { color: var(--rust); border-color: var(--rust); }
+.pill.status-refunded { color: var(--magenta); border-color: var(--magenta); }
+.pill.status-trash { color: var(--ink-faint); border-color: var(--ink-faint); }

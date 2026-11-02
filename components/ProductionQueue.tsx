@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { PROCESS_TYPE_LABELS } from "@/lib/types";
 import { CustomerFile, ProductFolder, downloadCustomerFiles, loadProductFolders, splitOrderMeta } from "@/lib/productionFiles";
 import FolderBrowser from "@/components/FolderBrowser";
+import OrderActions from "@/components/OrderActions";
 
 // Tabblad Bestellingen > Productie: openstaande bestellingen (in verwerking / on hold) met per regel het product,
 // de gekozen opties en de productiebestanden op de NAS; per regel "gemaakt" afvinken (tabel wc_production).
@@ -150,12 +151,18 @@ export default function ProductionQueue() {
     setDone(next);
   }
 
+  // Een bestelling waarvan alles gemaakt is, blijft staan (klaar om te verzenden) tot ze voltooid is.
+  const allMade = (wcId: number) => {
+    const o = (orders ?? []).find((x) => x.wc_order_id === wcId);
+    return !!o && o.wc_order_items.length > 0 && o.wc_order_items.every((l) => done.has(`${wcId}:${l.wc_line_id}`));
+  };
+
   const visible = useMemo(() => (orders ?? []).map((o) => ({
     ...o,
     wc_order_items: o.wc_order_items.filter((l) =>
       (!hideDone || !done.has(`${o.wc_order_id}:${l.wc_line_id}`)) &&
       (!tech || productBySku.get(l.sku ?? "")?.process_type === tech)),
-  })).filter((o) => o.wc_order_items.length > 0), [orders, done, hideDone, tech, productBySku]);
+  })).filter((o) => o.wc_order_items.length > 0 || (!tech && allMade(o.wc_order_id))), [orders, done, hideDone, tech, productBySku]);
 
   const openLines = (orders ?? []).reduce((n, o) => n + o.wc_order_items.filter((l) => !done.has(`${o.wc_order_id}:${l.wc_line_id}`)).length, 0);
 
@@ -192,6 +199,7 @@ export default function ProductionQueue() {
           </div>
           <OrderAmounts o={(orders ?? []).find((x) => x.id === o.id) ?? o} costBySku={costBySku} />
           {o.customer_note && <p className="warning" style={{ margin: "8px 0" }}>Opmerking klant: {o.customer_note}</p>}
+          {allMade(o.wc_order_id) && <p className="ready-to-ship">Alles gemaakt -- klaar om in te pakken en te verzenden.</p>}
           {o.wc_order_items.map((l) => {
             const p = productBySku.get(l.sku ?? "");
             const key = `${o.wc_order_id}:${l.wc_line_id}`;
@@ -232,6 +240,8 @@ export default function ProductionQueue() {
               </div>
             );
           })}
+          <OrderActions wcOrderId={o.wc_order_id} status={o.status}
+            onChanged={(status) => setOrders((cur) => (cur ?? []).filter((x) => x.wc_order_id !== o.wc_order_id || OPEN_STATUSES.includes(status)).map((x) => (x.wc_order_id === o.wc_order_id ? { ...x, status } : x)))} />
         </div>
       ))}
     </div>
