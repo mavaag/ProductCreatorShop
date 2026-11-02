@@ -892,3 +892,11 @@ button.folder-link:hover { color: var(--cyan); }
 .order-day { margin: 20px 0 8px; font-size: 14px; text-transform: none; color: var(--cyan); }
 .order-day::first-letter { text-transform: uppercase; }
 .order-day .muted { text-transform: none; font-weight: 400; }
+/* Acties */
+.actie-list { display: grid; gap: 10px; }
+.actie-card { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.actie-card.running { border-left: 3px solid var(--cyan); }
+.actie-badge { background: #f39c12; color: #14030a; font-weight: 800; padding: 10px 12px; border-radius: 8px; min-width: 120px; text-align: center; }
+.actie-preview { margin-left: 8px; background: #f39c12; color: #14030a; font-size: 13px; padding: 3px 8px; border-radius: 999px; vertical-align: middle; }
+.actie-form label { margin-top: 10px; }
+.actie-cats { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
