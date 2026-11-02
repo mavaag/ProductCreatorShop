@@ -83,6 +83,19 @@ def main():
         supa.rest('POST', 'settings?on_conflict=key', [{'key': CURSOR, 'value': latest}], prefer='resolution=merge-duplicates,return=minimal')
     print(f'bestellingen: {fetched} nieuw/gewijzigd')
     consume_materials()
+    run_promos()
+
+
+def run_promos():
+    """Vangnet voor de dagelijkse kortingscodes (verjaardag, 10e bestelling) van de plugin 3DP Klanten 1.2.0:
+    de shop doet per dag maar één keer iets (vanaf 08:00), dus elke 10 minuten aanroepen is onschuldig."""
+    try:
+        r = woo_get('tdp-run-promos', {})
+    except Exception as e:      # plugin (nog) niet geïnstalleerd of shop onbereikbaar
+        print(f'kortingscodes overgeslagen: {e}')
+        return
+    if r.get('ran'):
+        print(f"kortingscodes: {len(r.get('sent') or [])} verstuurd")
 
 
 # ---------- materiaalverbruik (migratie 038) ----------

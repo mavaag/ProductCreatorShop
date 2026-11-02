@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
 import { authHeader } from "@/lib/productionFiles";
+import { AutoCodesSettings, SendCodePanel, SentCode, reasonLabel } from "@/components/CustomerCodes";
 
 // Klanten uit de shop (plugin "3DP Klanten"): wie besteld heeft (ook als gast) en wie een account heeft.
 // Bedoeld om gericht een kortingscode te sturen (verjaardag, trouwe klant, ...). Standaard enkel klanten
@@ -26,6 +27,7 @@ type Customer = {
   unsubscribe_url: string;
   newsletter?: "pending" | "confirmed";
   newsletter_since?: string;
+  codes?: SentCode[];
 };
 
 type Preset = "all" | "newsletter" | "birthday_month" | "birthday_next" | "loyal" | "big" | "inactive" | "new";
@@ -60,6 +62,9 @@ export default function CustomersPage() {
   const [months, setMonths] = useState("6");
   const [q, setQ] = useState("");
   const [copied, setCopied] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [sending, setSending] = useState(false);
+  const [openCodes, setOpenCodes] = useState<string | null>(null);
 
   async function load() {
     setError("");
@@ -109,6 +114,11 @@ export default function CustomersPage() {
   const withBirthday = rows?.filter((c) => c.birthday).length ?? 0;
   const withAccount = rows?.filter((c) => c.account).length ?? 0;
   const mailable = visible.filter((c) => c.optin);
+  const chosen = mailable.filter((c) => selected.has(c.email));
+  const allChosen = mailable.length > 0 && chosen.length === mailable.length;
+  const toggle = (email: string) => setSelected((cur) => { const n = new Set(cur); if (n.has(email)) n.delete(email); else n.add(email); return n; });
+  const codesSent = rows?.reduce((t, c) => t + (c.codes?.length ?? 0), 0) ?? 0;
+  const codesUsed = rows?.reduce((t, c) => t + (c.codes?.filter((x) => x.used).length ?? 0), 0) ?? 0;
 
   return (
     <div>
@@ -124,7 +134,10 @@ export default function CustomersPage() {
         <div className="card stat-tile"><div className="stat-label">Nieuwsbrief</div><div className="stat-value">{rows?.filter((c) => c.newsletter === "confirmed").length ?? 0}</div></div>
         <div className="card stat-tile"><div className="stat-label">Met account</div><div className="stat-value">{withAccount}</div></div>
         <div className="card stat-tile"><div className="stat-label">Verjaardag gekend</div><div className="stat-value">{withBirthday}</div></div>
+        <div className="card stat-tile"><div className="stat-label">Codes gebruikt</div><div className="stat-value">{codesUsed}<span className="muted" style={{ fontSize: 14 }}> / {codesSent}</span></div></div>
       </div>
+
+      <AutoCodesSettings />
 
       {error && <p className="warning">{error}</p>}
 
@@ -153,12 +166,20 @@ export default function CustomersPage() {
         </label>
         <span style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
           {copied && <span className="pill cyan">{copied} gekopieerd</span>}
-          <button type="button" className="btn" disabled={mailable.length === 0} onClick={() => copy(mailable.map((c) => c.email).join(", "), `${mailable.length} e-mailadres(sen)`)}
+          <button type="button" className="btn" disabled={chosen.length === 0} onClick={() => setSending(true)}
+            title="Persoonlijke kortingscode maken en mailen naar de aangevinkte klanten (enkel met toestemming)">
+            Kortingscode sturen ({chosen.length})
+          </button>
+          <button type="button" className="btn secondary" disabled={mailable.length === 0} onClick={() => copy(mailable.map((c) => c.email).join(", "), `${mailable.length} e-mailadres(sen)`)}
             title="E-mailadressen (enkel met toestemming) om in BCC te plakken">
             Kopieer e-mails ({mailable.length})
           </button>
         </span>
       </div>
+
+      {sending && chosen.length > 0 && (
+        <SendCodePanel emails={chosen.map((c) => c.email)} onClose={() => { setSending(false); setSelected(new Set()); }} onSent={load} />
+      )}
 
       {rows === null ? (
         <p className="muted">Laden...</p>
@@ -169,12 +190,21 @@ export default function CustomersPage() {
           <table className="customers-table">
             <thead>
               <tr>
-                <th>Klant</th><th>Bestellingen</th><th>Besteed</th><th>Eerste / laatste</th><th>Verjaardag</th><th>Account</th><th>Reclame</th><th></th>
+                <th>
+                  <input type="checkbox" style={{ width: "auto" }} checked={allChosen} disabled={mailable.length === 0} title="Alle klanten met toestemming in deze selectie"
+                    onChange={() => setSelected(allChosen ? new Set() : new Set(mailable.map((c) => c.email)))} />
+                </th>
+                <th>Klant</th><th>Bestellingen</th><th>Besteed</th><th>Eerste / laatste</th><th>Verjaardag</th><th>Account</th><th>Reclame</th><th>Codes</th><th></th>
               </tr>
             </thead>
             <tbody>
               {visible.map((c) => (
-                <tr key={c.email}>
+                <Fragment key={c.email}>
+                <tr>
+                  <td>
+                    <input type="checkbox" style={{ width: "auto" }} checked={selected.has(c.email)} disabled={!c.optin} onChange={() => toggle(c.email)}
+                      title={c.optin ? "Aanvinken om een kortingscode te sturen" : "Geen toestemming voor reclame"} />
+                  </td>
                   <td>
                     <div style={{ fontWeight: 700 }}>{c.name || <span className="muted">--</span>}</div>
                     <div className="mono muted" style={{ fontSize: 12 }}>{c.email}{c.city && ` · ${c.city}`}</div>
@@ -190,11 +220,41 @@ export default function CustomersPage() {
                       : c.unsubscribed ? <span className="pill rust" title={`afgemeld op ${fmtDate(c.unsubscribed)}`}>afgemeld</span>
                       : <span className="muted">nee</span>}
                   </td>
+                  <td>
+                    {c.codes?.length ? (
+                      <button type="button" className="btn secondary" onClick={() => setOpenCodes(openCodes === c.email ? null : c.email)}>
+                        {c.codes.filter((x) => x.used).length} / {c.codes.length} gebruikt
+                      </button>
+                    ) : <span className="muted">--</span>}
+                  </td>
                   <td style={{ whiteSpace: "nowrap" }}>
                     <button type="button" className="btn secondary" onClick={() => copy(c.email, "E-mail")}>E-mail</button>{" "}
                     {c.optin && <button type="button" className="btn secondary" onClick={() => copy(c.unsubscribe_url, "Afmeldlink")} title="Persoonlijke afmeldlink om onderaan je mail te zetten">Afmeldlink</button>}
                   </td>
                 </tr>
+                {openCodes === c.email && (
+                  <tr className="codes-row">
+                    <td></td>
+                    <td colSpan={9}>
+                      <table>
+                        <thead><tr><th>Code</th><th>Waarom</th><th>Korting</th><th>Verstuurd</th><th>Geldig tot</th><th>Gebruikt</th></tr></thead>
+                        <tbody>
+                          {(c.codes ?? []).map((x) => (
+                            <tr key={x.code}>
+                              <td className="mono">{x.code}</td>
+                              <td>{reasonLabel(x.reason)}</td>
+                              <td className="mono">{x.discount}</td>
+                              <td className="mono">{x.sent === "mislukt" ? <span className="pill rust">mail mislukt</span> : fmtDate(x.created)}</td>
+                              <td className="mono">{fmtDate(x.expires)}</td>
+                              <td>{x.used ? <span className="pill cyan">ja</span> : x.expires && new Date(x.expires) < new Date() ? <span className="muted">verlopen</span> : <span className="muted">nog niet</span>}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>
