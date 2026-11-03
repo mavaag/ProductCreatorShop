@@ -12,7 +12,7 @@ import { SOCIAL_THEMES, SocialFormat, canvasToJpeg, renderSlide, renderSocial } 
 // Zonder koppeling kan je de afbeelding downloaden en de tekst kopiëren om zelf te posten.
 
 type Channels = { fb: boolean; ig: boolean; ig_story: boolean };
-type Design = { title: string; subtitle: string; badge: string; theme: string; show_prices: boolean; product_ids: number[]; image?: string; slides?: string[] };
+type Design = { title: string; subtitle: string; badge: string; theme: string; show_prices: boolean; product_ids: number[]; image?: string; slides?: string[]; logo_corner?: boolean };
 type PostType = "image" | "carousel" | "video";
 type Result = { id?: string; url?: string; error?: string; pending?: string; at?: string };
 type Post = {
@@ -37,7 +37,7 @@ const CHUNK = 600 * 1024;
 const EMPTY: Post = {
   type: "image", name: "Nieuwe post", caption: "", link: "https://3dprintforyou.be/",
   channels: { fb: true, ig: false, ig_story: false },
-  design: { title: "", subtitle: "", badge: "", theme: "warm", show_prices: true, product_ids: [] },
+  design: { title: "", subtitle: "", badge: "", theme: "warm", show_prices: true, product_ids: [], logo_corner: true },
 };
 
 async function api(path: string, method: "GET" | "POST" = "GET", body?: unknown, base = "social") {
@@ -206,13 +206,14 @@ export default function SocialPage() {
     title: p.design.title, subtitle: p.design.subtitle, badge: p.design.badge, theme: p.design.theme, showPrices: p.design.show_prices,
     products: p.design.product_ids.map((id) => products.get(id)).filter(Boolean).map((x) => ({ name: x!.name, price: x!.price, image: x!.image_large || x!.image })),
     image: p.design.image || undefined,
+    logo: p.design.logo_corner !== false && logo ? logo : undefined,
   });
   async function render(p: Post, f: SocialFormat) {
     return canvasToJpeg(await renderSocial(designFor(p), f, loadImage));
   }
 
   // voorbeeld vernieuwen
-  const key = edit ? JSON.stringify(edit.design) + edit.type + [...products.keys()].join(",") : "";
+  const key = edit ? JSON.stringify(edit.design) + edit.type + logo + [...products.keys()].join(",") : "";
   useEffect(() => {
     if (!edit) return;
     let stop = false;
@@ -250,7 +251,8 @@ export default function SocialPage() {
   async function renderSlides(p: Post) {
     const specs = slideSpecs(p);
     const total = specs.length + 1;
-    return Promise.all(specs.map(async (s, i) => canvasToJpeg(await renderSlide(s, { theme: p.design.theme, showPrices: p.design.show_prices }, i + 1, total, loadImage))));
+    const lg = p.design.logo_corner !== false && logo ? logo : undefined;
+    return Promise.all(specs.map(async (s, i) => canvasToJpeg(await renderSlide(s, { theme: p.design.theme, showPrices: p.design.show_prices, logo: lg }, i + 1, total, loadImage))));
   }
 
   /** Eigen foto's als extra carrouselslides (zelfde verkleining als bij "Eigen afbeelding"). */
@@ -457,6 +459,9 @@ export default function SocialPage() {
                 </div>
                 <label className="customers-check" style={{ flex: "0 0 auto" }}>
                   <input type="checkbox" style={{ width: "auto" }} checked={edit.design.show_prices} onChange={(e) => setDesign({ show_prices: e.target.checked })} /> Prijzen tonen
+                </label>
+                <label className="customers-check" style={{ flex: "0 0 auto" }}>
+                  <input type="checkbox" style={{ width: "auto" }} checked={edit.design.logo_corner !== false} disabled={!logo} onChange={(e) => setDesign({ logo_corner: e.target.checked })} /> Logo in de hoek
                 </label>
               </div>
               {edit.type === "carousel" && (
