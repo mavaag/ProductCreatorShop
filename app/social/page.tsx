@@ -23,7 +23,10 @@ type Post = {
 };
 type Connection = { connected: boolean; page_name: string; page_id: string; ig: boolean; ig_username: string; connected_at: string; pages: { id: string; name: string }[] };
 type Product = { id: number; name: string; price: number; image: string; image_large?: string };
-type ShopData = { categories: { id: number; name: string; count: number }[]; acties: { id: string; name: string; label: string; active: boolean }[] };
+type CampaignLite = { id: string; name: string; subject: string; title: string; preheader: string; status?: string; send_at: string; blocks: any[] };
+type ShopData = { categories: { id: number; name: string; count: number }[]; acties: { id: string; name: string; label: string; active: boolean }[]; campaigns: CampaignLite[] };
+
+const slugify = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
 const CH_LABEL: Record<keyof Channels, string> = { fb: "Facebook", ig: "Instagram", ig_story: "Instagram-story" };
 const CH_LABEL_VIDEO: Record<keyof Channels, string> = { fb: "Facebook-video", ig: "Instagram-Reel", ig_story: "Instagram-story (video)" };
@@ -135,7 +138,7 @@ export default function SocialPage() {
     try {
       applyList(await api("list"));
       const c = await api("list", "GET", undefined, "campaigns");
-      setShop({ categories: c.categories, acties: c.acties });
+      setShop({ categories: c.categories, acties: c.acties, campaigns: c.campaigns ?? [] });
     } catch (e: any) { setError(e.message); }
   }
   useEffect(() => { if (ready) load(); }, [ready]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -147,10 +150,13 @@ export default function SocialPage() {
   useEffect(() => {
     if (!shop || fromQuery.current) return;
     fromQuery.current = true;
-    const termId = parseInt(new URLSearchParams(window.location.search).get("collectie") ?? "") || 0;
-    if (!termId) return;
+    const qs = new URLSearchParams(window.location.search);
+    const termId = parseInt(qs.get("collectie") ?? "") || 0;
+    const campId = qs.get("campagne") ?? "";
+    if (!termId && !campId) return;
     window.history.replaceState(null, "", "/social");
-    pickCollection(termId, { ...EMPTY, design: { ...EMPTY.design } });
+    if (termId) pickCollection(termId, { ...EMPTY, design: { ...EMPTY.design } });
+    else { const c = shop.campaigns.find((x) => x.id === campId); if (c) fromCampaign(c); else setError("Die campagne werd niet gevonden."); }
   }, [shop]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function pickCollection(termId: number, base: Post) {
@@ -167,6 +173,47 @@ export default function SocialPage() {
     };
     post.caption = suggestCaption(post, ps.slice(0, 4), { collection: name });
     setEdit(post); setPublishAt("");
+  }
+
+  /** Concept-post uit een mailcampagne: titel, producten, collectie/actie, tekst (zonder aanspreking) en link. */
+  async function fromCampaign(c: CampaignLite) {
+    const blocks = c.blocks ?? [];
+    let ids: number[] = blocks.flatMap((b) => (b.type === "products" ? b.ids ?? [] : []));
+    const coll = blocks.find((b) => b.type === "collection" && b.term_id);
+    const actieB = blocks.find((b) => b.type === "actie" && b.id);
+    const btn = blocks.find((b) => b.type === "button" && b.url);
+    const a = actieB ? shop?.acties.find((x) => x.id === actieB.id) : undefined;
+    const cat = coll ? shop?.categories.find((x) => x.id === coll.term_id) : undefined;
+    const collName = cat ? cat.name.replace("Collecties > ", "") : "";
+    let ps: Product[] = [];
+    try {
+      if (ids.length) ps = await api(`products?ids=${ids.slice(0, 9).join(",")}`, "GET", undefined, "campaigns");
+      else if (coll) { ps = await api(`products?cat=${coll.term_id}`, "GET", undefined, "campaigns"); ids = ps.slice(0, 4).map((p) => p.id); }
+      remember(ps);
+    } catch { /* zonder producten */ }
+    ids = ids.filter((id) => ps.some((p) => p.id === id));
+
+    // tekst uit de mail: aanspreking ("Hallo {naam},") weg, {naam} weg
+    const text = blocks.filter((b) => b.type === "text" || b.type === "heading").map((b) => String(b.text ?? ""))
+      .join("\n\n").replace(/^\s*(hallo|hey|hoi|beste|dag)\s*\{naam\}\s*[,!]?\s*$/gim, "").replace(/\s*\{naam\}/g, "").replace(/\n{3,}/g, "\n\n").trim();
+    const link = btn?.url || (cat?.name.startsWith("Collecties >") ? `https://3dprintforyou.be/product-category/collecties/${slugify(collName)}/` : a ? "https://3dprintforyou.be/acties/" : "https://3dprintforyou.be/");
+    const pct = a?.label.match(/-?\d+\s?%/);
+    const post: Post = {
+      ...EMPTY, type: ids.length > 4 ? "carousel" : "image",
+      name: `Campagne: ${c.name}`, link,
+      design: {
+        ...EMPTY.design, title: c.title || c.subject, subtitle: a ? a.label : c.preheader || "",
+        badge: a ? (pct ? (pct[0].startsWith("-") ? pct[0] : "-" + pct[0]).replace(/\s/g, "") : "Actie") : coll ? "Nieuw" : "",
+        product_ids: ids,
+      },
+    };
+    const tags = ["#3dprintforyou", "#gepersonaliseerd", "#cadeau", "#madeinbelgium"];
+    if (collName) tags.unshift(tag(collName));
+    post.caption = [text || c.subject, a ? `🎉 ${a.label}` : "", `👉 ${link}`, tags.join(" ")].filter(Boolean).join("\n\n");
+    setCollectionName(collName); setActieLabel(a?.label ?? "");
+    setEdit(post);
+    setPublishAt(c.status === "scheduled" && c.send_at ? c.send_at.replace(" ", "T").slice(0, 16) : "");
+    setInfo(c.status === "scheduled" ? "Concept gemaakt uit de campagne; het moment van de mail staat al ingevuld bij Inplannen." : "Concept gemaakt uit de campagne.");
   }
 
   function pickActie(id: string) {
