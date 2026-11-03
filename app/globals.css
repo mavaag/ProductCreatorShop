@@ -925,3 +925,10 @@ button.folder-link:hover { color: var(--cyan); }
 .camp-list { display: grid; gap: 10px; }
 .camp-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .pill.yellow { color: var(--yellow); border-color: var(--yellow); }
+
+/* Feestdagenkalender */
+.cal-table { width: 100%; border-collapse: collapse; }
+.cal-table th, .cal-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+.cal-table tr.cal-off td { opacity: 0.55; }
+.table-wrap { overflow-x: auto; }
+.customers-check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }

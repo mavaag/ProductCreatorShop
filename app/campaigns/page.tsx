@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
 import { authHeader } from "@/lib/productionFiles";
 import { confirmDialog } from "@/components/DialogHost";
+import HolidayCalendar, { Calendar } from "@/components/HolidayCalendar";
 
 // Campagnes (plugin "3DP Klanten" 1.5.0): een reclamemail opbouwen uit blokken (titel, tekst, collectie, producten,
 // actie, knop, afbeelding, persoonlijke code) en versturen naar klanten met toestemming -- meteen of ingepland.
@@ -30,7 +31,7 @@ type Campaign = {
 type Data = {
   campaigns: Campaign[]; counts: Record<string, number>; categories: { id: number; name: string; count: number; image: boolean }[];
   acties: { id: string; name: string; label: string; active: boolean; end: string }[];
-  settings: { daily_cap: number }; sent_today: number; now: string;
+  settings: { daily_cap: number }; sent_today: number; now: string; calendar: Calendar | null;
 };
 type Product = { id: number; name: string; price: number; image: string };
 
@@ -256,7 +257,7 @@ export default function CampaignsPage() {
     try {
       const r = await api("action", "POST", { action, campaign: edit, ...extra });
       setData(r);
-      if (r.saved_id && edit) setEdit({ ...edit, id: r.saved_id, status: r.campaigns.find((c: Campaign) => c.id === r.saved_id)?.status });
+      if (r.saved_id && edit && (!edit.id || edit.id === r.saved_id)) setEdit({ ...edit, id: r.saved_id, status: r.campaigns.find((c: Campaign) => c.id === r.saved_id)?.status });
       return r;
     } catch (e: any) { setError(e.message); return null; } finally { setBusy(false); }
   }
@@ -446,6 +447,17 @@ export default function CampaignsPage() {
                 </div>
               ))}
             </div>
+          )}
+
+          {data.calendar && (
+            <HolidayCalendar key={JSON.stringify(data.calendar.settings)} calendar={data.calendar} busy={busy}
+              onSave={(calendar) => act("holidays", { calendar, campaign: undefined })}
+              onDraft={async (key) => {
+                const r = await act("holiday_draft", { key, campaign: undefined });
+                const c = r?.campaigns.find((x: Campaign) => x.id === r.saved_id);
+                if (c) open(c);
+              }}
+              onOpen={(id) => { const c = data.campaigns.find((x) => x.id === id); if (c) open(c); }} />
           )}
 
           <div className="card" style={{ marginTop: 16 }}>
