@@ -236,6 +236,24 @@ const SECTIONS: Section[] = [
     ),
   },
   {
+    id: "campagnes",
+    title: "Campagnes",
+    href: "/campaigns",
+    body: (
+      <>
+        <p>Reclamemails naar klanten die <b>toestemming</b> gaven (bij afrekenen, in Mijn account of via de nieuwsbrief), via de plugin <b>3DP Klanten</b> (1.5.0 of nieuwer). Handig bij een nieuwe collectie, een feestdag of een actie. Hou het bij 1 à 2 mails per maand.</p>
+        <ul>
+          <li><b>Nieuwe campagne</b>: kies een vertrekpunt (<i>Nieuwe collectie</i>, <i>Feestdag</i>, <i>Actie</i> of <i>Leeg</i>) en vul onderwerp, kop en voorbeeldtekst (de korte zin die naast het onderwerp in de inbox staat) in.</li>
+          <li><b>Blokken</b>: <i>Titel</i>, <i>Tekst</i> ({'{naam}'} = voornaam), <i>Collectie</i> (foto, beschrijving en knop), <i>Producten</i> (max. 8, met foto en prijs; zoek op naam), <i>Actie</i> (uit de pagina Acties, met label en einddatum), <i>Knop</i>, <i>Afbeelding</i> (adres uit de Mediabibliotheek) en <i>Persoonlijke code</i> (elke ontvanger krijgt een eigen code, enkel voor zijn e-mailadres en 1 keer bruikbaar). Met ↑ ↓ zet je ze in de juiste volgorde. Rechts zie je meteen hoe de mail eruitziet.</li>
+          <li><b>Naar wie</b>: iedereen met toestemming, enkel nieuwsbrief-inschrijvers, klanten die al besteld hebben, trouwe klanten, lang niets besteld of nieuwe klanten. Het aantal ontvangers staat eronder. Wie zich intussen afmeldt, wordt overgeslagen.</li>
+          <li><b>Versturen</b>: eerst een <i>Testmail</i> naar jezelf, dan <i>Nu versturen</i> of <i>Inplannen</i> op een datum en uur. De shop verstuurt in porties (max. 2 per seconde); de rest volgt via de agent binnen ongeveer 10 minuten. Een ingeplande campagne kan je nog aanpassen of terug een concept maken.</li>
+          <li><b>Daglimiet</b>: standaard 90 reclamemails per dag (het gratis plan van Resend laat 100 mails per dag toe, ook bestelmails tellen mee). Zijn er meer ontvangers, dan gaat de rest de volgende dag. Aan te passen onder <i>Instellingen</i>.</li>
+          <li><b>Opvolging</b>: per campagne hoeveel mails verstuurd zijn en hoeveel bestellingen (en voor welk bedrag) ontvangers in de 14 dagen erna plaatsten. Een verstuurde campagne kan je niet meer aanpassen; <i>Kopie maken</i> start een nieuwe op basis ervan.</li>
+        </ul>
+      </>
+    ),
+  },
+  {
     id: "klanten",
     title: "Klanten",
     href: "/customers",
