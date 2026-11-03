@@ -256,6 +256,32 @@ const SECTIONS: Section[] = [
     ),
   },
   {
+    id: "social",
+    title: "Social",
+    href: "/social",
+    body: (
+      <>
+        <p>Posts voor de <b>Facebook-pagina</b> en <b>Instagram</b> (bedrijfsaccount), via de plugin <b>3DP Klanten</b> (1.7.0) en de officiële Meta-koppeling (gratis). Er gaat <b>nooit</b> iets online zonder dat jij op <i>Nu plaatsen</i> of <i>Inplannen</i> klikt.</p>
+        <ul>
+          <li><b>Nieuwe post</b>: kies een <i>Collectie</i> (vult titel, label "Nieuw", de 4 populairste producten, link en tekst in) of een <i>Actie</i> (titel, label bv. "-10%", link naar /acties), of vul alles zelf in. Op <i>Collecties</i> heeft elke collectie in de shop ook een knop <i>Post maken</i>.</li>
+          <li><b>Afbeelding</b>: de beheertool tekent ze zelf: vierkant 1080×1080 (feed, Facebook en Instagram) en staand 1080×1920 (story), met titel, ondertitel, rond label, max. 4 productfoto's (met of zonder prijs), "3D Print For You" en 3dprintforyou.be. Kies een kleurenset (Warm, Donker, Kerst, Zacht, Fris). <i>Download feed</i>/<i>Download story</i> slaat de JPEG op, om zelf te posten.</li>
+          <li><b>Tekst</b>: <i>Tekst voorstellen</i> maakt een tekst met productnamen, link en hashtags; pas hem gerust aan. Op Instagram zijn links niet klikbaar ("link in bio").</li>
+          <li><b>Plaatsen</b>: vink Facebook, Instagram en/of Instagram-story aan en klik <i>Nu plaatsen</i>, of kies een moment en <i>Inplannen</i> (de shop plaatst ingeplande posts binnen 10 minuten na dat moment). Na het plaatsen staat er per kanaal een vinkje met link; lukt een kanaal niet, dan zie je waarom en plaatst <i>Nu plaatsen</i> enkel de ontbrekende opnieuw.</li>
+          <li><b>Koppelen</b> (eenmalig, ±15 min):
+            <ol>
+              <li>Ga naar <b>developers.facebook.com</b>, log in met je Facebook-account en klik <i>Mijn apps → App maken</i>. Kies als gebruik iets als <i>Overige</i> / <i>Bedrijf</i> en noem de app bv. <i>3DP beheertool</i>. De app mag in <b>ontwikkelmodus</b> blijven (enkel jij gebruikt hem, geen keuring nodig).</li>
+              <li>In de app: <i>App-instellingen → Basis</i>: noteer de <b>App-ID</b> en het <b>App-geheim</b> (<i>Tonen</i>).</li>
+              <li>Open <i>Tools → Graph API Explorer</i>, kies rechts je app, kies <i>Gebruikerstoegangssleutel</i> en voeg deze machtigingen toe: <span className="mono">pages_show_list, pages_read_engagement, pages_manage_posts, instagram_basic, instagram_content_publish, business_management</span>. Klik <i>Generate Access Token</i>, kies je pagina (en Instagram-account) en geef toestemming. Kopieer de sleutel.</li>
+              <li>In de beheertool: <i>Social</i> → onderaan <i>Koppeling</i>: vul App-ID, App-geheim en sleutel in en klik <i>Koppelen</i>. De shop zet de sleutel om naar een paginasleutel die niet verloopt; het geheim en de sleutel zelf worden niet bewaard.</li>
+              <li>Instagram later gekoppeld aan de pagina? Klik <i>Instagram opnieuw nakijken</i>.</li>
+            </ol>
+          </li>
+          <li>De afbeeldingen staan publiek in de shop (map <span className="mono">uploads/tdp-social</span>), want Instagram haalt ze daar op.</li>
+        </ul>
+      </>
+    ),
+  },
+  {
     id: "klanten",
     title: "Klanten",
     href: "/customers",

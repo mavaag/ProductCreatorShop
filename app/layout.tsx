@@ -53,6 +53,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Link href="/customers">Klanten</Link>
             <Link href="/acties">Acties</Link>
             <Link href="/campaigns">Campagnes</Link>
+            <Link href="/social">Social</Link>
             <Link href="/mockup">Mockup</Link>
             <Link href="/help" title="Handleiding">Help</Link>
           </div>

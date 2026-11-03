@@ -618,6 +618,7 @@ export default function CollectionsPage() {
                   </button>
                   <button className="btn secondary" onClick={() => { setEditingId(c.id); setEditForm(toForm(c)); }}>Bewerken</button>
                   {c.woo_category_id && <Link className="btn secondary" href={`/campaigns?collectie=${c.woo_category_id}`} title="Concept-mail met deze collectie maken (Campagnes)">Mail maken</Link>}
+                  {c.woo_category_id && <Link className="btn secondary" href={`/social?collectie=${c.woo_category_id}`} title="Facebook/Instagram-post met deze collectie maken (Social)">Post maken</Link>}
                   <button className="btn danger" disabled={busy} onClick={() => removeCollection(c)}>Verwijderen</button>
                 </div>
               </div>

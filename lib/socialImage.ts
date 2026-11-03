@@ -1,0 +1,187 @@
+// Social-afbeeldingen (Facebook/Instagram) tekenen in de browser: vierkant (1080x1080, feed) en staand
+// (1080x1920, Stories). Productfoto's komen via /api/social/img (zelfde origine, anders "besmet" het canvas).
+// Instagram aanvaardt enkel JPEG, dus we exporteren als JPEG.
+
+export type SocialTheme = { key: string; label: string; bg: string; card: string; text: string; muted: string; accent: string; accentText: string };
+
+export const SOCIAL_THEMES: SocialTheme[] = [
+  { key: "warm", label: "Warm", bg: "#f6efe6", card: "#ffffff", text: "#2b2118", muted: "#7a6a5a", accent: "#e8692c", accentText: "#ffffff" },
+  { key: "donker", label: "Donker", bg: "#1f2328", card: "#2c3238", text: "#ffffff", muted: "#b8c0c8", accent: "#f2a33a", accentText: "#1f2328" },
+  { key: "kerst", label: "Kerst", bg: "#123d2c", card: "#fdf8f0", text: "#ffffff", muted: "#d9e6dc", accent: "#c8302c", accentText: "#ffffff" },
+  { key: "zacht", label: "Zacht", bg: "#f7e9ee", card: "#ffffff", text: "#3a2230", muted: "#8a6676", accent: "#c94f7c", accentText: "#ffffff" },
+  { key: "fris", label: "Fris", bg: "#e7f3f5", card: "#ffffff", text: "#12343b", muted: "#557a82", accent: "#1f8a9e", accentText: "#ffffff" },
+];
+
+export type SocialDesign = {
+  title: string;
+  subtitle: string;
+  badge: string; // bv. "-10%" of "Nieuw" (leeg = geen)
+  theme: string;
+  showPrices: boolean;
+  products: { name: string; price: number; image: string }[]; // image = URL in de shop (groot formaat)
+};
+
+export type SocialFormat = "feed" | "story";
+
+const FONT = `"Segoe UI", "Helvetica Neue", Arial, sans-serif`;
+
+function money(n: number) {
+  return "€ " + n.toFixed(2).replace(".", ",");
+}
+
+function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+/** Tekst over meerdere regels, verkleint tot hij past (max. regels). Geeft de gebruikte hoogte terug. */
+function fitText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxW: number, size: number, maxLines: number, weight = 800, minSize = 36): number {
+  for (let s = size; s >= minSize; s -= 4) {
+    ctx.font = `${weight} ${s}px ${FONT}`;
+    const lines: string[] = [];
+    let line = "";
+    for (const word of text.split(/\s+/).filter(Boolean)) {
+      const t = line ? line + " " + word : word;
+      if (ctx.measureText(t).width > maxW && line) { lines.push(line); line = word; } else line = t;
+    }
+    if (line) lines.push(line);
+    if (lines.length <= maxLines && lines.every((l) => ctx.measureText(l).width <= maxW)) {
+      const lh = Math.round(s * 1.12);
+      lines.forEach((l, i) => ctx.fillText(l, x, y + i * lh));
+      return lines.length * lh;
+    }
+  }
+  ctx.font = `${weight} ${minSize}px ${FONT}`;
+  let t = text;
+  while (t.length > 1 && ctx.measureText(t + "…").width > maxW) t = t.slice(0, -1);
+  ctx.fillText(t + (t === text ? "" : "…"), x, y);
+  return Math.round(minSize * 1.12);
+}
+
+/** Foto binnen een vak (contain, gecentreerd). */
+function drawContain(ctx: CanvasRenderingContext2D, img: CanvasImageSource & { width: number; height: number }, x: number, y: number, w: number, h: number) {
+  const r = Math.min(w / img.width, h / img.height);
+  const dw = img.width * r, dh = img.height * r;
+  ctx.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+}
+
+export type ImageLoader = (url: string) => Promise<ImageBitmap | null>;
+
+export async function renderSocial(design: SocialDesign, format: SocialFormat, load: ImageLoader): Promise<HTMLCanvasElement> {
+  const W = 1080, H = format === "feed" ? 1080 : 1920;
+  const c = document.createElement("canvas");
+  c.width = W; c.height = H;
+  const ctx = c.getContext("2d") as CanvasRenderingContext2D;
+  const th = SOCIAL_THEMES.find((t) => t.key === design.theme) ?? SOCIAL_THEMES[0];
+  const pad = 64;
+
+  ctx.fillStyle = th.bg;
+  ctx.fillRect(0, 0, W, H);
+  ctx.textBaseline = "top";
+
+  // titel + ondertitel
+  let y = format === "feed" ? 56 : 170;
+  ctx.fillStyle = th.text;
+  const titleW = W - pad * 2 - (design.badge ? 200 : 0);
+  y += fitText(ctx, design.title || "3D Print For You", pad, y, titleW, format === "feed" ? 76 : 92, 2);
+  if (design.subtitle) {
+    y += 10;
+    ctx.fillStyle = th.muted;
+    y += fitText(ctx, design.subtitle, pad, y, titleW, format === "feed" ? 38 : 46, 2, 500, 28);
+  }
+  y += format === "feed" ? 34 : 60;
+
+  // badge (rond, rechtsboven)
+  if (design.badge) {
+    const r = 92, cx = W - pad - r + 8, cy = (format === "feed" ? 56 : 170) + r - 14;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(-0.12);
+    ctx.fillStyle = th.accent;
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = th.accentText;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    let s = 64;
+    do { ctx.font = `900 ${s}px ${FONT}`; s -= 4; } while (ctx.measureText(design.badge).width > r * 1.6 && s > 22);
+    ctx.fillText(design.badge, 0, 2);
+    ctx.restore();
+    ctx.textAlign = "left"; ctx.textBaseline = "top";
+  }
+
+  // productvakken
+  const footerH = format === "feed" ? 110 : 230;
+  const areaY = y, areaH = H - footerH - areaY - (format === "feed" ? 10 : 40);
+  const prods = design.products.slice(0, 4);
+  const imgs = await Promise.all(prods.map((p) => (p.image ? load(p.image) : Promise.resolve(null))));
+  const n = Math.max(prods.length, 1);
+  const cols = n === 1 ? 1 : 2;
+  const rows = n <= 2 && format === "feed" ? 1 : Math.ceil(n / cols);
+  const gap = 28;
+  const useCols = n === 2 && format === "story" ? 1 : cols;
+  const useRows = n === 2 && format === "story" ? 2 : rows;
+  const cw = (W - pad * 2 - gap * (useCols - 1)) / useCols;
+  const ch = (areaH - gap * (useRows - 1)) / useRows;
+  const labelH = design.showPrices || prods.length > 1 ? Math.min(92, ch * 0.2) : 0;
+  prods.forEach((p, i) => {
+    const col = i % useCols, row = Math.floor(i / useCols);
+    // laatste rij met één product: centreren
+    const inRow = Math.min(useCols, prods.length - row * useCols);
+    const offset = inRow < useCols ? (cw + gap) / 2 : 0;
+    const x = pad + col * (cw + gap) + offset, yy = areaY + row * (ch + gap);
+    ctx.save();
+    ctx.shadowColor = "rgba(0,0,0,0.12)"; ctx.shadowBlur = 24; ctx.shadowOffsetY = 8;
+    ctx.fillStyle = th.card;
+    roundRect(ctx, x, yy, cw, ch, 28); ctx.fill();
+    ctx.restore();
+    ctx.save();
+    roundRect(ctx, x, yy, cw, ch, 28); ctx.clip();
+    const img = imgs[i];
+    if (img) drawContain(ctx, img, x + 18, yy + 18, cw - 36, ch - 36 - labelH);
+    if (labelH) {
+      const ly = yy + ch - labelH;
+      ctx.fillStyle = th.card === "#ffffff" || th.card === "#fdf8f0" ? "#2b2118" : th.text;
+      const name = p.name.replace(/\s+[–-]\s+.*$/, "");
+      ctx.font = `600 ${Math.round(labelH * 0.34)}px ${FONT}`;
+      let t = name;
+      const maxW = cw - 40 - (design.showPrices && p.price > 0 ? ctx.measureText(money(p.price)).width + 24 : 0);
+      while (t.length > 1 && ctx.measureText(t + "…").width > maxW) t = t.slice(0, -1);
+      ctx.fillText(t === name ? name : t + "…", x + 20, ly + labelH * 0.3);
+      if (design.showPrices && p.price > 0) {
+        ctx.font = `800 ${Math.round(labelH * 0.36)}px ${FONT}`;
+        ctx.fillStyle = th.accent;
+        ctx.textAlign = "right";
+        ctx.fillText(money(p.price), x + cw - 20, ly + labelH * 0.28);
+        ctx.textAlign = "left";
+      }
+    }
+    ctx.restore();
+  });
+
+  // voettekst
+  const fy = H - footerH + (format === "feed" ? 24 : 60);
+  ctx.fillStyle = th.text;
+  ctx.font = `800 ${format === "feed" ? 40 : 50}px ${FONT}`;
+  ctx.fillText("3D Print For You", pad, fy);
+  ctx.fillStyle = th.muted;
+  ctx.font = `500 ${format === "feed" ? 28 : 36}px ${FONT}`;
+  ctx.fillText("Gepersonaliseerd · gemaakt in België", pad, fy + (format === "feed" ? 50 : 64));
+  const url = "3dprintforyou.be";
+  ctx.font = `800 ${format === "feed" ? 34 : 44}px ${FONT}`;
+  const uw = ctx.measureText(url).width + 48;
+  const uh = format === "feed" ? 64 : 80;
+  ctx.fillStyle = th.accent;
+  roundRect(ctx, W - pad - uw, fy + 4, uw, uh, uh / 2); ctx.fill();
+  ctx.fillStyle = th.accentText;
+  ctx.textBaseline = "middle";
+  ctx.fillText(url, W - pad - uw + 24, fy + 4 + uh / 2 + 1);
+  return c;
+}
+
+export function canvasToJpeg(c: HTMLCanvasElement, quality = 0.88): string {
+  return c.toDataURL("image/jpeg", quality);
+}
