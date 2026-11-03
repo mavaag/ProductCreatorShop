@@ -204,3 +204,74 @@ export async function renderSocial(design: SocialDesign, format: SocialFormat, l
 export function canvasToJpeg(c: HTMLCanvasElement, quality = 0.88): string {
   return c.toDataURL("image/jpeg", quality);
 }
+
+/**
+ * Carrouselslide (1080x1080): één product groot (met naam en prijs) of een eigen foto, in de kleuren van het
+ * ontwerp, met "3/7" rechtsboven en het webadres onderaan.
+ */
+export async function renderSlide(
+  slide: { kind: "product"; name: string; price: number; image: string } | { kind: "photo"; image: string },
+  design: Pick<SocialDesign, "theme" | "showPrices">,
+  index: number,
+  total: number,
+  load: ImageLoader,
+): Promise<HTMLCanvasElement> {
+  const W = 1080, H = 1080, pad = 56;
+  const c = document.createElement("canvas");
+  c.width = W; c.height = H;
+  const ctx = c.getContext("2d") as CanvasRenderingContext2D;
+  const th = SOCIAL_THEMES.find((t) => t.key === design.theme) ?? SOCIAL_THEMES[0];
+  ctx.fillStyle = th.bg;
+  ctx.fillRect(0, 0, W, H);
+  ctx.textBaseline = "top";
+
+  const img = slide.image ? await load(slide.image) : null;
+  const footer = 96;
+  const labelH = slide.kind === "product" ? 150 : 0;
+  const cardY = pad, cardH = H - pad - footer - cardY;
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.12)"; ctx.shadowBlur = 24; ctx.shadowOffsetY = 8;
+  ctx.fillStyle = th.card;
+  roundRect(ctx, pad, cardY, W - pad * 2, cardH, 32); ctx.fill();
+  ctx.restore();
+  ctx.save();
+  roundRect(ctx, pad, cardY, W - pad * 2, cardH, 32); ctx.clip();
+  if (img) drawContain(ctx, img, pad + 30, cardY + 30, W - pad * 2 - 60, cardH - 60 - labelH);
+  if (slide.kind === "product") {
+    const ly = cardY + cardH - labelH;
+    const light = th.card === "#ffffff" || th.card === "#fdf8f0";
+    ctx.fillStyle = light ? "#2b2118" : th.text;
+    const name = slide.name.replace(/\s+[–-]\s+.*$/, "");
+    const priceW = design.showPrices && slide.price > 0 ? 260 : 0;
+    fitText(ctx, name, pad + 36, ly + 22, W - pad * 2 - 72 - priceW, 48, 2, 700, 30);
+    if (priceW) {
+      ctx.font = `900 60px ${FONT}`;
+      ctx.fillStyle = th.accent;
+      ctx.textAlign = "right";
+      ctx.fillText(money(slide.price), W - pad - 36, ly + 30);
+      ctx.textAlign = "left";
+    }
+  }
+  ctx.restore();
+
+  // teller rechtsboven
+  const tag = `${index + 1}/${total}`;
+  ctx.font = `800 34px ${FONT}`;
+  const tw = ctx.measureText(tag).width + 36;
+  ctx.fillStyle = "rgba(0,0,0,0.55)";
+  roundRect(ctx, W - pad - 24 - tw, cardY + 24, tw, 54, 27); ctx.fill();
+  ctx.fillStyle = "#ffffff";
+  ctx.textBaseline = "middle";
+  ctx.fillText(tag, W - pad - 24 - tw + 18, cardY + 24 + 28);
+
+  // voettekst
+  ctx.fillStyle = th.text;
+  ctx.font = `800 38px ${FONT}`;
+  ctx.fillText("3D Print For You", pad, H - footer / 2);
+  ctx.fillStyle = th.accent;
+  ctx.font = `800 34px ${FONT}`;
+  ctx.textAlign = "right";
+  ctx.fillText("3dprintforyou.be", W - pad, H - footer / 2);
+  ctx.textAlign = "left";
+  return c;
+}

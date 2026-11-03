@@ -5,18 +5,20 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
 import { authHeader } from "@/lib/productionFiles";
 import { alertDialog, confirmDialog } from "@/components/DialogHost";
-import { SOCIAL_THEMES, SocialFormat, canvasToJpeg, renderSocial } from "@/lib/socialImage";
+import { SOCIAL_THEMES, SocialFormat, canvasToJpeg, renderSlide, renderSocial } from "@/lib/socialImage";
 
 // Social (plugin "3DP Klanten" 1.7.0): een post voor de Facebook-pagina en Instagram maken -- afbeelding (vierkant
 // voor de feed, staand voor Stories) + tekst -- en die nu of ingepland plaatsen via de Meta Graph API.
 // Zonder koppeling kan je de afbeelding downloaden en de tekst kopiëren om zelf te posten.
 
 type Channels = { fb: boolean; ig: boolean; ig_story: boolean };
-type Design = { title: string; subtitle: string; badge: string; theme: string; show_prices: boolean; product_ids: number[]; image?: string };
-type Result = { id?: string; url?: string; error?: string; at?: string };
+type Design = { title: string; subtitle: string; badge: string; theme: string; show_prices: boolean; product_ids: number[]; image?: string; slides?: string[] };
+type PostType = "image" | "carousel" | "video";
+type Result = { id?: string; url?: string; error?: string; pending?: string; at?: string };
 type Post = {
-  id?: string; name: string; caption: string; link: string; channels: Channels; design: Design;
-  image_feed?: string; image_story?: string; status?: "draft" | "scheduled" | "publishing" | "published" | "partial" | "failed";
+  id?: string; type?: PostType; name: string; caption: string; link: string; channels: Channels; design: Design;
+  image_feed?: string; image_story?: string; images?: string[]; video?: string;
+  status?: "draft" | "scheduled" | "publishing" | "processing" | "published" | "partial" | "failed";
   publish_at?: string; results?: Partial<Record<keyof Channels, Result>>; created?: string; published_at?: string;
 };
 type Connection = { connected: boolean; page_name: string; page_id: string; ig: boolean; ig_username: string; connected_at: string; pages: { id: string; name: string }[] };
@@ -24,9 +26,16 @@ type Product = { id: number; name: string; price: number; image: string; image_l
 type ShopData = { categories: { id: number; name: string; count: number }[]; acties: { id: string; name: string; label: string; active: boolean }[] };
 
 const CH_LABEL: Record<keyof Channels, string> = { fb: "Facebook", ig: "Instagram", ig_story: "Instagram-story" };
+const CH_LABEL_VIDEO: Record<keyof Channels, string> = { fb: "Facebook-video", ig: "Instagram-Reel", ig_story: "Instagram-story (video)" };
+const TYPES: { value: PostType; label: string; hint: string }[] = [
+  { value: "image", label: "Afbeelding", hint: "Eén afbeelding (feed) en eventueel een story." },
+  { value: "carousel", label: "Carrousel", hint: "Een titelafbeelding + één slide per product of eigen foto (max. 10); op Facebook een post met meerdere foto's." },
+  { value: "video", label: "Video", hint: "Jouw video (MP4/MOV, max. 200 MB) als Facebook-video, Instagram-Reel en/of video-story. Best staand 9:16, 3 s tot 3 min." },
+];
+const CHUNK = 600 * 1024;
 
 const EMPTY: Post = {
-  name: "Nieuwe post", caption: "", link: "https://3dprintforyou.be/",
+  type: "image", name: "Nieuwe post", caption: "", link: "https://3dprintforyou.be/",
   channels: { fb: true, ig: false, ig_story: false },
   design: { title: "", subtitle: "", badge: "", theme: "warm", show_prices: true, product_ids: [] },
 };
@@ -57,6 +66,7 @@ function statusPill(p: Post) {
     case "published": return <span className="pill cyan">geplaatst {fmt(p.published_at)}</span>;
     case "partial": return <span className="pill yellow">deels geplaatst</span>;
     case "failed": return <span className="pill rust">mislukt</span>;
+    case "processing": return <span className="pill yellow">video wordt verwerkt…</span>;
     default: return <span className="pill">concept</span>;
   }
 }
@@ -86,6 +96,8 @@ export default function SocialPage() {
   const [edit, setEdit] = useState<Post | null>(null);
   const [products, setProducts] = useState<Map<number, Product>>(new Map());
   const [preview, setPreview] = useState<{ feed: string; story: string }>({ feed: "", story: "" });
+  const [slides, setSlides] = useState<string[]>([]);
+  const [videoProgress, setVideoProgress] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
@@ -200,13 +212,15 @@ export default function SocialPage() {
   }
 
   // voorbeeld vernieuwen
-  const key = edit ? JSON.stringify(edit.design) + [...products.keys()].join(",") : "";
+  const key = edit ? JSON.stringify(edit.design) + edit.type + [...products.keys()].join(",") : "";
   useEffect(() => {
     if (!edit) return;
     let stop = false;
     const t = setTimeout(async () => {
+      if (edit.type === "video") { setPreview({ feed: "", story: "" }); setSlides([]); return; }
       const [feed, story] = await Promise.all([render(edit, "feed"), render(edit, "story")]);
-      if (!stop) setPreview({ feed, story });
+      const sl = edit.type === "carousel" ? await renderSlides(edit) : [];
+      if (!stop) { setPreview({ feed, story }); setSlides(sl); }
     }, 400);
     return () => { stop = true; clearTimeout(t); };
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -220,19 +234,86 @@ export default function SocialPage() {
     return () => clearTimeout(t);
   }, [q]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const locked = !!edit && (edit.status === "published" || edit.status === "publishing");
+  const locked = !!edit && (edit.status === "published" || edit.status === "publishing" || edit.status === "processing");
+  const labels = edit?.type === "video" ? CH_LABEL_VIDEO : CH_LABEL;
+  const maxProducts = edit?.type === "carousel" ? 9 : 4;
   const setDesign = (d: Partial<Design>) => edit && setEdit({ ...edit, design: { ...edit.design, ...d } });
+
+  /** Slides van een carrousel (na de titelafbeelding): producten, dan eigen foto's; samen max. 9. */
+  function slideSpecs(p: Post) {
+    const prods = p.design.product_ids.map((id) => products.get(id)).filter(Boolean) as Product[];
+    return [
+      ...prods.map((x) => ({ kind: "product" as const, name: x.name, price: x.price, image: x.image_large || x.image })),
+      ...(p.design.slides ?? []).map((u) => ({ kind: "photo" as const, image: u })),
+    ].slice(0, 9);
+  }
+  async function renderSlides(p: Post) {
+    const specs = slideSpecs(p);
+    const total = specs.length + 1;
+    return Promise.all(specs.map(async (s, i) => canvasToJpeg(await renderSlide(s, { theme: p.design.theme, showPrices: p.design.show_prices }, i + 1, total, loadImage))));
+  }
+
+  /** Eigen foto's als extra carrouselslides (zelfde verkleining als bij "Eigen afbeelding"). */
+  async function addSlidePhotos(files: FileList | null) {
+    if (!files || !edit) return;
+    setBusy(true); setError("");
+    const urls: string[] = [];
+    try {
+      for (const file of Array.from(files).slice(0, 9)) {
+        const bmp = await createImageBitmap(file);
+        const scale = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+        const c = document.createElement("canvas");
+        c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
+        (c.getContext("2d") as CanvasRenderingContext2D).drawImage(bmp, 0, 0, c.width, c.height);
+        const r = await api("action", "POST", { action: "upload", asset: true, data: c.toDataURL("image/jpeg", 0.9) });
+        urls.push(r.url);
+      }
+    } catch (e: any) { setError(`Foto uploaden mislukt: ${e.message}`); }
+    setEdit((cur) => (cur ? { ...cur, design: { ...cur.design, slides: [...(cur.design.slides ?? []), ...urls].slice(0, 9) } } : cur));
+    setBusy(false);
+  }
+
+  /** Video in stukken naar de shop sturen (grote bestanden passen niet in één verzoek). */
+  async function uploadVideo(file: File | null) {
+    if (!file || !edit) return;
+    if (file.size > 200 * 1024 * 1024) return alertDialog("Die video is groter dan 200 MB. Maak hem korter of kleiner (bv. 1080p).");
+    setBusy(true); setError(""); setVideoProgress(0);
+    try {
+      const start = await api("action", "POST", { action: "video_upload", step: "start" });
+      for (let off = 0; off < file.size; off += CHUNK) {
+        const buf = new Uint8Array(await file.slice(off, off + CHUNK).arrayBuffer());
+        let bin = "";
+        for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+        await api("action", "POST", { action: "video_upload", step: "chunk", upload_id: start.upload_id, offset: off, data: btoa(bin) });
+        setVideoProgress(Math.min(100, Math.round(((off + buf.length) / file.size) * 100)));
+      }
+      const done = await api("action", "POST", { action: "video_upload", step: "finish", upload_id: start.upload_id });
+      setEdit((cur) => (cur ? { ...cur, video: done.url } : cur));
+    } catch (e: any) { setError(`Video uploaden mislukt: ${e.message}`); }
+    setVideoProgress(null);
+    setBusy(false);
+  }
 
   /** Afbeeldingen maken + uploaden, dan bewaren / inplannen / plaatsen. */
   async function act(action: "save" | "schedule" | "publish_now") {
     if (!edit) return;
     setBusy(true); setError(""); setInfo("");
     try {
-      const feed = await render(edit, "feed");
-      const up1 = await api("action", "POST", { action: "upload", data: feed });
-      let story = edit.image_story ?? "";
-      if (edit.channels.ig_story) story = (await api("action", "POST", { action: "upload", data: await render(edit, "story") })).url;
-      const post = { ...edit, image_feed: up1.url, image_story: story };
+      const up = async (data: string) => (await api("action", "POST", { action: "upload", data })).url as string;
+      let post: Post = { ...edit };
+      if (edit.type !== "video") {
+        const feedUrl = await up(await render(edit, "feed"));
+        let story = edit.image_story ?? "";
+        if (edit.channels.ig_story) story = await up(await render(edit, "story"));
+        post = { ...post, image_feed: feedUrl, image_story: story };
+        if (edit.type === "carousel") {
+          const rest: string[] = [];
+          for (const s of await renderSlides(edit)) rest.push(await up(s));
+          post.images = [feedUrl, ...rest];
+        } else post.images = [];
+      } else {
+        post = { ...post, image_feed: "", images: [] };
+      }
       const r = await api("action", "POST", { action, post, publish_at: publishAt.replace("T", " ") });
       applyList(r);
       const saved = (r.posts as Post[]).find((p) => p.id === r.saved_id);
@@ -242,6 +323,7 @@ export default function SocialPage() {
       if (action === "publish_now" && saved) {
         const fails = (Object.keys(CH_LABEL) as (keyof Channels)[]).filter((c) => saved.channels[c] && saved.results?.[c]?.error);
         if (fails.length) await alertDialog(`Niet alles lukte:\n\n${fails.map((c) => `${CH_LABEL[c]}: ${saved.results?.[c]?.error}`).join("\n")}`);
+        else if (saved.status === "processing") setInfo("Facebook is geplaatst of bezig; Instagram verwerkt de video nog. De shop plaatst hem zodra hij klaar is (binnen 10 minuten nagekeken), of klik later op Nu nakijken.");
         else setInfo("Geplaatst!");
       }
     } catch (e: any) { setError(e.message); }
@@ -284,6 +366,27 @@ export default function SocialPage() {
               <div className="row">
                 <div><label>Naam (enkel voor jou)</label><input value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></div>
               </div>
+              <label>Soort post</label>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {TYPES.map((t) => (
+                  <button key={t.value} type="button" className={(edit.type ?? "image") === t.value ? "btn" : "btn secondary"} onClick={() => setEdit({ ...edit, type: t.value })}>{t.label}</button>
+                ))}
+              </div>
+              <p className="muted" style={{ margin: "6px 0 10px", fontSize: 13 }}>{TYPES.find((t) => t.value === (edit.type ?? "image"))?.hint}</p>
+              {edit.type === "video" && (
+                <div style={{ marginBottom: 6 }}>
+                  <label>Video</label>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <label className="btn secondary" style={{ cursor: "pointer", margin: 0 }}>
+                      {edit.video ? "Andere video kiezen" : "Video kiezen"}
+                      <input type="file" accept="video/mp4,video/quicktime,.mp4,.mov" style={{ display: "none" }} onChange={(e) => { uploadVideo(e.target.files?.[0] ?? null); e.target.value = ""; }} />
+                    </label>
+                    {videoProgress !== null && <span className="muted">Uploaden… {videoProgress}%</span>}
+                    {edit.video && videoProgress === null && <span className="muted">✓ video staat klaar</span>}
+                  </div>
+                </div>
+              )}
+              {edit.type !== "video" && (<>
               <div className="row">
                 <div>
                   <label>Collectie (vult alles in)</label>
@@ -307,7 +410,7 @@ export default function SocialPage() {
               <div className="row">
                 <div><label>Ondertitel</label><input value={edit.design.subtitle} onChange={(e) => setDesign({ subtitle: e.target.value })} /></div>
               </div>
-              <label>Eigen afbeelding (bv. je logo of een foto), in plaats van producten</label>
+              <label>{edit.type === "carousel" ? "Eigen afbeelding op de titelafbeelding (bv. je logo)" : "Eigen afbeelding (bv. je logo of een foto), in plaats van producten"}</label>
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
                 {edit.design.image && <img src={edit.design.image} alt="" style={{ width: 56, height: 56, objectFit: "contain", borderRadius: 6, background: "#fff" }} />}
                 <label className="btn secondary" style={{ cursor: "pointer", margin: 0 }}>
@@ -317,7 +420,7 @@ export default function SocialPage() {
                 {logo && <button type="button" className="btn secondary" onClick={() => setDesign({ image: logo })}>Logo van de shop</button>}
                 {edit.design.image && <button type="button" className="btn secondary" onClick={() => setDesign({ image: "" })}>Weghalen (producten tonen)</button>}
               </div>
-              <label>Producten op de afbeelding (max. 4){edit.design.image ? ": worden niet getoond zolang er een eigen afbeelding is" : ""}</label>
+              <label>{edit.type === "carousel" ? `Producten: elk een eigen slide (max. ${maxProducts}); de eerste 4 ook op de titelafbeelding` : `Producten op de afbeelding (max. ${maxProducts})`}{edit.type !== "carousel" && edit.design.image ? ": worden niet getoond zolang er een eigen afbeelding is" : ""}</label>
               {chosen.length > 0 && (
                 <div className="camp-chips">
                   {edit.design.product_ids.map((id, i) => (
@@ -330,7 +433,7 @@ export default function SocialPage() {
                   ))}
                 </div>
               )}
-              {edit.design.product_ids.length < 4 && <input placeholder="Zoek een product om toe te voegen" value={q} onChange={(e) => setQ(e.target.value)} />}
+              {edit.design.product_ids.length < maxProducts && <input placeholder="Zoek een product om toe te voegen" value={q} onChange={(e) => setQ(e.target.value)} />}
               {hits.length > 0 && (
                 <div className="camp-hits">
                   {hits.filter((h) => !edit.design.product_ids.includes(h.id)).slice(0, 10).map((h) => (
@@ -356,6 +459,25 @@ export default function SocialPage() {
                   <input type="checkbox" style={{ width: "auto" }} checked={edit.design.show_prices} onChange={(e) => setDesign({ show_prices: e.target.checked })} /> Prijzen tonen
                 </label>
               </div>
+              {edit.type === "carousel" && (
+                <div style={{ marginTop: 10 }}>
+                  <label>Eigen foto's als extra slides (bv. foto's van je producten of werkplaats)</label>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    {(edit.design.slides ?? []).map((u) => (
+                      <span key={u} className="camp-chip">
+                        <img src={u} alt="" />
+                        <button type="button" title="Weghalen" onClick={() => setDesign({ slides: (edit.design.slides ?? []).filter((x) => x !== u) })}>✕</button>
+                      </span>
+                    ))}
+                    <label className="btn secondary" style={{ cursor: "pointer", margin: 0 }}>
+                      Foto's toevoegen
+                      <input type="file" multiple accept="image/png,image/jpeg,image/webp" style={{ display: "none" }} onChange={(e) => { addSlidePhotos(e.target.files); e.target.value = ""; }} />
+                    </label>
+                  </div>
+                  <p className="muted" style={{ margin: "6px 0 0", fontSize: 13 }}>{slideSpecs(edit).length + 1} van max. 10 afbeeldingen (titelafbeelding + {slideSpecs(edit).length} slides).</p>
+                </div>
+              )}
+              </>)}
             </div>
 
             <div className="card">
@@ -377,7 +499,8 @@ export default function SocialPage() {
                 {(Object.keys(CH_LABEL) as (keyof Channels)[]).map((c) => (
                   <label key={c} className="customers-check">
                     <input type="checkbox" style={{ width: "auto" }} checked={edit.channels[c]} onChange={(e) => setEdit({ ...edit, channels: { ...edit.channels, [c]: e.target.checked } })} />
-                    {CH_LABEL[c]}
+                    {labels[c]}
+                    {edit.results?.[c]?.pending && <span className="muted"> (wordt verwerkt…)</span>}
                     {edit.results?.[c]?.id && (edit.results[c]!.url ? <a href={edit.results[c]!.url} target="_blank" rel="noreferrer"> ✓ bekijken</a> : " ✓")}
                     {edit.results?.[c]?.error && <span className="muted" title={edit.results[c]!.error}> ✗</span>}
                   </label>
@@ -389,15 +512,16 @@ export default function SocialPage() {
                 <div><label>Inplannen op</label><input type="datetime-local" value={publishAt} onChange={(e) => setPublishAt(e.target.value)} /></div>
                 <div style={{ flex: "0 0 auto" }}>
                   <button type="button" className="btn secondary" disabled={busy || !publishAt || !conn?.connected} onClick={async () => {
-                    if (await confirmDialog(`Post inplannen op ${fmt(publishAt.replace("T", " "))} op ${(Object.keys(CH_LABEL) as (keyof Channels)[]).filter((c) => edit.channels[c]).map((c) => CH_LABEL[c]).join(", ")}?`)) act("schedule");
+                    if (await confirmDialog(`Post inplannen op ${fmt(publishAt.replace("T", " "))} op ${(Object.keys(labels) as (keyof Channels)[]).filter((c) => edit.channels[c]).map((c) => labels[c]).join(", ")}?`)) act("schedule");
                   }}>Inplannen</button>
                 </div>
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
                 <button type="button" className="btn secondary" disabled={busy} onClick={() => act("save")}>Bewaren</button>
                 {edit.status === "scheduled" && edit.id && <button type="button" className="btn secondary" disabled={busy} onClick={() => listAct("cancel", edit.id!).then(() => setEdit({ ...edit, status: "draft", publish_at: "" }))}>Planning annuleren</button>}
+                {edit.status === "processing" && edit.id && <button type="button" className="btn secondary" onClick={async () => { await listAct("check", edit.id!); const p = (await api("list")).posts.find((x: Post) => x.id === edit.id); if (p) setEdit({ ...edit, ...p, design: edit.design }); }}>Nu nakijken</button>}
                 <button type="button" className="btn" disabled={busy || !conn?.connected} onClick={async () => {
-                  const where = (Object.keys(CH_LABEL) as (keyof Channels)[]).filter((c) => edit.channels[c]).map((c) => CH_LABEL[c]).join(", ");
+                  const where = (Object.keys(labels) as (keyof Channels)[]).filter((c) => edit.channels[c]).map((c) => labels[c]).join(", ");
                   if (!where) return alertDialog("Kies minstens één kanaal.");
                   if (await confirmDialog(`Nu plaatsen op ${where}?\n\nDe post is meteen openbaar zichtbaar.`)) act("publish_now");
                 }}>{busy ? "Bezig…" : "Nu plaatsen"}</button>
@@ -406,14 +530,26 @@ export default function SocialPage() {
           </fieldset>
 
           <div className="camp-preview">
-            <div className="muted" style={{ marginBottom: 6 }}>Feed (Facebook en Instagram, 1080×1080)</div>
+            {edit.type === "video" ? (
+              edit.video ? <video src={edit.video} controls className="social-img social-story" /> : <div className="social-img social-wait">Kies een video</div>
+            ) : (<>
+            <div className="muted" style={{ marginBottom: 6 }}>{edit.type === "carousel" ? "Titelafbeelding (1/" + (slides.length + 1) + ")" : "Feed (Facebook en Instagram, 1080×1080)"}</div>
             {preview.feed ? <img src={preview.feed} alt="Voorbeeld feed" className="social-img" /> : <div className="social-img social-wait">Afbeelding maken…</div>}
             <div style={{ display: "flex", gap: 8, margin: "8px 0 16px" }}>
               <button type="button" className="btn secondary" disabled={!preview.feed} onClick={() => download(preview.feed, `${edit.name || "post"}-feed.jpg`)}>Download feed</button>
               <button type="button" className="btn secondary" disabled={!preview.story} onClick={() => download(preview.story, `${edit.name || "post"}-story.jpg`)}>Download story</button>
             </div>
-            <div className="muted" style={{ marginBottom: 6 }}>Story (1080×1920)</div>
+            {edit.type === "carousel" && slides.length > 0 && (
+              <>
+                <div className="muted" style={{ marginBottom: 6 }}>Slides</div>
+                <div className="social-slides">
+                  {slides.map((s, i) => <img key={i} src={s} alt={`Slide ${i + 2}`} title="Klik om te downloaden" onClick={() => download(s, `${edit.name || "post"}-${i + 2}.jpg`)} />)}
+                </div>
+              </>
+            )}
+            <div className="muted" style={{ margin: "12px 0 6px" }}>Story (1080×1920){edit.type === "carousel" ? ": een carrousel bestaat niet als story, de story toont de titelafbeelding" : ""}</div>
             {preview.story ? <img src={preview.story} alt="Voorbeeld story" className="social-img social-story" /> : null}
+            </>)}
           </div>
         </div>
       </div>
@@ -436,9 +572,9 @@ export default function SocialPage() {
           <div className="camp-list">
             {posts.map((p) => (
               <div key={p.id} className="camp-row">
-                {p.image_feed && <img src={p.image_feed} alt="" style={{ width: 56, height: 56, borderRadius: 6, objectFit: "cover" }} />}
+                {p.image_feed ? <img src={p.image_feed} alt="" style={{ width: 56, height: 56, borderRadius: 6, objectFit: "cover" }} /> : p.type === "video" ? <span className="social-thumb">🎬</span> : null}
                 <div style={{ flex: 1, minWidth: 200 }}>
-                  <b>{p.name}</b> {statusPill(p)}
+                  <b>{p.name}</b> {p.type === "carousel" ? <span className="muted">· carrousel ({p.images?.length ?? 0})</span> : p.type === "video" ? <span className="muted">· video</span> : null} {statusPill(p)}
                   <div className="muted" style={{ fontSize: 13 }}>
                     {(Object.keys(CH_LABEL) as (keyof Channels)[]).filter((c) => p.channels[c]).map((c) => (
                       <span key={c} style={{ marginRight: 10 }}>
