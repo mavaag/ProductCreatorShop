@@ -938,3 +938,6 @@ button.folder-link:hover { color: var(--cyan); }
 .social-story { max-width: 300px; }
 .social-wait { aspect-ratio: 1 / 1; display: grid; place-items: center; color: var(--ink-faint); }
 .social-swatch { display: inline-block; width: 14px; height: 14px; border-radius: 50%; border: 3px solid; vertical-align: -2px; }
+.social-slides { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; max-width: 560px; }
+.social-slides img { width: 100%; border-radius: 6px; border: 1px solid var(--line); cursor: pointer; }
+.social-thumb { width: 56px; height: 56px; border-radius: 6px; display: grid; place-items: center; font-size: 26px; background: var(--panel-2); }
