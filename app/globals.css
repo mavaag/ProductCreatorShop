@@ -924,3 +924,4 @@ button.folder-link:hover { color: var(--cyan); }
 .camp-hit span:nth-child(2) { flex: 1; }
 .camp-list { display: grid; gap: 10px; }
 .camp-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.pill.yellow { color: var(--yellow); border-color: var(--yellow); }
