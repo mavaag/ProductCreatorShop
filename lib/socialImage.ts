@@ -19,6 +19,7 @@ export type SocialDesign = {
   theme: string;
   showPrices: boolean;
   products: { name: string; price: number; image: string }[]; // image = URL in de shop (groot formaat)
+  image?: string; // eigen afbeelding (bv. logo) in plaats van de producten
 };
 
 export type SocialFormat = "feed" | "story";
@@ -116,7 +117,25 @@ export async function renderSocial(design: SocialDesign, format: SocialFormat, l
   // productvakken
   const footerH = format === "feed" ? 110 : 230;
   const areaY = y, areaH = H - footerH - areaY - (format === "feed" ? 10 : 40);
-  const prods = design.products.slice(0, 4);
+  // eigen afbeelding (logo/foto): één groot vak, geen producten
+  if (design.image) {
+    const img = await load(design.image);
+    ctx.save();
+    ctx.shadowColor = "rgba(0,0,0,0.12)"; ctx.shadowBlur = 24; ctx.shadowOffsetY = 8;
+    ctx.fillStyle = th.card;
+    roundRect(ctx, pad, areaY, W - pad * 2, areaH, 28); ctx.fill();
+    ctx.restore();
+    if (img) drawContain(ctx, img, pad + 40, areaY + 40, W - pad * 2 - 80, areaH - 80);
+  } else if (!design.products.length) {
+    // niets gekozen: merknaam groot in het midden
+    ctx.fillStyle = th.accent;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.font = `900 ${format === "feed" ? 120 : 140}px ${FONT}`;
+    ctx.fillText("3D Print", W / 2, areaY + areaH / 2 - 70);
+    ctx.fillText("For You", W / 2, areaY + areaH / 2 + 70);
+    ctx.textAlign = "left"; ctx.textBaseline = "top";
+  }
+  const prods = design.image ? [] : design.products.slice(0, 4);
   const imgs = await Promise.all(prods.map((p) => (p.image ? load(p.image) : Promise.resolve(null))));
   const n = Math.max(prods.length, 1);
   const cols = n === 1 ? 1 : 2;

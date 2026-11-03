@@ -12,7 +12,7 @@ import { SOCIAL_THEMES, SocialFormat, canvasToJpeg, renderSocial } from "@/lib/s
 // Zonder koppeling kan je de afbeelding downloaden en de tekst kopiëren om zelf te posten.
 
 type Channels = { fb: boolean; ig: boolean; ig_story: boolean };
-type Design = { title: string; subtitle: string; badge: string; theme: string; show_prices: boolean; product_ids: number[] };
+type Design = { title: string; subtitle: string; badge: string; theme: string; show_prices: boolean; product_ids: number[]; image?: string };
 type Result = { id?: string; url?: string; error?: string; at?: string };
 type Post = {
   id?: string; name: string; caption: string; link: string; channels: Channels; design: Design;
@@ -94,10 +94,30 @@ export default function SocialPage() {
   const [publishAt, setPublishAt] = useState("");
   const [collectionName, setCollectionName] = useState("");
   const [actieLabel, setActieLabel] = useState("");
+  const [logo, setLogo] = useState("");
   const bitmaps = useRef(new Map<string, Promise<ImageBitmap | null>>());
 
-  function applyList(r: { posts: Post[]; connection: Connection }) {
+  function applyList(r: { posts: Post[]; connection: Connection; logo?: string }) {
     setPosts(r.posts); setConn(r.connection);
+    if (r.logo) setLogo(r.logo);
+  }
+
+  /** Eigen afbeelding uploaden (logo of foto): verkleinen tot max. 1600 px, PNG blijft PNG (transparantie). */
+  async function uploadOwnImage(file: File | null) {
+    if (!file || !edit) return;
+    setBusy(true); setError("");
+    try {
+      const bmp = await createImageBitmap(file);
+      const scale = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+      const c = document.createElement("canvas");
+      c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
+      (c.getContext("2d") as CanvasRenderingContext2D).drawImage(bmp, 0, 0, c.width, c.height);
+      const png = file.type === "image/png";
+      const data = png ? c.toDataURL("image/png") : c.toDataURL("image/jpeg", 0.9);
+      const r = await api("action", "POST", { action: "upload", asset: true, data });
+      setEdit({ ...edit, design: { ...edit.design, image: r.url } });
+    } catch (e: any) { setError(`Afbeelding uploaden mislukt: ${e.message}`); }
+    setBusy(false);
   }
   async function load() {
     try {
@@ -173,6 +193,7 @@ export default function SocialPage() {
   const designFor = (p: Post) => ({
     title: p.design.title, subtitle: p.design.subtitle, badge: p.design.badge, theme: p.design.theme, showPrices: p.design.show_prices,
     products: p.design.product_ids.map((id) => products.get(id)).filter(Boolean).map((x) => ({ name: x!.name, price: x!.price, image: x!.image_large || x!.image })),
+    image: p.design.image || undefined,
   });
   async function render(p: Post, f: SocialFormat) {
     return canvasToJpeg(await renderSocial(designFor(p), f, loadImage));
@@ -286,7 +307,17 @@ export default function SocialPage() {
               <div className="row">
                 <div><label>Ondertitel</label><input value={edit.design.subtitle} onChange={(e) => setDesign({ subtitle: e.target.value })} /></div>
               </div>
-              <label>Producten op de afbeelding (max. 4)</label>
+              <label>Eigen afbeelding (bv. je logo of een foto), in plaats van producten</label>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
+                {edit.design.image && <img src={edit.design.image} alt="" style={{ width: 56, height: 56, objectFit: "contain", borderRadius: 6, background: "#fff" }} />}
+                <label className="btn secondary" style={{ cursor: "pointer", margin: 0 }}>
+                  Afbeelding kiezen
+                  <input type="file" accept="image/png,image/jpeg,image/webp" style={{ display: "none" }} onChange={(e) => { uploadOwnImage(e.target.files?.[0] ?? null); e.target.value = ""; }} />
+                </label>
+                {logo && <button type="button" className="btn secondary" onClick={() => setDesign({ image: logo })}>Logo van de shop</button>}
+                {edit.design.image && <button type="button" className="btn secondary" onClick={() => setDesign({ image: "" })}>Weghalen (producten tonen)</button>}
+              </div>
+              <label>Producten op de afbeelding (max. 4){edit.design.image ? ": worden niet getoond zolang er een eigen afbeelding is" : ""}</label>
               {chosen.length > 0 && (
                 <div className="camp-chips">
                   {edit.design.product_ids.map((id, i) => (
