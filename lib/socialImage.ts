@@ -20,6 +20,7 @@ export type SocialDesign = {
   showPrices: boolean;
   products: { name: string; price: number; image: string }[]; // image = URL in de shop (groot formaat)
   image?: string; // eigen afbeelding (bv. logo) in plaats van de producten
+  logo?: string; // klein logo links onderaan, vóór de merknaam (leeg = geen)
 };
 
 export type SocialFormat = "feed" | "story";
@@ -183,21 +184,37 @@ export async function renderSocial(design: SocialDesign, format: SocialFormat, l
 
   // voettekst
   const fy = H - footerH + (format === "feed" ? 24 : 60);
-  ctx.fillStyle = th.text;
-  ctx.font = `800 ${format === "feed" ? 40 : 50}px ${FONT}`;
-  ctx.fillText("3D Print For You", pad, fy);
-  ctx.fillStyle = th.muted;
-  ctx.font = `500 ${format === "feed" ? 28 : 36}px ${FONT}`;
-  ctx.fillText("Gepersonaliseerd · gemaakt in België", pad, fy + (format === "feed" ? 50 : 64));
+  // webadres-knop rechts
   const url = "3dprintforyou.be";
-  ctx.font = `800 ${format === "feed" ? 34 : 44}px ${FONT}`;
+  ctx.font = `800 ${format === "feed" ? 34 : 40}px ${FONT}`;
   const uw = ctx.measureText(url).width + 48;
-  const uh = format === "feed" ? 64 : 80;
+  const uh = format === "feed" ? 64 : 76;
+  const ux = W - pad - uw;
   ctx.fillStyle = th.accent;
-  roundRect(ctx, W - pad - uw, fy + 4, uw, uh, uh / 2); ctx.fill();
+  roundRect(ctx, ux, fy + 4, uw, uh, uh / 2); ctx.fill();
   ctx.fillStyle = th.accentText;
   ctx.textBaseline = "middle";
-  ctx.fillText(url, W - pad - uw + 24, fy + 4 + uh / 2 + 1);
+  ctx.fillText(url, ux + 24, fy + 4 + uh / 2 + 1);
+  ctx.textBaseline = "top";
+  // logo + merknaam links, krimpt tot hij naast de knop past
+  let tx = pad;
+  const logoImg = design.logo ? await load(design.logo) : null;
+  if (logoImg) {
+    const ls = format === "feed" ? 104 : 124;
+    drawContain(ctx, logoImg, pad, fy - 14, ls, ls);
+    tx = pad + ls + 18;
+  }
+  const maxW = ux - tx - 24;
+  const fitFont = (text: string, weight: number, size: number) => {
+    let sz = size;
+    do { ctx.font = `${weight} ${sz}px ${FONT}`; sz -= 2; } while (ctx.measureText(text).width > maxW && sz > 16);
+  };
+  ctx.fillStyle = th.text;
+  fitFont("3D Print For You", 800, format === "feed" ? 40 : 48);
+  ctx.fillText("3D Print For You", tx, fy);
+  ctx.fillStyle = th.muted;
+  fitFont("Gepersonaliseerd · gemaakt in België", 500, format === "feed" ? 28 : 34);
+  ctx.fillText("Gepersonaliseerd · gemaakt in België", tx, fy + (format === "feed" ? 50 : 60));
   return c;
 }
 
@@ -211,7 +228,7 @@ export function canvasToJpeg(c: HTMLCanvasElement, quality = 0.88): string {
  */
 export async function renderSlide(
   slide: { kind: "product"; name: string; price: number; image: string } | { kind: "photo"; image: string },
-  design: Pick<SocialDesign, "theme" | "showPrices">,
+  design: Pick<SocialDesign, "theme" | "showPrices" | "logo">,
   index: number,
   total: number,
   load: ImageLoader,
@@ -265,9 +282,15 @@ export async function renderSlide(
   ctx.fillText(tag, W - pad - 24 - tw + 18, cardY + 24 + 28);
 
   // voettekst
+  let tx = pad;
+  const logoImg = design.logo ? await load(design.logo) : null;
+  if (logoImg) {
+    drawContain(ctx, logoImg, pad, H - footer / 2 - 44, 88, 88);
+    tx = pad + 88 + 14;
+  }
   ctx.fillStyle = th.text;
   ctx.font = `800 38px ${FONT}`;
-  ctx.fillText("3D Print For You", pad, H - footer / 2);
+  ctx.fillText("3D Print For You", tx, H - footer / 2);
   ctx.fillStyle = th.accent;
   ctx.font = `800 34px ${FONT}`;
   ctx.textAlign = "right";
