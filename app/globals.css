@@ -932,3 +932,9 @@ button.folder-link:hover { color: var(--cyan); }
 .cal-table tr.cal-off td { opacity: 0.55; }
 .table-wrap { overflow-x: auto; }
 .customers-check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+
+/* Social */
+.social-img { display: block; width: 100%; max-width: 560px; border-radius: 8px; border: 1px solid var(--line); }
+.social-story { max-width: 300px; }
+.social-wait { aspect-ratio: 1 / 1; display: grid; place-items: center; color: var(--ink-faint); }
+.social-swatch { display: inline-block; width: 14px; height: 14px; border-radius: 50%; border: 3px solid; vertical-align: -2px; }
