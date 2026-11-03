@@ -43,7 +43,7 @@ const NEW_BLOCK: Record<Block["type"], () => Block> = {
   collection: () => ({ type: "collection", term_id: 0, text: "" }),
   products: () => ({ type: "products", ids: [] }),
   actie: () => ({ type: "actie", id: "" }),
-  button: () => ({ type: "button", text: "Naar de shop", url: "https://3dprintforyou.be/shop/" }),
+  button: () => ({ type: "button", text: "Naar de shop", url: "https://3dprintforyou.be/" }),
   image: () => ({ type: "image", url: "", link: "" }),
   code: () => ({ type: "code", cfg: { type: "percent", amount: 10, days: 14, min: 0 } }),
 };
