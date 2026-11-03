@@ -282,6 +282,16 @@ export default function CampaignsPage() {
     } catch (e: any) { setError(e.message); return null; } finally { setBusy(false); }
   }
 
+  /** Concept-post in Social met dezelfde inhoud (bewaart de campagne eerst als ze nog nieuw is). */
+  async function toSocial(savedId?: string) {
+    let id = savedId || edit?.id;
+    if (!id) { const r = await act("save"); id = r?.saved_id; }
+    if (id) window.location.href = `/social?campagne=${id}`;
+  }
+  async function offerSocial(savedId?: string) {
+    if (await confirmDialog("Ook een post maken voor Facebook/Instagram?\n\nJe krijgt in Social een concept met dezelfde inhoud (titel, producten, tekst en link). Plaatsen doe je daarna zelf.", { confirmLabel: "Post maken" })) toSocial(savedId);
+  }
+
   if (!ready) return null;
 
   const setBlock = (i: number, b: Block) => edit && setEdit({ ...edit, blocks: edit.blocks.map((x, j) => (j === i ? b : x)) });
@@ -387,7 +397,7 @@ export default function CampaignsPage() {
                   <div><label>Inplannen op</label><input type="datetime-local" value={edit.send_at.replace(" ", "T")} onChange={(e) => setEdit({ ...edit, send_at: e.target.value.replace("T", " ") })} /></div>
                   <div style={{ flex: "0 0 auto" }}>
                     <button type="button" className="btn secondary" disabled={busy || !edit.send_at} onClick={async () => {
-                      const r = await act("schedule"); if (r) setInfo(`Ingepland op ${fmt(edit.send_at)}`);
+                      const r = await act("schedule"); if (r) { setInfo(`Ingepland op ${fmt(edit.send_at)}`); offerSocial(r.saved_id); }
                     }}>{edit.status === "scheduled" ? "Planning bijwerken" : "Inplannen"}</button>
                   </div>
                 </div>
@@ -398,7 +408,7 @@ export default function CampaignsPage() {
                   <button type="button" className="btn" disabled={busy || !count} onClick={async () => {
                     if (!(await confirmDialog(`"${edit.subject}" nu versturen naar ${count} ontvanger${count === 1 ? "" : "s"}?`, { confirmLabel: "Nu versturen" }))) return;
                     const r = await act("send_now");
-                    if (r) { setInfo("Verzending gestart"); const c = r.campaigns.find((x: Campaign) => x.id === r.saved_id); if (c) setEdit(c); }
+                    if (r) { setInfo("Verzending gestart"); const c = r.campaigns.find((x: Campaign) => x.id === r.saved_id); if (c) setEdit(c); offerSocial(r.saved_id); }
                   }}>{busy ? "Bezig..." : "Nu versturen"}</button>
                 </div>
                 <p className="muted" style={{ margin: "8px 0 0" }}>
@@ -409,6 +419,9 @@ export default function CampaignsPage() {
           </div>
 
           <div className="camp-preview">
+            <p style={{ margin: "0 0 8px" }}>
+              <button type="button" className="btn secondary" disabled={busy} onClick={() => toSocial()} title="Concept-post voor Facebook/Instagram met dezelfde inhoud">Social post maken</button>
+            </p>
             <div className="muted" style={{ marginBottom: 6 }}>Voorbeeld (met "Voornaam"{edit.blocks.some((b) => b.type === "code") ? " en VOORBEELD-CODE" : ""})</div>
             <iframe title="Voorbeeld van de mail" srcDoc={preview || "<p style='font-family:sans-serif;color:#888'>Voorbeeld laden...</p>"} />
           </div>
