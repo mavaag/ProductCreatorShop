@@ -5,7 +5,7 @@ import { shopProxy } from "@/lib/shopProxy";
 // GET  /api/campaigns/list            -> campagnes, aantallen ontvangers, categorieën, acties, instellingen
 // POST /api/campaigns/action          -> { action: save|test|schedule|send_now|cancel|delete|duplicate|count|settings, campaign?, id?, to? }
 // POST /api/campaigns/preview         -> { campaign } -> { subject, html } (voorbeeld met "Voornaam")
-// GET  /api/campaigns/products?q=..   -> producten zoeken (of ?ids=1,2,3)
+// GET  /api/campaigns/products?q=..   -> producten zoeken (of ?ids=1,2,3, of ?cat=<term_id> = populairste van een collectie)
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request, { params }: { params: { action: string } }) {
@@ -15,6 +15,7 @@ export async function GET(request: Request, { params }: { params: { action: stri
     const qs = new URLSearchParams();
     if (u.searchParams.get("q")) qs.set("q", u.searchParams.get("q") as string);
     if (u.searchParams.get("ids")) qs.set("ids", u.searchParams.get("ids") as string);
+    if (u.searchParams.get("cat")) qs.set("cat", String(parseInt(u.searchParams.get("cat") as string) || 0));
     return shopProxy(request, `tdp-campaign-products?${qs.toString()}`, "GET");
   }
   return NextResponse.json({ error: "Onbekend." }, { status: 404 });

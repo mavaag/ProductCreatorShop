@@ -224,6 +224,26 @@ export default function CampaignsPage() {
     supabase.auth.getUser().then(({ data: u }) => setTestTo(u.user?.email ?? ""));
   }, [ready]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Vanuit Collecties ("Mail maken?"): concept met de collectie en haar populairste producten
+  const fromCollection = useRef(false);
+  useEffect(() => {
+    if (!data || fromCollection.current) return;
+    fromCollection.current = true;
+    const termId = parseInt(new URLSearchParams(window.location.search).get("collectie") ?? "") || 0;
+    if (!termId) return;
+    window.history.replaceState(null, "", "/campaigns");
+    const cat = data.categories.find((c) => c.id === termId);
+    const name = (cat?.name ?? "").replace("Collecties > ", "") || "nieuwe collectie";
+    const base = TEMPLATES[0].make();
+    const make = (ids: number[]): Campaign => ({
+      ...base, name: `Collectie ${name}`, subject: `Nieuw: onze collectie ${name}`,
+      blocks: base.blocks.map((b) => (b.type === "collection" ? { ...b, term_id: termId } : b.type === "products" ? { ...b, ids } : b)),
+    });
+    api(`products?cat=${termId}`)
+      .then((ps: Product[]) => { remember(ps); open(make(ps.slice(0, 4).map((p) => p.id))); })
+      .catch(() => open(make([])));
+  }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const locked = !!edit && (edit.status === "sending" || edit.status === "sent");
 
   // voorbeeld vernieuwen (even wachten tot er niet meer getypt wordt)

@@ -421,6 +421,10 @@ export default function CollectionsPage() {
       .filter(Boolean)
       .join(" en ");
     if (!(await confirmDialog(`Collectie "${c.name}" naar de shop sturen?\n\nWordt bijgewerkt in WooCommerce: ${what}.`))) return;
+    // Nieuw in de shop = de collectie zelf voor het eerst, of producten die nog nooit in de shop stonden.
+    const firstTime = !c.woo_category_id;
+    const newProducts = pending.productIds.filter((id) => (members[c.id] ?? []).includes(id) && !productById.get(id)?.last_exported_at).length;
+    let askMail = false;
     setBusy(true);
     setMessage("");
     try {
@@ -457,12 +461,20 @@ export default function CollectionsPage() {
       if (agg.errors.length) parts.push(`fouten: ${agg.errors.join("; ")}`);
       setMessage(`"${c.name}" naar de shop gestuurd: ${parts.join(" -- ")}.`);
       if (agg.errors.length) await alertDialog(`Niet alles lukte:\n\n${agg.errors.join("\n")}`);
+      else askMail = firstTime || newProducts > agg.missing.length; // producten die nog niet aangemaakt zijn, tellen niet
     } catch (e: any) {
       setMessage(`Naar de shop mislukt: ${e?.message ?? String(e)}`);
     } finally {
       setSyncing(null);
       setBusy(false);
       load();
+    }
+    if (askMail) {
+      const { data: row } = await supabase.from("collections").select("woo_category_id").eq("id", c.id).single();
+      const termId = row?.woo_category_id;
+      const why = firstTime ? `De collectie "${c.name}" staat nu in de shop.` : `Er staan ${newProducts} nieuwe product${newProducts === 1 ? "" : "en"} in "${c.name}".`;
+      if (termId && (await confirmDialog(`${why}\n\nEen mail maken voor je klanten? Je krijgt een concept met de collectie en haar populairste producten; versturen doe je daarna zelf.`)))
+        window.location.href = `/campaigns?collectie=${termId}`;
     }
   }
 
@@ -605,6 +617,7 @@ export default function CollectionsPage() {
                     {syncing?.id === c.id ? syncing.text : "Naar de shop"}
                   </button>
                   <button className="btn secondary" onClick={() => { setEditingId(c.id); setEditForm(toForm(c)); }}>Bewerken</button>
+                  {c.woo_category_id && <Link className="btn secondary" href={`/campaigns?collectie=${c.woo_category_id}`} title="Concept-mail met deze collectie maken (Campagnes)">Mail maken</Link>}
                   <button className="btn danger" disabled={busy} onClick={() => removeCollection(c)}>Verwijderen</button>
                 </div>
               </div>
