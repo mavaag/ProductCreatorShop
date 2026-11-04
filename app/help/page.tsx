@@ -122,6 +122,19 @@ const SECTIONS: Section[] = [
     ),
   },
   {
+    id: "licenties",
+    title: "Licenties",
+    href: "/licenses",
+    body: (
+      <>
+        <p>Je betaalde licenties van artiesten (bv. PinkyWings op MakerWorld): wanneer betaald, tot wanneer geldig, prijs en wat je ermee mag. Licenties die binnen 30 dagen vervallen of al vervallen zijn, staan in een balk bovenaan elke pagina, en de NAS stuurt 30 dagen op voorhand één herinneringsmail. Na het betalen klik je op <i>Verlengd</i>: de vervaldatum schuift een jaar op.</p>
+        <p><b>Modellen van een artiest</b> (knop <i>Modellen</i>): alle modellen met foto, downloads, printtijd en filament. Per model kies je <b>Overnemen</b>, <b>Misschien</b> of <b>Nee</b>; filteren kan op thema, soort, naam en status. Modellen met een merk of personage van iemand anders (Godzilla, Toothless, Grinch, ...) krijgen een rood label: je licentie dekt het ontwerp, niet het merk.</p>
+        <p><b>Lijst bijwerken</b>: MakerWorld laat geen automatische opvragingen van servers toe, dus dat gebeurt in je browser. Sleep eenmalig de knop <i>Modellen ophalen (MakerWorld)</i> onderaan de pagina Licenties naar je bladwijzerbalk. Open het profiel van de artiest, klik op de bladwijzer en dan op <i>Kopieer en open de beheertool</i>; plak de lijst in het vak. Modellen die er sinds de eerste lijst bijgekomen zijn, krijgen het label <b>Nieuw</b> (tab Nieuw) tot je een keuze maakt. Je kan het ook aan Claude vragen.</p>
+        <p><b>Naar de Catalogus</b>: download de bestanden van de modellen op Overnemen naar <span className="mono">\\NASMAT\MakerProducts\_Inbox\_Licenties\&lt;artiest&gt;</span> (of laat Claude dat doen) en klik op <i>Gedownloade bestanden in de Catalogus zetten</i>. De agent zet ze in de bibliotheek met de foto van MakerWorld en koppelt ze; daarna maak je er in de Catalogus een product van zoals gewoonlijk.</p>
+      </>
+    ),
+  },
+  {
     id: "collecties",
     title: "Collecties",
     href: "/collections",

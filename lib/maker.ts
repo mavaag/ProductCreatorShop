@@ -335,8 +335,9 @@ export type MakerJob = {
   id: string;
   status: "queued" | "running" | "done" | "failed" | "cancelled";
   /** models = geselecteerde modellen verwerken; inbox = nieuwe bestanden uit _Inbox in de bibliotheek zetten;
-   *  set = van gravureontwerpen een set maken (items[0] = naam, migratie 032) */
-  kind?: "models" | "inbox" | "split" | "set";
+   *  set = van gravureontwerpen een set maken (items[0] = naam, migratie 032);
+   *  license = gedownloade modellen van een licentie in de bibliotheek zetten (items[0] = licentie-id, migratie 041) */
+  kind?: "models" | "inbox" | "split" | "set" | "license";
   model_ids: string[];
   items?: string[];
   then_process?: boolean;
