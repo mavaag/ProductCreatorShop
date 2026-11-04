@@ -254,7 +254,11 @@ export function categorize(title: string): { theme: string; type: string; style:
 
 /* ---------- Chrome-extensie "MakerWorld-hulp" (browser-extension/makerworld-helper) ---------- */
 
-type ExtMsg = { source: "apfy-ext"; type: string; reqId?: string; version?: string; ok?: boolean; error?: string; uid?: string; handle?: string; name?: string; items?: ImportItem[] };
+type ExtMsg = {
+  source: "apfy-ext"; type: string; reqId?: string; version?: string; ok?: boolean; error?: string;
+  uid?: string; handle?: string; name?: string; items?: ImportItem[];
+  key?: string; size?: number; chunks?: number; b64?: string;
+};
 
 function askExtension(msg: Record<string, unknown>, answerType: string, timeoutMs: number): Promise<ExtMsg | null> {
   return new Promise((resolve) => {
@@ -286,4 +290,80 @@ export async function fetchViaExtension(license: License): Promise<ImportPayload
   if (!r) throw new Error("De extensie gaf binnen 3 minuten geen antwoord. Ben je ingelogd op makerworld.com in deze Chrome?");
   if (!r.ok || !r.items) throw new Error(r.error || "Ophalen bij MakerWorld mislukt.");
   return { type: "license-import", platform: "makerworld", uid: r.uid, handle: r.handle, name: r.name, items: r.items };
+}
+
+/** Versie a.b.c vergelijken: true als v minstens min is. */
+function versionAtLeast(v: string, min: string): boolean {
+  const a = v.split(".").map(Number), b = min.split(".").map(Number);
+  for (let i = 0; i < 3; i++) { if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0); }
+  return true;
+}
+
+export const LICENSE_INBOX_BUCKET = "license-inbox";
+export const DOWNLOAD_MIN_VERSION = "1.1.0";
+
+export type DownloadProgress = { done: number; total: number; current?: string; bytes: number };
+export type DownloadResult = { ok: { id: string; title: string; name: string; size: number }[]; failed: { id: string; title: string; error: string }[] };
+
+function b64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+function storageName(name: string): string {
+  return name.replace(/[^A-Za-z0-9._ -]+/g, "_").replace(/\s+/g, " ").trim().slice(0, 120) || "model.3mf";
+}
+
+/**
+ * Modelbestanden downloaden via de extensie (met je MakerWorld-login) en in stukken klaarzetten in de bucket
+ * license-inbox/<licentie>/<model-id>/. De agent (opdracht "license") zet ze daarna in _Inbox/_Licenties/<artiest>
+ * en in de Catalogus. Gooit "NO_EXTENSION" of "OLD_EXTENSION" als de extensie ontbreekt of te oud is.
+ */
+export async function downloadViaExtension(
+  supabase: SupabaseClient, license: License, models: { source_id: string; title: string }[],
+  onProgress: (p: DownloadProgress) => void,
+): Promise<DownloadResult> {
+  if (license.platform !== "makerworld") throw new Error("Automatisch downloaden kan (nog) alleen voor MakerWorld.");
+  const version = await extensionVersion();
+  if (!version) throw new Error("NO_EXTENSION");
+  if (!versionAtLeast(version, DOWNLOAD_MIN_VERSION)) throw new Error("OLD_EXTENSION");
+  const result: DownloadResult = { ok: [], failed: [] };
+  let bytes = 0;
+  try {
+    for (const [n, m] of models.entries()) {
+      onProgress({ done: n, total: models.length, current: m.title, bytes });
+      try {
+        const f = await askExtension({ type: "mw-file", id: m.source_id }, "mw-file-result", 300000);
+        if (!f) throw new Error("geen antwoord van de extensie binnen 5 minuten");
+        if (!f.ok || !f.key || !f.chunks) throw new Error(f.error || "downloaden mislukt");
+        const base = `${license.id}/${m.source_id}/${storageName(f.name || m.source_id + ".3mf")}`;
+        try {
+          for (let i = 0; i < f.chunks; i++) {
+            const c = await askExtension({ type: "mw-chunk", key: f.key, index: i }, "mw-chunk-result", 120000);
+            if (!c?.ok || !c.b64) throw new Error(c?.error || "stuk van het bestand niet ontvangen");
+            const { error } = await supabase.storage.from(LICENSE_INBOX_BUCKET)
+              .upload(`${base}.part${String(i).padStart(3, "0")}`, b64ToBytes(c.b64), { upsert: true, contentType: "application/octet-stream" });
+            if (error) throw new Error(`opslaan mislukt: ${error.message}`);
+          }
+          // klaar-teken: de agent zet enkel volledige bestanden in de Inbox
+          const { error } = await supabase.storage.from(LICENSE_INBOX_BUCKET)
+            .upload(`${base}.done`, new Blob([String(f.size ?? 0)], { type: "text/plain" }), { upsert: true });
+          if (error) throw new Error(`opslaan mislukt: ${error.message}`);
+        } finally {
+          await askExtension({ type: "mw-release", key: f.key }, "mw-release-result", 10000);
+        }
+        bytes += f.size ?? 0;
+        result.ok.push({ id: m.source_id, title: m.title, name: f.name || "", size: f.size ?? 0 });
+      } catch (e: any) {
+        result.failed.push({ id: m.source_id, title: m.title, error: e?.message ?? String(e) });
+        if (/429|too many|te veel/i.test(e?.message ?? "")) break;   // MakerWorld remt af: stoppen
+      }
+    }
+  } finally {
+    await askExtension({ type: "mw-done" }, "mw-done-result", 10000);
+  }
+  onProgress({ done: models.length, total: models.length, bytes });
+  return result;
 }
