@@ -9,9 +9,12 @@ Gebruik:  python3 tools/licenses/place_downloads.py <licentie: id | handle | art
 2. Elk gekoppeld item verhuist naar <map van de licentie>/<titel> [MW<id>]/ met _technique.txt (fdm),
    _source.json (licentie, artiest, link) en de coverfoto van het platform (wordt de thumbnail in de Catalogus).
 3. build_catalog.py + sync_catalog.py, daarna license_models.maker_model_id invullen op basis van "[MW<id>]" in het pad.
+Vooraf: bestanden die de extensie MakerWorld-hulp via de beheertool klaarzette in de bucket license-inbox
+(<licentie>/<model-id>/<naam>.partNNN + <naam>.done) worden samengevoegd tot "_Inbox/_Licenties/<artiest>/<id> <naam>"
+en daarna uit de bucket verwijderd. Onvolledige uploads (zonder .done) blijven staan en worden gemeld.
 Wat niet te koppelen is, blijft in de Inbox staan en komt in het resultaat. Met --job worden voortgang en resultaat
 in maker_jobs gezet (knop "Gedownloade bestanden in de Catalogus zetten" op de licentiepagina)."""
-import difflib, json, os, re, shutil, subprocess, sys, urllib.request, zipfile
+import difflib, json, os, re, shutil, subprocess, sys, urllib.parse, urllib.request, zipfile
 import licenses_lib as L
 
 supa = L.supa
@@ -55,6 +58,60 @@ def fetch_cover(url, dest_dir):
     except Exception as e:
         print(f'  cover niet opgehaald: {e}')
         return False
+
+
+BUCKET = 'license-inbox'
+
+
+def storage_list(prefix):
+    out, offset = [], 0
+    while True:
+        rows = supa._req('POST', f'{supa.URL}/storage/v1/object/list/{BUCKET}',
+                         {'prefix': prefix, 'limit': 1000, 'offset': offset, 'sortBy': {'column': 'name', 'order': 'asc'}}) or []
+        out += rows
+        if len(rows) < 1000: return out
+        offset += 1000
+
+
+def storage_get(path):
+    req = urllib.request.Request(f'{supa.URL}/storage/v1/object/authenticated/{BUCKET}/{urllib.parse.quote(path)}',
+                                 headers={'apikey': supa.KEY, 'Authorization': f'Bearer {supa.KEY}'})
+    with urllib.request.urlopen(req, timeout=300) as r:
+        return r.read()
+
+
+def storage_delete(paths):
+    for k in range(0, len(paths), 100):
+        supa._req('DELETE', f'{supa.URL}/storage/v1/object/{BUCKET}', {'prefixes': paths[k:k + 100]})
+
+
+def pull_uploads(lic, inbox, say, dry):
+    """Bestanden van de extensie (via de beheertool) uit de bucket naar de Inbox op de NAS."""
+    try:
+        folders = [f['name'] for f in storage_list(f'{lic["id"]}/') if f.get('id') is None]
+    except Exception as e:
+        say(f'opslag van de extensie niet te lezen: {e}'); return 0
+    pulled = 0
+    for sid in folders:
+        names = [f['name'] for f in storage_list(f'{lic["id"]}/{sid}/') if f.get('id')]
+        complete = [n[:-5] for n in names if n.endswith('.done')]
+        for base in complete:
+            parts = sorted(n for n in names if n.startswith(base + '.part'))
+            if not parts: continue
+            dest = os.path.join(inbox, f'{sid} {L.safe_name(base, 150)}')
+            if dry:
+                say(f'- {sid} {base}: klaar in de opslag ({len(parts)} stuk(ken))'); pulled += 1; continue
+            os.makedirs(inbox, exist_ok=True)
+            tmp = dest + '.tmp'
+            with open(tmp, 'wb') as fh:
+                for n in parts: fh.write(storage_get(f'{lic["id"]}/{sid}/{n}'))
+            os.replace(tmp, dest)
+            storage_delete([f'{lic["id"]}/{sid}/{n}' for n in parts + [base + '.done']])
+            pulled += 1
+        rest = [n for n in names if not any(n.startswith(b + '.') for b in complete)]
+        if rest: say(f'- {sid}: onvolledige upload in de opslag ({len(rest)} stuk(ken)); download het model opnieuw in de beheertool')
+    if pulled: say(f'{pulled} bestand(en) van de extensie {"gevonden" if dry else "in de Inbox gezet"}')
+    return pulled
 
 
 def place(src, dest, dry):
@@ -112,6 +169,7 @@ def main():
         print(s, flush=True); log.append(s)
         if job: supa.rest('PATCH', f'maker_jobs?id=eq.{job}', {'progress': s[:300], 'log_tail': '\n'.join(log[-60:])}, prefer='return=minimal')
 
+    pull_uploads(lic, inbox, say, dry)
     items = sorted(n for n in os.listdir(inbox) if n.lower() not in IGNORE and not n.startswith('.')) if os.path.isdir(inbox) else []
     say(f'{lic["artist"]}: {len(items)} item(s) in _Inbox/_Licenties/{L.artist_dir(lic["artist"])}, {len(todo)} model(len) op Overnemen zonder Catalogus')
     for name in items:

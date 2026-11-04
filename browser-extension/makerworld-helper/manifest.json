@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Any Prints For You - MakerWorld-hulp",
-  "version": "1.0.0",
-  "description": "Laat de beheertool de modellenlijst van een artiest op MakerWorld ophalen, in je eigen browser en met je eigen login.",
+  "version": "1.1.0",
+  "description": "Laat de beheertool modellenlijsten en modelbestanden van MakerWorld ophalen, in je eigen browser en met je eigen login.",
   "permissions": ["scripting"],
-  "host_permissions": ["https://makerworld.com/*"],
+  "host_permissions": ["https://makerworld.com/*", "https://*.bblmw.com/*"],
   "background": { "service_worker": "background.js" },
   "content_scripts": [
     {

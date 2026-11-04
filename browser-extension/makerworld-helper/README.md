@@ -1,11 +1,14 @@
 # MakerWorld-hulp (Chrome-extensie)
 
-Hiermee werkt de knop **Nieuwste modellen ophalen** bij Licenties in de beheertool. MakerWorld laat geen opvragingen
+Hiermee werken bij Licenties in de beheertool de knoppen **Nieuwste modellen ophalen** en
+**Downloaden en in de Catalogus zetten** (vanaf versie 1.1.0). MakerWorld laat geen opvragingen
 van servers toe, dus de extensie haalt de modellenlijst op in je eigen Chrome, met je eigen MakerWorld-login, zoals
 wanneer je zelf het profiel van de artiest opent. De lijst gaat rechtstreeks terug naar de beheertool.
 
 - Werkt alleen op `https://products.anyprintsforyou.be` (en `http://localhost:3000` voor ontwikkeling).
-- Praat enkel met `makerworld.com`. Geen andere websites, geen gegevens naar derden.
+- Downloads: per model de 3MF van het standaard-printprofiel (of het eerste profiel dat wel lukt), zoals de knop
+  "Download 3MF". Het bestand gaat in stukken naar de beheertool, niet naar je map Downloads.
+- Praat enkel met `makerworld.com` en hun bestandsserver `*.bblmw.com`. Geen andere websites, geen gegevens naar derden.
 - Als het rechtstreeks ophalen niet lukt, opent de extensie het profiel even in een achtergrondtabblad en sluit het daarna weer.
 
 ## Installeren (eenmalig, per pc)

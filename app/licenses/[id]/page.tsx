@@ -8,7 +8,7 @@ import { useAuthGuard } from "@/lib/useAuthGuard";
 import { MakerJob } from "@/lib/maker";
 import {
   License, LicenseModel, LicenseRefresh, ModelPick, PICK_LABELS, PLATFORM_LABELS, REFRESHABLE, categorize, firstImportTimes,
-  ImportPayload, fetchViaExtension, formatDate, importModels, isNew, licenseState, parseImport, thumbUrl,
+  DownloadProgress, ImportPayload, downloadViaExtension, fetchViaExtension, formatDate, importModels, isNew, licenseState, parseImport, thumbUrl,
 } from "@/lib/licenses";
 
 type Status = "" | ModelPick | "open" | "new" | "catalog" | "removed";
@@ -49,6 +49,8 @@ export default function LicenseModelsPage() {
   const [importing, setImporting] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [noExtension, setNoExtension] = useState(false);
+  const [dl, setDl] = useState<DownloadProgress | null>(null);
+  const [dlFailed, setDlFailed] = useState<{ id: string; title: string; error: string }[]>([]);
 
   async function load() {
     try {
@@ -185,12 +187,33 @@ export default function LicenseModelsPage() {
   const toFetch = enriched.filter((m) => m.pick === "yes" && !m.maker_model_id && !m.removed_at);
   const inbox = license ? `\\\\NASMAT\\MakerProducts\\_Inbox\\_Licenties\\${license.artist.replace(/[^A-Za-z0-9 _-]/g, "").trim()}` : "";
 
-  async function queuePlace() {
-    if (!license) return;
+  async function queuePlace(): Promise<boolean> {
+    if (!license) return false;
     const { error } = await supabase.from("maker_jobs").insert({ kind: "license", model_ids: [], items: [license.id], note: "" });
-    if (error) { setError(error.message); return; }
+    if (error) { setError(error.message); return false; }
     setNotice("Opdracht staat klaar voor de agent. Die zet de bestanden in de bibliotheek en bouwt de Catalogus opnieuw.");
     loadJobs();
+    return true;
+  }
+
+  /** Knop "Downloaden en in de Catalogus zetten": bestanden via de extensie, daarna de opdracht voor de agent. */
+  async function downloadAndPlace() {
+    if (!license || !toFetch.length) return;
+    setError(null); setNotice(null); setNoExtension(false); setDlFailed([]);
+    setDl({ done: 0, total: toFetch.length, bytes: 0 });
+    try {
+      const r = await downloadViaExtension(supabase, license, toFetch, setDl);
+      setDlFailed(r.failed);
+      if (r.ok.length) {
+        const mb = Math.round(r.ok.reduce((a, x) => a + x.size, 0) / 1e6);
+        if (await queuePlace()) setNotice(`${r.ok.length} bestand${r.ok.length === 1 ? "" : "en"} gedownload (${mb} MB). De agent zet ze nu in de bibliotheek en de Catalogus; dat duurt een paar minuten.`);
+      } else setError("Er is niets gedownload. Zie hieronder waarom.");
+    } catch (e: any) {
+      if (e.message === "NO_EXTENSION") setNoExtension(true);
+      else if (e.message === "OLD_EXTENSION") setError("Je MakerWorld-hulp is een oudere versie zonder downloads. Open chrome://extensions en klik bij MakerWorld-hulp op het herlaad-icoon (de map moet de nieuwe versie bevatten).");
+      else setError(e.message ?? String(e));
+    }
+    setDl(null);
   }
 
   if (!ready) return null;
@@ -267,9 +290,11 @@ export default function LicenseModelsPage() {
           {toFetch.length > 0 ? (
             <>
               <p className="muted" style={{ marginTop: 0 }}>
-                {toFetch.length} model{toFetch.length === 1 ? "" : "len"} op <b>Overnemen</b> staan nog niet in de Catalogus. Download de bestanden (3MF of STL) van
-                MakerWorld naar <span className="mono">{inbox}</span>, of vraag het aan Claude. Daarna zet de agent ze in de bibliotheek
-                ({license.folder || "3D-Print/" + license.artist}) met de foto van MakerWorld, en kun je er in de Catalogus een product van maken.
+                {toFetch.length} model{toFetch.length === 1 ? "" : "len"} op <b>Overnemen</b> staan nog niet in de Catalogus.
+                {license.platform === "makerworld" ? <> Klik op <b>Downloaden en in de Catalogus zetten</b>: de extensie MakerWorld-hulp downloadt de 3MF
+                (standaard-printprofiel) met je eigen login, en de agent zet ze in de bibliotheek ({license.folder || "3D-Print/" + license.artist}) met de
+                foto van MakerWorld. </> : <> Download de bestanden (3MF of STL) naar <span className="mono">{inbox}</span> en klik op de knop. </>}
+                Een eigen bestand (bv. een ander profiel of STL) kan ook: zet het in <span className="mono">{inbox}</span> met het model-id vooraan in de naam.
               </p>
               <details>
                 <summary className="muted">Lijst om te downloaden</summary>
@@ -277,9 +302,30 @@ export default function LicenseModelsPage() {
                   {toFetch.map((m) => <li key={m.source_id}><a href={m.url} target="_blank" rel="noopener noreferrer">{m.title}</a> <span className="muted mono">({m.source_id})</span></li>)}
                 </ul>
               </details>
-              <button className="btn" style={{ marginTop: 8 }} onClick={queuePlace} disabled={jobs.some((j) => j.status === "queued" || j.status === "running")}>
-                Gedownloade bestanden in de Catalogus zetten
-              </button>
+              <div className="row" style={{ marginTop: 8, gap: 8, flexWrap: "wrap" }}>
+                {license.platform === "makerworld" && (
+                  <button className="btn" onClick={downloadAndPlace} disabled={!!dl || jobs.some((j) => j.status === "queued" || j.status === "running")}>
+                    {dl ? `Downloaden ${dl.done + 1 > dl.total ? dl.total : dl.done + 1}/${dl.total}...` : `Downloaden en in de Catalogus zetten (${toFetch.length})`}
+                  </button>
+                )}
+                <button className="btn secondary" onClick={queuePlace} disabled={!!dl || jobs.some((j) => j.status === "queued" || j.status === "running")}
+                  title={`Bestanden die al in ${inbox} staan`}>
+                  Bestanden uit de Inbox in de Catalogus zetten
+                </button>
+              </div>
+              {dl && (
+                <p className="muted" style={{ margin: "8px 0 0" }}>
+                  {dl.current ? <>Bezig met <b>{dl.current}</b> · </> : null}{Math.round(dl.bytes / 1e6)} MB binnen. Laat deze pagina open tot het klaar is.
+                </p>
+              )}
+              {dlFailed.length > 0 && (
+                <div className="warning" style={{ marginTop: 8 }}>
+                  Niet gedownload:
+                  <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+                    {dlFailed.map((f) => <li key={f.id}><a href={`https://makerworld.com/en/models/${f.id}`} target="_blank" rel="noopener noreferrer">{f.title}</a>: {f.error}</li>)}
+                  </ul>
+                </div>
+              )}
             </>
           ) : <p className="muted" style={{ marginTop: 0 }}>Alles wat op Overnemen staat, zit in de Catalogus.</p>}
           {jobs.map((j) => (
