@@ -14,7 +14,10 @@ en laat Claude Code die afwerken:
     gravureontwerpen, niets gekopieerd) en een voorbeeldfoto; daarna de catalogus opnieuw bouwen (eigen kaartje);
   - soort 'split' (knop "Bundel opsplitsen"): volgens SPLIT_PROMPT.md een model dat eigenlijk een map met veel losse
     modellen is, opsplitsen in submappen (Claude kopieert enkel). Lukte dat, dan zet dit script de bundel als
-    verzamelmap in _catalog/sources.json (met backup), bouwt de catalogus opnieuw en haalt het bundelkaartje weg.
+    verzamelmap in _catalog/sources.json (met backup), bouwt de catalogus opnieuw en haalt het bundelkaartje weg;
+  - soort 'license' (knop "Gedownloade bestanden in de Catalogus zetten" bij Licenties): zonder Claude de gedownloade
+    modellen uit _Inbox/_Licenties/<artiest> in de bibliotheek zetten (tools/licenses/place_downloads.py);
+  - elke dag: herinneringsmail voor licenties die binnen 30 dagen vervallen (tools/licenses/license_reminders.py).
 Claude draait in de modus "dontAsk": alleen wat in claude-settings.json toegelaten is mag, de rest wordt geweigerd.
 Na één opdracht (of na een uur zonder opdracht) stopt het script; de container start het opnieuw, zodat een
 nieuwe versie uit de repo (/src, bijgehouden door auto-deploy) vanzelf gebruikt wordt."""
@@ -35,7 +38,7 @@ POLL_S = 30
 IDLE_EXIT_S = 3600
 JOB_TIMEOUT_S = 6 * 3600
 TAIL_LINES = 60
-VERSION = '13'
+VERSION = '14'
 ORDERS_SYNC_MIN = 10          # bestellingen uit WooCommerce ophalen (orders_sync.py)
 MATCH_EVERY_H = 24            # shopproducten <-> catalogusmodellen voorstellen (match_shop_files.py)
 # Techniekmappen in de Inbox: zet je iets in _Inbox/Resin, dan weet de agent dat het een resinprint is (enz.).
@@ -162,16 +165,21 @@ def move_done(name):
 
 def background_loop():
     """Los van de opdrachten: bestellingen synchroniseren en (dagelijks) bestanden bij shopproducten voorstellen."""
-    stamp = os.path.join(LOGS, 'last_match_shop_files')
+    def daily(name):   # (stempelbestand, of het weer tijd is)
+        stamp = os.path.join(LOGS, f'last_{name}')
+        return stamp, not os.path.exists(stamp) or time.time() - os.path.getmtime(stamp) > MATCH_EVERY_H * 3600
     while True:
-        for script, due in (('orders_sync.py', True), ('shop_links.py', True),
-                            ('match_shop_files.py', not os.path.exists(stamp) or time.time() - os.path.getmtime(stamp) > MATCH_EVERY_H * 3600)):
+        match_stamp, match_due = daily('match_shop_files')
+        lic_stamp, lic_due = daily('license_reminders')
+        for script, due, stamp in (('maker/orders_sync.py', True, None), ('maker/shop_links.py', True, None),
+                                   ('maker/match_shop_files.py', match_due, match_stamp),
+                                   ('licenses/license_reminders.py', lic_due and time.localtime().tm_hour >= 8, lic_stamp)):
             if not due: continue
             try:
-                r = subprocess.run(['python3', f'/src/tools/maker/{script}'], capture_output=True, text=True, timeout=1800)
+                r = subprocess.run(['python3', f'/src/tools/{script}'], capture_output=True, text=True, timeout=1800)
                 out = (r.stdout + r.stderr).strip().splitlines()
                 if out: print(f'{script}: {out[-1]}', flush=True)
-                if script == 'match_shop_files.py' and r.returncode == 0:
+                if stamp and r.returncode == 0:
                     os.makedirs(LOGS, exist_ok=True); open(stamp, 'w').close()
             except Exception as e:
                 print(f'{script} mislukt: {e}', flush=True)
@@ -361,8 +369,20 @@ def run_set_job(job):
               results={m: {'status': 'ok', 'note': 'in de set'} for m in job['model_ids']})
 
 
+def run_license_job(job):
+    """Gedownloade licentiemodellen in de bibliotheek zetten; het script werkt de opdracht zelf bij."""
+    jid = job['id']
+    status['text'] = 'bezig met licentiemodellen in de bibliotheek zetten'
+    lic = (job.get('items') or [''])[0]
+    r = subprocess.run(['python3', '/src/tools/licenses/place_downloads.py', lic, '--job', jid], capture_output=True, text=True, timeout=JOB_TIMEOUT_S)
+    if r.returncode != 0:
+        patch_job(jid, status='failed', finished_at=now(), progress='licentiemodellen niet verwerkt',
+                  log_tail='\n'.join((r.stdout + r.stderr).strip().splitlines()[-TAIL_LINES:]))
+
+
 def run_job(job):
     if job.get('kind') == 'set': return run_set_job(job)
+    if job.get('kind') == 'license': return run_license_job(job)
     jid = job['id']; inbox_job = job.get('kind') == 'inbox'; split_job = job.get('kind') == 'split'
     os.makedirs(WORK, exist_ok=True); os.makedirs(LOGS, exist_ok=True)
     # actuele shoplijst, zodat de agent kan nakijken of een model al in de shop staat

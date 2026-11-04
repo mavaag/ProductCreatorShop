@@ -648,7 +648,8 @@ function AgentPanel({ waiting, titles, onJobFinished }: {
               const isInbox = j.kind === "inbox";
               const isSplit = j.kind === "split";
               const isSetJob = j.kind === "set";
-              const keys = isInbox ? (j.items ?? []) : j.model_ids;
+              const isLicense = j.kind === "license";
+              const keys = isInbox ? (j.items ?? []) : isLicense ? Object.keys(j.results ?? {}) : j.model_ids;
               // inbox-opdracht: resultaten per inbox-item, plus eventueel per nieuw model (bij "daarna meteen verwerken")
               const extra = isInbox ? Object.keys(j.results ?? {}).filter((k) => !keys.includes(k)) : [];
               const res = keys.map((k) => j.results?.[k]).filter(Boolean) as { status: string }[];
@@ -659,7 +660,7 @@ function AgentPanel({ waiting, titles, onJobFinished }: {
                   <tr>
                     <td className="mono">
                       {new Date(j.created_at).toLocaleString("nl-BE", { dateStyle: "short", timeStyle: "short" })} ·{" "}
-                      {isInbox ? `Inbox, ${keys.length} item${keys.length === 1 ? "" : "s"}` : isSplit ? "Bundel opsplitsen"
+                      {isLicense ? "Licentiemodellen in de bibliotheek" : isInbox ? `Inbox, ${keys.length} item${keys.length === 1 ? "" : "s"}` : isSplit ? "Bundel opsplitsen"
                         : isSetJob ? `Set "${j.items?.[0] ?? ""}" (${keys.length} ontwerpen)` : `${keys.length} model${keys.length === 1 ? "" : "len"}`}
                     </td>
                     <td style={{ color: j.status === "failed" ? "var(--rust)" : j.status === "done" ? "var(--moss)" : j.status === "running" ? "var(--cyan)" : undefined }}>

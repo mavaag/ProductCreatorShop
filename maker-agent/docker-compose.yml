@@ -25,3 +25,4 @@ services:
       - /volume1/Docker/supabase/.env:/volume1/Docker/supabase/.env:ro  # service-key voor tools/maker/supa.py
       - /volume1/Docker/product-app/src:/src:ro  # de repo (agent-code, tools/maker), bijgehouden door auto-deploy
       - /volume1/Docker/maker-agent/home:/home/agent  # Claude-instellingen, werkmap, logboeken
+      - /volume1/Docker/maker-agent/notify.env:/run/notify.env:ro  # SMTP voor de licentieherinneringen: kopie van auto-deploy/notify.env, eigenaar 1000 (zie README)

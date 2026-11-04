@@ -2,6 +2,7 @@ import "./globals.css";
 import Link from "next/link";
 import { Rajdhani, Share_Tech_Mono, Orbitron } from "next/font/google";
 import { DialogHost } from "@/components/DialogHost";
+import { LicenseAlert } from "@/components/LicenseAlert";
 
 const sans = Rajdhani({
   subsets: ["latin"],
@@ -44,6 +45,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="navlinks">
             <Link href="/products">Producten</Link>
             <Link href="/catalog">Catalogus</Link>
+            <Link href="/licenses">Licenties</Link>
             <Link href="/collections">Collecties</Link>
             <Link href="/machines">Machines</Link>
             <Link href="/materials">Materialen</Link>
@@ -58,7 +60,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Link href="/help" title="Handleiding">Help</Link>
           </div>
         </nav>
-        <main className="container">{children}</main>
+        <main className="container"><LicenseAlert />{children}</main>
         <DialogHost />
       </body>
     </html>

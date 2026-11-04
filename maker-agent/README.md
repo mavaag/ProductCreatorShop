@@ -46,6 +46,20 @@ documenten. Claude kopieert alleen; `agent.py` verplaatst daarna de gelukte item
 die map automatisch op: items die er langer dan `INBOX_RETENTION_DAYS` dagen (standaard 14) staan, worden verwijderd.
 Mislukte items blijven in de Inbox staan. Migratie: `supabase/migration_020_maker_inbox.sql`.
 
+## Licenties
+Bij **Licenties** in de beheertool staan je betaalde licenties (migratie `supabase/migration_041_licenses.sql`).
+- Opdracht `license` (knop "Gedownloade bestanden in de Catalogus zetten"): `tools/licenses/place_downloads.py` zet de
+  bestanden uit `_Inbox/_Licenties/<artiest>` in de bibliotheek (`<map van de licentie>/<titel> [MW<id>]`), met de
+  coverfoto, `_technique.txt` en `_source.json`, bouwt de catalogus opnieuw en koppelt de modellen. Zonder Claude.
+- Elke dag na 08:00: `tools/licenses/license_reminders.py` mailt 30 dagen voor een licentie vervalt (één keer per
+  vervaldatum). De mail gebruikt een kopie van de SMTP-instellingen van auto-deploy, leesbaar voor de agent:
+
+      sudo install -m 600 -o 1000 -g 100 /volume1/Docker/auto-deploy/notify.env /volume1/Docker/maker-agent/notify.env
+      sudo docker compose -f /volume1/Docker/product-app/src/maker-agent/docker-compose.yml up -d
+
+  Testen zonder te mailen: `sudo docker exec maker-agent python3 /src/tools/licenses/license_reminders.py --dry-run`.
+- Modellenlijst importeren uit een bestand (bv. door Claude): `python3 /src/tools/licenses/import_json.py <handle> <lijst.json>`.
+
 ## Beheer
 - Logboek van de container: `sudo docker logs -f maker-agent`, of Portainer > Containers > maker-agent > Logs.
 - Volledige log per opdracht: `/volume1/Docker/maker-agent/home/logs/<opdracht-id>.log`.
