@@ -251,3 +251,39 @@ export function categorize(title: string): { theme: string; type: string; style:
   const style = has("skelet") ? "Skeletal" : has("knit") ? "Knitted" : has("realistic", "cyberpunk") ? "Realistic" : "Cute / flexi";
   return { theme, type, style };
 }
+
+/* ---------- Chrome-extensie "MakerWorld-hulp" (browser-extension/makerworld-helper) ---------- */
+
+type ExtMsg = { source: "apfy-ext"; type: string; reqId?: string; version?: string; ok?: boolean; error?: string; uid?: string; handle?: string; name?: string; items?: ImportItem[] };
+
+function askExtension(msg: Record<string, unknown>, answerType: string, timeoutMs: number): Promise<ExtMsg | null> {
+  return new Promise((resolve) => {
+    const reqId = Math.random().toString(36).slice(2);
+    const timer = setTimeout(() => { window.removeEventListener("message", on); resolve(null); }, timeoutMs);
+    function on(e: MessageEvent) {
+      const d = e.data as ExtMsg;
+      if (e.source !== window || e.origin !== window.location.origin || d?.source !== "apfy-ext" || d.type !== answerType || d.reqId !== reqId) return;
+      clearTimeout(timer); window.removeEventListener("message", on); resolve(d);
+    }
+    window.addEventListener("message", on);
+    window.postMessage({ source: "apfy-tool", reqId, ...msg }, window.location.origin);
+  });
+}
+
+/** Versie van de geïnstalleerde extensie, of null als ze niet (aan) staat. */
+export async function extensionVersion(): Promise<string | null> {
+  const r = await askExtension({ type: "ping" }, "pong", 1500);
+  return r?.version ?? null;
+}
+
+/** Nieuwste modellenlijst via de extensie (in je eigen Chrome, met je MakerWorld-login). */
+export async function fetchViaExtension(license: License): Promise<ImportPayload> {
+  if (license.platform !== "makerworld") throw new Error("Automatisch ophalen kan (nog) alleen voor MakerWorld.");
+  const handle = license.handle || (license.profile_url.match(/@([A-Za-z0-9_.-]+)/)?.[1] ?? "");
+  if (!handle) throw new Error("Vul bij de licentie de link naar het profiel op MakerWorld in (bv. https://makerworld.com/en/@PinkyWings).");
+  if (!(await extensionVersion())) throw new Error("NO_EXTENSION");
+  const r = await askExtension({ type: "mw-models", uid: license.platform_user_id ?? "", handle }, "mw-models-result", 180000);
+  if (!r) throw new Error("De extensie gaf binnen 3 minuten geen antwoord. Ben je ingelogd op makerworld.com in deze Chrome?");
+  if (!r.ok || !r.items) throw new Error(r.error || "Ophalen bij MakerWorld mislukt.");
+  return { type: "license-import", platform: "makerworld", uid: r.uid, handle: r.handle, name: r.name, items: r.items };
+}

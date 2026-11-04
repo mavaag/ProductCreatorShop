@@ -210,10 +210,13 @@ export default function LicensesPage() {
       <div className="card" style={{ marginTop: 24 }}>
         <h3 style={{ marginTop: 0 }}>Modellen van een artiest ophalen of bijwerken</h3>
         <p className="muted" style={{ marginTop: 0 }}>
-          MakerWorld laat geen automatische opvragingen van servers toe, dus het ophalen gebeurt in je eigen browser. Sleep de knop
-          hieronder eenmalig naar je bladwijzerbalk. Open daarna het profiel van de artiest op MakerWorld, klik op de bladwijzer en
-          kies <b>Kopieer en open de beheertool</b>. In de tool plak je de lijst; nieuwe modellen krijgen het label <b>Nieuw</b>.
-          Je kan het ook aan Claude vragen ("werk de modellen van PinkyWings bij").
+          Open de licentie en klik op <b>Nieuwste modellen ophalen</b>. Dat loopt via de Chrome-extensie <b>MakerWorld-hulp</b>
+          (eenmalig te installeren per pc, de tool legt uit hoe): MakerWorld laat geen opvragingen van servers toe, dus de lijst
+          wordt in je eigen Chrome opgehaald, met je eigen login. Nieuwe modellen krijgen het label <b>Nieuw</b>.
+        </p>
+        <p className="muted">
+          Reserve zonder extensie: sleep de knop hieronder naar je bladwijzerbalk, klik erop op het profiel van de artiest en
+          kies <b>Kopieer en open de beheertool</b>; dan plak je de lijst. Je kan het ook aan Claude vragen.
         </p>
         {bm && (
           // eslint-disable-next-line react/jsx-no-script-url

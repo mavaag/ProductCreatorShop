@@ -8,7 +8,7 @@ import { useAuthGuard } from "@/lib/useAuthGuard";
 import { MakerJob } from "@/lib/maker";
 import {
   License, LicenseModel, LicenseRefresh, ModelPick, PICK_LABELS, PLATFORM_LABELS, REFRESHABLE, categorize, firstImportTimes,
-  formatDate, importModels, isNew, licenseState, parseImport, thumbUrl,
+  ImportPayload, fetchViaExtension, formatDate, importModels, isNew, licenseState, parseImport, thumbUrl,
 } from "@/lib/licenses";
 
 type Status = "" | ModelPick | "open" | "new" | "catalog" | "removed";
@@ -47,6 +47,8 @@ export default function LicenseModelsPage() {
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const [importing, setImporting] = useState(false);
+  const [fetching, setFetching] = useState(false);
+  const [noExtension, setNoExtension] = useState(false);
 
   async function load() {
     try {
@@ -141,15 +143,15 @@ export default function LicenseModelsPage() {
     }
   }
 
-  async function doImport(text: string) {
+  async function doImport(input: string | ImportPayload, source = "paste") {
     if (!license) return;
-    setImporting(true); setNotice(null);
+    setImporting(true); setNotice(null); setNoExtension(false);
     try {
-      const payload = parseImport(text);
+      const payload = typeof input === "string" ? parseImport(input) : input;
       if (payload.handle && license.handle && payload.handle.toLowerCase() !== license.handle.toLowerCase()) {
         throw new Error(`Deze lijst is van @${payload.handle}, maar deze licentie is van @${license.handle}. Open het juiste profiel op MakerWorld.`);
       }
-      const r = await importModels(supabase, license, payload, "paste");
+      const r = await importModels(supabase, license, payload, source);
       setNotice(`${r.total} modellen bijgewerkt: ${r.added} nieuw${r.removed ? `, ${r.removed} niet meer online` : ""}${r.returned ? `, ${r.returned} terug online` : ""}.`);
       setPasteText(""); setPasteOpen(false);
       if (r.added > 0) setStatus("new");
@@ -158,6 +160,21 @@ export default function LicenseModelsPage() {
       setError(e.message ?? String(e));
     }
     setImporting(false);
+  }
+
+  /** Knop "Nieuwste modellen ophalen": via de Chrome-extensie MakerWorld-hulp, alles blijft in de tool. */
+  async function fetchLatest() {
+    if (!license) return;
+    setFetching(true); setError(null); setNotice(null); setNoExtension(false);
+    try {
+      const payload = await fetchViaExtension(license);
+      setFetching(false);
+      await doImport(payload, "extension");
+    } catch (e: any) {
+      if (e.message === "NO_EXTENSION") setNoExtension(true);
+      else setError(e.message ?? String(e));
+    }
+    setFetching(false);
   }
 
   async function pasteFromClipboard() {
@@ -200,15 +217,30 @@ export default function LicenseModelsPage() {
           {license.terms && <p className="muted" style={{ margin: "4px 0 0" }}>Licentie: {license.terms}</p>}
         </div>
         <div className="row">
-          {REFRESHABLE.includes(license.platform) && license.profile_url && (
-            <a className="btn secondary" href={license.profile_url} target="_blank" rel="noopener noreferrer" title="Open het profiel en klik daar op je bladwijzer 'Modellen ophalen'">Profiel openen</a>
+          {REFRESHABLE.includes(license.platform) && (
+            <button className="btn" disabled={fetching || importing} onClick={fetchLatest}
+              title="Haalt de lijst op via de Chrome-extensie MakerWorld-hulp, met je eigen MakerWorld-login">
+              {fetching ? "Ophalen bij MakerWorld..." : importing ? "Opslaan..." : "Nieuwste modellen ophalen"}
+            </button>
           )}
-          <button className="btn" onClick={() => setPasteOpen(!pasteOpen)}>{models.length ? "Lijst bijwerken" : "Lijst toevoegen"}</button>
+          <button className="btn secondary" onClick={() => setPasteOpen(!pasteOpen)} title="Lijst plakken (via de bladwijzer op MakerWorld)">Lijst plakken</button>
         </div>
       </div>
 
       {error && <p className="warning" onClick={() => setError(null)}>{error}</p>}
       {notice && <p style={{ color: "var(--moss)" }}>{notice}</p>}
+
+      {noExtension && (
+        <div className="card" style={{ marginTop: 12, borderLeft: "3px solid var(--yellow)" }}>
+          <p style={{ marginTop: 0 }}><b>De Chrome-extensie MakerWorld-hulp is niet gevonden.</b> Die is nodig om de lijst vanuit de tool op te halen (MakerWorld laat geen opvragingen van servers toe). Eenmalig installeren per pc:</p>
+          <ol style={{ margin: 0, paddingLeft: 20 }}>
+            <li>Open <span className="mono">chrome://extensions</span> en zet rechtsboven <b>Ontwikkelaarsmodus</b> aan.</li>
+            <li>Klik <b>Uitgepakte extensie laden</b> en kies de map <span className="mono">browser-extension\makerworld-helper</span> uit de repo (bv. <span className="mono">D:\Development\WebShopProductCreator\browser-extension\makerworld-helper</span>).</li>
+            <li>Herlaad deze pagina en klik opnieuw op <b>Nieuwste modellen ophalen</b>. Zorg dat je in Chrome ingelogd bent op makerworld.com.</li>
+          </ol>
+          <p className="muted" style={{ marginBottom: 0 }}>Geen extensie op deze pc? Gebruik dan <b>Lijst plakken</b>, of vraag het aan Claude.</p>
+        </div>
+      )}
 
       {pasteOpen && (
         <div className="card" style={{ marginTop: 12 }}>
