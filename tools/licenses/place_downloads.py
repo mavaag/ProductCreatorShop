@@ -3,10 +3,10 @@
 Gebruik:  python3 tools/licenses/place_downloads.py <licentie: id | handle | artiest> [--job <maker_jobs-id>] [--dry-run]
 
 1. Bestanden en mappen in _Inbox/_Licenties/<artiest>/ koppelen aan de modellen die op "Overnemen" staan:
-   - exact als de naam met het MakerWorld-id begint ("1634871 - ...") of "[MW1634871]" bevat;
+   - exact als de naam met het MakerWorld-id begint ("1634871 - ...") of "[MW1634871]" / "[SF4560]" (STLFlix) bevat;
    - anders op gelijkenis met de titel (minstens 0,6 en duidelijk beter dan het tweede beste model).
    .3mf blijft heel (dat is zelf een zip); een gewone .zip wordt uitgepakt.
-2. Elk gekoppeld item verhuist naar <map van de licentie>/<titel> [MW<id>]/ met _technique.txt (fdm),
+2. Elk gekoppeld item verhuist naar <map van de licentie>/<titel> [MW<id>]/ (STLFlix: [SF<id>]) met _technique.txt (fdm),
    _source.json (licentie, artiest, link) en de coverfoto van het platform (wordt de thumbnail in de Catalogus).
 3. build_catalog.py + sync_catalog.py, daarna license_models.maker_model_id invullen op basis van "[MW<id>]" in het pad.
 Vooraf: bestanden die de extensie MakerWorld-hulp via de beheertool klaarzette in de bucket license-inbox
@@ -21,13 +21,19 @@ supa = L.supa
 ROOT = supa.MAKER_ROOT
 CATALOG = os.path.join(ROOT, '_catalog')
 IGNORE = {'desktop.ini', 'thumbs.db', '.ds_store'}
-MW = re.compile(r'\[MW(\d+)\]')
+MW = re.compile(r'\[(?:MW|SF|ID)(\d+)\]')   # model-id van het platform in een map- of bestandsnaam
+PREFIX = {'makerworld': 'MW', 'stlflix': 'SF'}
+
+
+def prefix(lic):
+    return PREFIX.get(lic.get('platform'), 'ID')
 
 
 def norm(s):
     s = os.path.splitext(s)[0] if re.search(r'\.(3mf|stl|zip|step|stp|obj)$', s, re.I) else s
-    s = re.sub(r'[_\-–—.,!()&+]+', ' ', s.lower())
-    s = re.sub(r'\b(by )?pinky ?wings\b|\b(v\d+|final|plate ?\d*|model|files?)\b', ' ', s)
+    s = re.sub(r'_[0-9a-f]{10}$', '', s, flags=re.I)        # STLFlix: "Vault_Tower_2b1971f242.zip"
+    s = re.sub(r'[_\-–—.,!()&+\'’]+', ' ', s.lower())
+    s = re.sub(r'\b(by )?pinky ?wings\b|\bstl ?flix\b|\b(v\d+|final|plate ?\d*|model|files?)\b', ' ', s)
     return re.sub(r'\s+', ' ', s).strip()
 
 
@@ -98,7 +104,7 @@ def pull_uploads(lic, inbox, say, dry):
         for base in complete:
             parts = sorted(n for n in names if n.startswith(base + '.part'))
             if not parts: continue
-            dest = os.path.join(inbox, f'{sid} {L.safe_name(base, 150)}')
+            dest = os.path.join(inbox, f'[{prefix(lic)}{sid}] {L.safe_name(base, 150)}')
             if dry:
                 say(f'- {sid} {base}: klaar in de opslag ({len(parts)} stuk(ken))'); pulled += 1; continue
             os.makedirs(inbox, exist_ok=True)
@@ -135,7 +141,7 @@ def place(src, dest, dry):
 
 
 def link_catalog(lic, folder):
-    """maker_model_id invullen voor elk model met "[MW<id>]" in het pad onder de map van de licentie."""
+    """maker_model_id invullen voor elk model met "[MW<id>]" (STLFlix "[SF<id>]") in het pad onder de map van de licentie."""
     q = urllib_quote(folder + '/%')
     rows = supa.rest('GET', f'maker_models?path=like.{q}&select=id,path') or []
     linked = 0
@@ -177,7 +183,7 @@ def main():
         if not sid:
             results[name] = {'status': 'skipped', 'note': why}; say(f'- {name}: niet gekoppeld ({why})'); continue
         m = todo[sid]
-        dest = os.path.join(ROOT, folder, f'{L.safe_name(m["title"])} [MW{sid}]')
+        dest = os.path.join(ROOT, folder, f'{L.safe_name(m["title"])} [{prefix(lic)}{sid}]')
         try:
             place(os.path.join(inbox, name), dest, dry)
             if not dry:

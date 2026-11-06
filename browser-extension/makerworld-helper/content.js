@@ -2,7 +2,7 @@
 // de pagina stuurt {source: "apfy-tool", type, reqId, ...} met window.postMessage, dit script geeft het door aan
 // background.js en stuurt het antwoord terug als {source: "apfy-ext", type: "<type>-result", reqId, ...}.
 const VERSION = chrome.runtime.getManifest().version;
-const FORWARD = new Set(["mw-models", "mw-file", "mw-chunk", "mw-release", "mw-done"]);
+const FORWARD = new Set(["mw-models", "mw-file", "mw-chunk", "mw-release", "mw-done", "sf-models"]);
 
 function reply(msg) {
   window.postMessage({ source: "apfy-ext", version: VERSION, ...msg }, window.location.origin);
