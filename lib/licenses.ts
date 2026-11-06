@@ -57,7 +57,7 @@ export const PLATFORM_LABELS: Record<Platform, string> = {
 /** Voor deze platformen kan de modellenlijst opgehaald worden (knop "Modellen ophalen" op het profiel). */
 export const REFRESHABLE: Platform[] = ["makerworld", "stlflix"];
 /** Voor deze platformen downloadt de extensie de bestanden zelf; bij de andere download je ze zelf (STLFlix: botcontrole bij elke download). */
-export const AUTO_DOWNLOAD: Platform[] = ["makerworld"];
+export const AUTO_DOWNLOAD: Platform[] = ["makerworld", "stlflix"];
 
 export const PICK_LABELS: Record<ModelPick, string> = { yes: "Overnemen", maybe: "Misschien", no: "Nee" };
 
@@ -323,6 +323,7 @@ function versionAtLeast(v: string, min: string): boolean {
 export const LICENSE_INBOX_BUCKET = "license-inbox";
 export const DOWNLOAD_MIN_VERSION = "1.1.0";
 export const STLFLIX_MIN_VERSION = "1.2.0";
+export const STLFLIX_DOWNLOAD_MIN_VERSION = "1.3.0";
 
 export type DownloadProgress = { done: number; total: number; current?: string; bytes: number };
 export type DownloadResult = { ok: { id: string; title: string; name: string; size: number }[]; failed: { id: string; title: string; error: string }[] };
@@ -344,21 +345,25 @@ function storageName(name: string): string {
  * en in de Catalogus. Gooit "NO_EXTENSION" of "OLD_EXTENSION" als de extensie ontbreekt of te oud is.
  */
 export async function downloadViaExtension(
-  supabase: SupabaseClient, license: License, models: { source_id: string; title: string }[],
-  onProgress: (p: DownloadProgress) => void,
+  supabase: SupabaseClient, license: License, models: { source_id: string; title: string; url?: string }[],
+  onProgress: (p: DownloadProgress) => void, shouldStop: () => boolean = () => false,
 ): Promise<DownloadResult> {
-  if (license.platform !== "makerworld") throw new Error("Automatisch downloaden kan (nog) alleen voor MakerWorld.");
+  const sf = license.platform === "stlflix";
+  if (!sf && license.platform !== "makerworld") throw new Error("Automatisch downloaden kan (nog) alleen voor MakerWorld en STLFlix.");
   const version = await extensionVersion();
   if (!version) throw new Error("NO_EXTENSION");
-  if (!versionAtLeast(version, DOWNLOAD_MIN_VERSION)) throw new Error("OLD_EXTENSION");
+  if (!versionAtLeast(version, sf ? STLFLIX_DOWNLOAD_MIN_VERSION : DOWNLOAD_MIN_VERSION)) throw new Error("OLD_EXTENSION");
   const result: DownloadResult = { ok: [], failed: [] };
   let bytes = 0;
   try {
     for (const [n, m] of models.entries()) {
+      if (shouldStop()) break;
       onProgress({ done: n, total: models.length, current: m.title, bytes });
       try {
-        const f = await askExtension({ type: "mw-file", id: m.source_id }, "mw-file-result", 300000);
-        if (!f) throw new Error("geen antwoord van de extensie binnen 5 minuten");
+        // STLFlix: de extensie opent het model en wacht tot jij op FILES klikt (max. 15 minuten per model)
+        const f = sf ? await askExtension({ type: "sf-file", id: m.source_id, url: m.url ?? "" }, "sf-file-result", 16 * 60000)
+          : await askExtension({ type: "mw-file", id: m.source_id }, "mw-file-result", 300000);
+        if (!f) throw new Error(`geen antwoord van de extensie binnen ${sf ? 16 : 5} minuten`);
         if (!f.ok || !f.key || !f.chunks) throw new Error(f.error || "downloaden mislukt");
         const base = `${license.id}/${m.source_id}/${storageName(f.name || m.source_id + ".3mf")}`;
         try {

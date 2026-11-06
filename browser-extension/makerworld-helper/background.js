@@ -3,8 +3,10 @@
 // - mw-file / mw-chunk / mw-release / mw-done: het 3MF-bestand van een model downloaden (zoals de knop "Download 3MF")
 //   en het in stukken teruggeven aan de beheertool, die het voor de agent op de NAS klaarzet.
 // Werkt eerst rechtstreeks; lukt dat niet, dan via een tabblad op makerworld.com op de achtergrond.
-// - sf-models (1.2.0): de modellenlijst van de STLFlix-bibliotheek (platform.stlflix.com). Geen downloads: STLFlix heeft
-//   bij elke download een botcontrole, die doe je zelf.
+// - sf-models (1.2.0): de modellenlijst van de STLFlix-bibliotheek (platform.stlflix.com).
+// - sf-file (1.3.0): opent de modelpagina op STLFlix; JIJ klikt Download Files > FILES (STLFlix heeft bij elke download
+//   een botcontrole, die blijft bij jou). De extensie vangt die ene download van static.stlflix.com op, haalt het bestand
+//   zelf binnen (de link is na jouw klik even geldig), annuleert de kopie in je map Downloads en geeft het aan de tool.
 // Er gaat niets naar een andere website dan makerworld.com (en hun bestandsserver *.bblmw.com) en platform.stlflix.com.
 
 const PAGE = 50;
@@ -214,10 +216,54 @@ async function getStlflixModels() {
   }
 }
 
+// Eén model: tabblad openen, wachten tot jij op FILES klikt, die download opvangen.
+function sfFile(id, url) {
+  if (!/^\d{1,9}$/.test(String(id))) return Promise.reject(new Error("Ongeldig model-id."));
+  if (!/^https:\/\/platform\.stlflix\.com\/product\/[A-Za-z0-9_-]+$/.test(String(url || ""))) return Promise.reject(new Error("Geen geldige STLFlix-link bij dit model."));
+  return new Promise(async (resolve, reject) => {
+    let tabId = null, done = false;
+    const finish = async (err, val) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      chrome.downloads.onCreated.removeListener(onDl);
+      chrome.tabs.onRemoved.removeListener(onClosed);
+      if (tabId != null) await chrome.tabs.remove(tabId).catch(() => {});
+      err ? reject(err) : resolve(val);
+    };
+    const timer = setTimeout(() => finish(new Error("overgeslagen: binnen 15 minuten niet op FILES geklikt")), 15 * 60000);
+    function onClosed(closed) { if (closed === tabId) { tabId = null; finish(new Error("overgeslagen: tabblad gesloten")); } }
+    async function onDl(item) {
+      let u;
+      try { u = new URL(item.finalUrl || item.url); } catch (e) { return; }
+      if (u.hostname !== "static.stlflix.com") return;
+      // de kopie in je map Downloads stoppen; de extensie haalt het bestand zelf binnen
+      chrome.downloads.cancel(item.id).then(() => chrome.downloads.erase({ id: item.id })).catch(() => {});
+      try {
+        const r = await fetch(u.href);
+        if (!r.ok) throw new Error(`Download mislukt (${r.status}).`);
+        const bytes = new Uint8Array(await r.arrayBuffer());
+        const name = decodeURIComponent(u.pathname.split("/").pop() || `${id}.zip`);
+        const key = Math.random().toString(36).slice(2);
+        for (const [k, v] of files) if (Date.now() - v.at > 15 * 60000) files.delete(k);
+        files.set(key, { name, bytes, at: Date.now() });
+        finish(null, { key, name, size: bytes.length, chunks: Math.max(1, Math.ceil(bytes.length / CHUNK)) });
+      } catch (e) { finish(e); }
+    }
+    chrome.downloads.onCreated.addListener(onDl);
+    chrome.tabs.onRemoved.addListener(onClosed);
+    try {
+      const tab = await chrome.tabs.create({ url, active: true });
+      tabId = tab.id;
+    } catch (e) { finish(e); }
+  });
+}
+
 // ---------- berichten van de beheertool (via content.js) ----------
 
 const HANDLERS = {
   "sf-models": () => getStlflixModels(),
+  "sf-file": (m) => sfFile(m.id, m.url),
   "mw-models": (m) => getModels(m.uid, m.handle),
   "mw-file": (m) => getFile(m.id),
   "mw-chunk": async (m) => chunkB64(m.key, Number(m.index) || 0),
