@@ -1,15 +1,28 @@
 {
   "manifest_version": 3,
-  "name": "Any Prints For You - MakerWorld-hulp",
-  "version": "1.1.0",
-  "description": "Laat de beheertool modellenlijsten en modelbestanden van MakerWorld ophalen, in je eigen browser en met je eigen login.",
-  "permissions": ["scripting"],
-  "host_permissions": ["https://makerworld.com/*", "https://*.bblmw.com/*"],
-  "background": { "service_worker": "background.js" },
+  "name": "Any Prints For You - MakerWorld- en STLFlix-hulp",
+  "version": "1.2.0",
+  "description": "Laat de beheertool modellenlijsten (MakerWorld, STLFlix) en modelbestanden (MakerWorld) ophalen, in je eigen browser en met je eigen login.",
+  "permissions": [
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://makerworld.com/*",
+    "https://*.bblmw.com/*",
+    "https://platform.stlflix.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
-      "matches": ["https://products.anyprintsforyou.be/*", "http://localhost:3000/*"],
-      "js": ["content.js"],
+      "matches": [
+        "https://products.anyprintsforyou.be/*",
+        "http://localhost:3000/*"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_start"
     }
   ]

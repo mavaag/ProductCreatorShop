@@ -49,13 +49,15 @@ export type LicenseModel = {
 
 export type LicenseRefresh = { id: string; license_id: string; created_at: string; source: string; total: number; new_count: number; removed_count: number };
 
-export type Platform = "makerworld" | "printables" | "thangs" | "patreon" | "myminifactory" | "cults3d" | "other";
+export type Platform = "makerworld" | "printables" | "thangs" | "patreon" | "myminifactory" | "cults3d" | "stlflix" | "other";
 export const PLATFORM_LABELS: Record<Platform, string> = {
   makerworld: "MakerWorld", printables: "Printables", thangs: "Thangs", patreon: "Patreon",
-  myminifactory: "MyMiniFactory", cults3d: "Cults3D", other: "Ander platform",
+  myminifactory: "MyMiniFactory", cults3d: "Cults3D", stlflix: "STLFlix", other: "Ander platform",
 };
 /** Voor deze platformen kan de modellenlijst opgehaald worden (knop "Modellen ophalen" op het profiel). */
-export const REFRESHABLE: Platform[] = ["makerworld"];
+export const REFRESHABLE: Platform[] = ["makerworld", "stlflix"];
+/** Voor deze platformen downloadt de extensie de bestanden zelf; bij de andere download je ze zelf (STLFlix: botcontrole bij elke download). */
+export const AUTO_DOWNLOAD: Platform[] = ["makerworld"];
 
 export const PICK_LABELS: Record<ModelPick, string> = { yes: "Overnemen", maybe: "Misschien", no: "Nee" };
 
@@ -117,6 +119,7 @@ export function detectTrademark(title: string): string | null {
 export type ImportItem = {
   id: string; title: string; cover?: string | null; dl?: number; lk?: number; pr?: number;
   date?: string | null; w?: number | null; tm?: number | null; ni?: number | null; tags?: string[];
+  url?: string | null;            // link naar het model (STLFlix: /product/<slug>); anders afgeleid van het id
 };
 export type ImportPayload = { type: "license-import"; platform: Platform; uid?: string; handle?: string; name?: string; items: ImportItem[] };
 
@@ -148,6 +151,9 @@ export function modelUrl(platform: Platform, id: string): string {
 /** Kleinere thumbnail van de MakerWorld-CDN (de originele covers zijn tot 2 MB). */
 export function thumbUrl(cover: string | null): string | null {
   if (!cover) return null;
+  // STLFlix: zelfde beeld via hun CDN, verkleind (zoals op hun eigen site)
+  const sf = cover.match(/^https:\/\/s3\.[a-z0-9-]+\.amazonaws\.com\/static\.stlflix\.com\/([^?]+)$/);
+  if (sf) return `https://stlflix.b-cdn.net/${sf[1]}?width=400&format=webp`;
   return /bblmw\.com/.test(cover) && !cover.includes("?") ? `${cover}?x-oss-process=image/resize,w_320/format,webp` : cover;
 }
 
@@ -182,7 +188,7 @@ export async function importModels(supabase: SupabaseClient, license: License, p
   const seen = new Set(items.map((i) => i.id));
   const now = new Date().toISOString();
   const rows = items.map((i) => ({
-    license_id: license.id, source_id: i.id, title: i.title, url: modelUrl(license.platform, i.id), cover_url: i.cover ?? null,
+    license_id: license.id, source_id: i.id, title: i.title, url: i.url || modelUrl(license.platform, i.id), cover_url: i.cover ?? null,
     downloads: i.dl ?? 0, likes: i.lk ?? 0, prints: i.pr ?? 0, published_at: i.date || null,
     print_minutes: i.tm != null ? Math.round(i.tm / 60) : null, weight_g: i.w != null ? Math.round(i.w) : null, profiles: i.ni ?? null,
     tags: i.tags ?? [], trademark: detectTrademark(i.title), last_seen_at: now, removed_at: null,
@@ -235,7 +241,13 @@ box.appendChild(b);box.appendChild(c);})();`;
 }
 
 /** Ruwe indeling op naam (thema, soort, stijl) om te kunnen filteren; geen beslissing, enkel een hulp. */
-export function categorize(title: string): { theme: string; type: string; style: string } {
+export function categorize(title: string, tags: string[] = []): { theme: string; type: string; style: string } {
+  // STLFlix levert zelf categorieën (tags met voorvoegsel cat:/sub:, zie de extensie): die gebruiken
+  const cat = tags.find((x) => x.startsWith("cat:"));
+  if (cat) {
+    const sub = tags.find((x) => x.startsWith("sub:")) ?? tags.find((x) => x.startsWith("group:"));
+    return { theme: cat.slice(4), type: sub ? sub.slice(sub.indexOf(":") + 1) : "Overige", style: "Cute / flexi" };
+  }
   const t = title.toLowerCase();
   const has = (...ws: string[]) => ws.some((w) => new RegExp(`\\b${w}`).test(t));
   const theme = has("christmas", "santa", "gingerbread", "gingy", "reindeer", "snow", "grinch", "winter", "gnome", "ornament", "angel", "pine", "penguin", "deer", "flowstag", "candy", "evergreen", "xmas")
@@ -282,7 +294,16 @@ export async function extensionVersion(): Promise<string | null> {
 
 /** Nieuwste modellenlijst via de extensie (in je eigen Chrome, met je MakerWorld-login). */
 export async function fetchViaExtension(license: License): Promise<ImportPayload> {
-  if (license.platform !== "makerworld") throw new Error("Automatisch ophalen kan (nog) alleen voor MakerWorld.");
+  if (license.platform === "stlflix") {
+    const version = await extensionVersion();
+    if (!version) throw new Error("NO_EXTENSION");
+    if (!versionAtLeast(version, STLFLIX_MIN_VERSION)) throw new Error("OLD_EXTENSION");
+    const r = await askExtension({ type: "sf-models" }, "sf-models-result", 900000);
+    if (!r) throw new Error("De extensie gaf binnen 15 minuten geen antwoord. Ben je ingelogd op platform.stlflix.com in deze Chrome?");
+    if (!r.ok || !r.items) throw new Error(r.error || "Ophalen bij STLFlix mislukt.");
+    return { type: "license-import", platform: "stlflix", name: r.name, items: r.items };
+  }
+  if (license.platform !== "makerworld") throw new Error("Automatisch ophalen kan (nog) alleen voor MakerWorld en STLFlix.");
   const handle = license.handle || (license.profile_url.match(/@([A-Za-z0-9_.-]+)/)?.[1] ?? "");
   if (!handle) throw new Error("Vul bij de licentie de link naar het profiel op MakerWorld in (bv. https://makerworld.com/en/@PinkyWings).");
   if (!(await extensionVersion())) throw new Error("NO_EXTENSION");
@@ -301,6 +322,7 @@ function versionAtLeast(v: string, min: string): boolean {
 
 export const LICENSE_INBOX_BUCKET = "license-inbox";
 export const DOWNLOAD_MIN_VERSION = "1.1.0";
+export const STLFLIX_MIN_VERSION = "1.2.0";
 
 export type DownloadProgress = { done: number; total: number; current?: string; bytes: number };
 export type DownloadResult = { ok: { id: string; title: string; name: string; size: number }[]; failed: { id: string; title: string; error: string }[] };
@@ -365,5 +387,74 @@ export async function downloadViaExtension(
     await askExtension({ type: "mw-done" }, "mw-done-result", 10000);
   }
   onProgress({ done: models.length, total: models.length, bytes });
+  return result;
+}
+
+/* ---------- zelf gedownloade bestanden (STLFlix-zips) in de tool slepen ---------- */
+
+/** Naam van een download vergelijkbaar maken met een titel: "Vault_Tower_2b1971f242.zip" -> "vault tower". */
+export function normName(s: string): string {
+  return s.replace(/\.(zip|3mf|stl|rar|7z)$/i, "").replace(/_[0-9a-f]{10}$/i, "").replace(/[_\-–—.,!()&+'’]+/g, " ")
+    .toLowerCase().replace(/\b(stl ?flix|files?)\b/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/** Dice-coëfficiënt op tekenparen: snel en goed genoeg om een bestandsnaam bij een titel te zoeken. */
+function similarity(a: string, b: string): number {
+  if (a === b) return 1;
+  if (a.length < 2 || b.length < 2) return 0;
+  const pairs = (x: string) => {
+    const m = new Map<string, number>();
+    for (let i = 0; i < x.length - 1; i++) { const k = x.slice(i, i + 2); m.set(k, (m.get(k) ?? 0) + 1); }
+    return m;
+  };
+  const pa = pairs(a), pb = pairs(b);
+  let hit = 0;
+  pa.forEach((n, k) => { hit += Math.min(n, pb.get(k) ?? 0); });
+  return (2 * hit) / (a.length - 1 + b.length - 1);
+}
+
+/** Bij welk model hoort dit bestand? Exacte naam eerst, anders de beste gelijkenis (minstens 0,75 en duidelijk beter dan de tweede). */
+export function guessModel(fileName: string, models: { source_id: string; title: string }[]): string | null {
+  const n = normName(fileName);
+  const exact = models.filter((m) => normName(m.title) === n);
+  if (exact.length === 1) return exact[0].source_id;
+  const scores = models.map((m) => ({ id: m.source_id, s: similarity(n, normName(m.title)) })).sort((a, b) => b.s - a.s);
+  if (scores.length && scores[0].s >= 0.75 && scores[0].s - (scores[1]?.s ?? 0) >= 0.08) return scores[0].id;
+  return null;
+}
+
+/**
+ * Zelf gedownloade bestanden (bv. de zips van STLFlix) in stukken van 8 MB klaarzetten in de bucket license-inbox,
+ * op dezelfde manier als de extensie dat doet: <licentie>/<model-id>/<naam>.partNNN + <naam>.done.
+ * Daarna zet de agent (opdracht "license") ze in de bibliotheek en de Catalogus.
+ */
+export async function uploadOwnFiles(
+  supabase: SupabaseClient, license: License, files: { file: File; source_id: string }[],
+  onProgress: (p: DownloadProgress) => void,
+): Promise<DownloadResult> {
+  const CHUNK = 8 * 1024 * 1024;
+  const result: DownloadResult = { ok: [], failed: [] };
+  let bytes = 0;
+  for (const [n, { file, source_id }] of files.entries()) {
+    onProgress({ done: n, total: files.length, current: file.name, bytes });
+    try {
+      const base = `${license.id}/${source_id}/${storageName(file.name)}`;
+      const chunks = Math.max(1, Math.ceil(file.size / CHUNK));
+      for (let i = 0; i < chunks; i++) {
+        const { error } = await supabase.storage.from(LICENSE_INBOX_BUCKET)
+          .upload(`${base}.part${String(i).padStart(3, "0")}`, file.slice(i * CHUNK, (i + 1) * CHUNK), { upsert: true, contentType: "application/octet-stream" });
+        if (error) throw new Error(`opslaan mislukt: ${error.message}`);
+      }
+      // klaar-teken: de agent zet enkel volledige bestanden in de Inbox
+      const { error } = await supabase.storage.from(LICENSE_INBOX_BUCKET)
+        .upload(`${base}.done`, new Blob([String(file.size)], { type: "text/plain" }), { upsert: true });
+      if (error) throw new Error(`opslaan mislukt: ${error.message}`);
+      bytes += file.size;
+      result.ok.push({ id: source_id, title: file.name, name: file.name, size: file.size });
+    } catch (e: any) {
+      result.failed.push({ id: source_id, title: file.name, error: e?.message ?? String(e) });
+    }
+  }
+  onProgress({ done: files.length, total: files.length, bytes });
   return result;
 }

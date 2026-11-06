@@ -7,8 +7,9 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuthGuard } from "@/lib/useAuthGuard";
 import { MakerJob } from "@/lib/maker";
 import {
-  License, LicenseModel, LicenseRefresh, ModelPick, PICK_LABELS, PLATFORM_LABELS, REFRESHABLE, categorize, firstImportTimes,
-  DownloadProgress, ImportPayload, downloadViaExtension, fetchViaExtension, formatDate, importModels, isNew, licenseState, parseImport, thumbUrl,
+  License, LicenseModel, LicenseRefresh, ModelPick, PICK_LABELS, PLATFORM_LABELS, REFRESHABLE, AUTO_DOWNLOAD, categorize, firstImportTimes,
+  DownloadProgress, ImportPayload, downloadViaExtension, fetchViaExtension, formatDate, guessModel, importModels, isNew, licenseState, parseImport,
+  thumbUrl, uploadOwnFiles,
 } from "@/lib/licenses";
 
 type Status = "" | ModelPick | "open" | "new" | "catalog" | "removed";
@@ -51,6 +52,7 @@ export default function LicenseModelsPage() {
   const [noExtension, setNoExtension] = useState(false);
   const [dl, setDl] = useState<DownloadProgress | null>(null);
   const [dlFailed, setDlFailed] = useState<{ id: string; title: string; error: string }[]>([]);
+  const [own, setOwn] = useState<{ file: File; source_id: string }[]>([]);   // zelf gedownloade bestanden (STLFlix)
 
   async function load() {
     try {
@@ -91,7 +93,7 @@ export default function LicenseModelsPage() {
   }, [jobs]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const firstImport = useMemo(() => firstImportTimes(models).get(id), [models, id]);
-  const enriched = useMemo(() => models.map((m) => ({ ...m, ...categorize(m.title), fresh: isNew(m, firstImport) })), [models, firstImport]);
+  const enriched = useMemo(() => models.map((m) => ({ ...m, ...categorize(m.title, m.tags), fresh: isNew(m, firstImport) })), [models, firstImport]);
   const themes = useMemo(() => Array.from(new Set(enriched.map((m) => m.theme))).sort(), [enriched]);
   const types = useMemo(() => Array.from(new Set(enriched.map((m) => m.type))).sort(), [enriched]);
 
@@ -153,6 +155,9 @@ export default function LicenseModelsPage() {
       if (payload.handle && license.handle && payload.handle.toLowerCase() !== license.handle.toLowerCase()) {
         throw new Error(`Deze lijst is van @${payload.handle}, maar deze licentie is van @${license.handle}. Open het juiste profiel op MakerWorld.`);
       }
+      if (payload.platform && payload.platform !== license.platform) {
+        throw new Error(`Deze lijst komt van ${PLATFORM_LABELS[payload.platform] ?? payload.platform}, maar deze licentie is van ${PLATFORM_LABELS[license.platform]}.`);
+      }
       const r = await importModels(supabase, license, payload, source);
       setNotice(`${r.total} modellen bijgewerkt: ${r.added} nieuw${r.removed ? `, ${r.removed} niet meer online` : ""}${r.returned ? `, ${r.returned} terug online` : ""}.`);
       setPasteText(""); setPasteOpen(false);
@@ -174,6 +179,7 @@ export default function LicenseModelsPage() {
       await doImport(payload, "extension");
     } catch (e: any) {
       if (e.message === "NO_EXTENSION") setNoExtension(true);
+      else if (e.message === "OLD_EXTENSION") setError("Je extensie is een oudere versie zonder STLFlix. Open chrome://extensions en klik bij de extensie op het herlaad-icoon (de map moet versie 1.2.0 of nieuwer bevatten).");
       else setError(e.message ?? String(e));
     }
     setFetching(false);
@@ -216,6 +222,36 @@ export default function LicenseModelsPage() {
     setDl(null);
   }
 
+  /** Zelf gedownloade bestanden kiezen: elk bestand meteen bij het juiste model zetten (op naam). */
+  function addOwnFiles(list: FileList | null) {
+    if (!list) return;
+    const cands = toFetch.map((m) => ({ source_id: m.source_id, title: m.title }));
+    const added = Array.from(list).filter((f) => !own.some((o) => o.file.name === f.name && o.file.size === f.size))
+      .map((file) => ({ file, source_id: guessModel(file.name, cands) ?? "" }));
+    setOwn([...own, ...added]);
+  }
+
+  /** Knop "Uploaden en in de Catalogus zetten": de gekozen bestanden naar de opslag, daarna de opdracht voor de agent. */
+  async function uploadOwn() {
+    if (!license) return;
+    const todo = own.filter((o) => o.source_id);
+    if (!todo.length) return;
+    setError(null); setNotice(null); setDlFailed([]);
+    setDl({ done: 0, total: todo.length, bytes: 0 });
+    try {
+      const r = await uploadOwnFiles(supabase, license, todo, setDl);
+      setDlFailed(r.failed.map((f) => ({ ...f, title: toFetch.find((m) => m.source_id === f.id)?.title ?? f.title })));
+      setOwn(own.filter((o) => !r.ok.some((k) => k.id === o.source_id && k.name === o.file.name)));
+      if (r.ok.length) {
+        const mb = Math.round(r.ok.reduce((a, x) => a + x.size, 0) / 1e6);
+        if (await queuePlace()) setNotice(`${r.ok.length} bestand${r.ok.length === 1 ? "" : "en"} opgeladen (${mb} MB). De agent zet ze nu in de bibliotheek en de Catalogus; dat duurt een paar minuten.`);
+      } else setError("Er is niets opgeladen. Zie hieronder waarom.");
+    } catch (e: any) {
+      setError(e.message ?? String(e));
+    }
+    setDl(null);
+  }
+
   if (!ready) return null;
   if (!license) return <div>{error ? <p className="warning">{error}</p> : <p className="muted">Laden...</p>}</div>;
   const s = licenseState(license);
@@ -242,8 +278,8 @@ export default function LicenseModelsPage() {
         <div className="row">
           {REFRESHABLE.includes(license.platform) && (
             <button className="btn" disabled={fetching || importing} onClick={fetchLatest}
-              title="Haalt de lijst op via de Chrome-extensie MakerWorld-hulp, met je eigen MakerWorld-login">
-              {fetching ? "Ophalen bij MakerWorld..." : importing ? "Opslaan..." : "Nieuwste modellen ophalen"}
+              title={`Haalt de lijst op via de Chrome-extensie, met je eigen ${PLATFORM_LABELS[license.platform]}-login`}>
+              {fetching ? `Ophalen bij ${PLATFORM_LABELS[license.platform]}...` : importing ? "Opslaan..." : "Nieuwste modellen ophalen"}
             </button>
           )}
           <button className="btn secondary" onClick={() => setPasteOpen(!pasteOpen)} title="Lijst plakken (via de bladwijzer op MakerWorld)">Lijst plakken</button>
@@ -255,11 +291,11 @@ export default function LicenseModelsPage() {
 
       {noExtension && (
         <div className="card" style={{ marginTop: 12, borderLeft: "3px solid var(--yellow)" }}>
-          <p style={{ marginTop: 0 }}><b>De Chrome-extensie MakerWorld-hulp is niet gevonden.</b> Die is nodig om de lijst vanuit de tool op te halen (MakerWorld laat geen opvragingen van servers toe). Eenmalig installeren per pc:</p>
+          <p style={{ marginTop: 0 }}><b>De Chrome-extensie MakerWorld-hulp is niet gevonden.</b> Die is nodig om de lijst vanuit de tool op te halen ({PLATFORM_LABELS[license.platform]} laat geen opvragingen van servers toe; de extensie werkt met je eigen login in Chrome). Eenmalig installeren per pc:</p>
           <ol style={{ margin: 0, paddingLeft: 20 }}>
             <li>Open <span className="mono">chrome://extensions</span> en zet rechtsboven <b>Ontwikkelaarsmodus</b> aan.</li>
             <li>Klik <b>Uitgepakte extensie laden</b> en kies de map <span className="mono">browser-extension\makerworld-helper</span> uit de repo (bv. <span className="mono">D:\Development\WebShopProductCreator\browser-extension\makerworld-helper</span>).</li>
-            <li>Herlaad deze pagina en klik opnieuw op <b>Nieuwste modellen ophalen</b>. Zorg dat je in Chrome ingelogd bent op makerworld.com.</li>
+            <li>Herlaad deze pagina en klik opnieuw op <b>Nieuwste modellen ophalen</b>. Zorg dat je in Chrome ingelogd bent op {license.platform === "stlflix" ? "platform.stlflix.com" : "makerworld.com"}.</li>
           </ol>
           <p className="muted" style={{ marginBottom: 0 }}>Geen extensie op deze pc? Gebruik dan <b>Lijst plakken</b>, of vraag het aan Claude.</p>
         </div>
@@ -291,19 +327,22 @@ export default function LicenseModelsPage() {
             <>
               <p className="muted" style={{ marginTop: 0 }}>
                 {toFetch.length} model{toFetch.length === 1 ? "" : "len"} op <b>Overnemen</b> staan nog niet in de Catalogus.
-                {license.platform === "makerworld" ? <> Klik op <b>Downloaden en in de Catalogus zetten</b>: de extensie MakerWorld-hulp downloadt de 3MF
+                {license.platform === "stlflix" ? <> STLFlix heeft bij elke download een botcontrole, dus die doe je zelf: open de modellen hieronder,
+                klik op <b>Download Files</b> &gt; <b>FILES</b> en sleep de zips daarna in het vak hieronder. De tool zoekt bij elke zip het model op naam;
+                de agent pakt ze uit in de bibliotheek ({license.folder || "3D-Print/" + license.artist}) met de foto van STLFlix. </>
+                : license.platform === "makerworld" ? <> Klik op <b>Downloaden en in de Catalogus zetten</b>: de extensie MakerWorld-hulp downloadt de 3MF
                 (standaard-printprofiel) met je eigen login, en de agent zet ze in de bibliotheek ({license.folder || "3D-Print/" + license.artist}) met de
                 foto van MakerWorld. </> : <> Download de bestanden (3MF of STL) naar <span className="mono">{inbox}</span> en klik op de knop. </>}
                 Een eigen bestand (bv. een ander profiel of STL) kan ook: zet het in <span className="mono">{inbox}</span> met het model-id vooraan in de naam.
               </p>
-              <details>
+              <details open={license.platform === "stlflix"}>
                 <summary className="muted">Lijst om te downloaden</summary>
                 <ul style={{ columns: "2 280px", margin: "8px 0", paddingLeft: 18 }}>
                   {toFetch.map((m) => <li key={m.source_id}><a href={m.url} target="_blank" rel="noopener noreferrer">{m.title}</a> <span className="muted mono">({m.source_id})</span></li>)}
                 </ul>
               </details>
               <div className="row" style={{ marginTop: 8, gap: 8, flexWrap: "wrap" }}>
-                {license.platform === "makerworld" && (
+                {AUTO_DOWNLOAD.includes(license.platform) && (
                   <button className="btn" onClick={downloadAndPlace} disabled={!!dl || jobs.some((j) => j.status === "queued" || j.status === "running")}>
                     {dl ? `Downloaden ${dl.done + 1 > dl.total ? dl.total : dl.done + 1}/${dl.total}...` : `Downloaden en in de Catalogus zetten (${toFetch.length})`}
                   </button>
@@ -313,6 +352,42 @@ export default function LicenseModelsPage() {
                   Bestanden uit de Inbox in de Catalogus zetten
                 </button>
               </div>
+              {!AUTO_DOWNLOAD.includes(license.platform) && (
+                <div style={{ marginTop: 12 }}>
+                  <label htmlFor="lic-own" className="drop" style={{ display: "block", border: "1px dashed var(--line)", padding: 14, textAlign: "center", cursor: "pointer" }}
+                    onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); addOwnFiles(e.dataTransfer.files); }}>
+                    Sleep hier je gedownloade bestanden (zip, 3MF of STL), of klik om ze te kiezen
+                  </label>
+                  <input id="lic-own" type="file" multiple accept=".zip,.3mf,.stl" style={{ display: "none" }} onChange={(e) => { addOwnFiles(e.target.files); e.target.value = ""; }} />
+                  {own.length > 0 && (
+                    <>
+                      <table style={{ marginTop: 8, width: "100%" }}>
+                        <tbody>
+                          {own.map((o, k) => (
+                            <tr key={o.file.name + o.file.size}>
+                              <td className="mono" style={{ fontSize: 12.5 }}>{o.file.name} <span className="muted">({Math.round(o.file.size / 1e5) / 10} MB)</span></td>
+                              <td>
+                                <select aria-label={`Model voor ${o.file.name}`} value={o.source_id} style={{ width: "auto", borderColor: o.source_id ? undefined : "var(--yellow)" }}
+                                  onChange={(e) => setOwn(own.map((x, j) => (j === k ? { ...x, source_id: e.target.value } : x)))}>
+                                  <option value="">Kies het model...</option>
+                                  {toFetch.map((m) => <option key={m.source_id} value={m.source_id}>{m.title}</option>)}
+                                </select>
+                              </td>
+                              <td><button type="button" className="btn secondary" onClick={() => setOwn(own.filter((_, j) => j !== k))}>Weg</button></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      <div className="row" style={{ marginTop: 8 }}>
+                        <button className="btn" onClick={uploadOwn} disabled={!!dl || !own.some((o) => o.source_id) || jobs.some((j) => j.status === "queued" || j.status === "running")}>
+                          {dl ? `Opladen ${dl.done + 1 > dl.total ? dl.total : dl.done + 1}/${dl.total}...` : `Opladen en in de Catalogus zetten (${own.filter((o) => o.source_id).length})`}
+                        </button>
+                        {own.some((o) => !o.source_id) && <span className="muted">Bestanden zonder model worden overgeslagen.</span>}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
               {dl && (
                 <p className="muted" style={{ margin: "8px 0 0" }}>
                   {dl.current ? <>Bezig met <b>{dl.current}</b> · </> : null}{Math.round(dl.bytes / 1e6)} MB binnen. Laat deze pagina open tot het klaar is.
@@ -320,9 +395,9 @@ export default function LicenseModelsPage() {
               )}
               {dlFailed.length > 0 && (
                 <div className="warning" style={{ marginTop: 8 }}>
-                  Niet gedownload:
+                  Niet gelukt:
                   <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
-                    {dlFailed.map((f) => <li key={f.id}><a href={`https://makerworld.com/en/models/${f.id}`} target="_blank" rel="noopener noreferrer">{f.title}</a>: {f.error}</li>)}
+                    {dlFailed.map((f) => <li key={f.id + f.title}><a href={models.find((m) => m.source_id === f.id)?.url || "#"} target="_blank" rel="noopener noreferrer">{f.title}</a>: {f.error}</li>)}
                   </ul>
                 </div>
               )}

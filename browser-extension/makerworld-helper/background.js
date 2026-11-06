@@ -3,7 +3,9 @@
 // - mw-file / mw-chunk / mw-release / mw-done: het 3MF-bestand van een model downloaden (zoals de knop "Download 3MF")
 //   en het in stukken teruggeven aan de beheertool, die het voor de agent op de NAS klaarzet.
 // Werkt eerst rechtstreeks; lukt dat niet, dan via een tabblad op makerworld.com op de achtergrond.
-// Er gaat niets naar een andere website dan makerworld.com (en hun bestandsserver *.bblmw.com).
+// - sf-models (1.2.0): de modellenlijst van de STLFlix-bibliotheek (platform.stlflix.com). Geen downloads: STLFlix heeft
+//   bij elke download een botcontrole, die doe je zelf.
+// Er gaat niets naar een andere website dan makerworld.com (en hun bestandsserver *.bblmw.com) en platform.stlflix.com.
 
 const PAGE = 50;
 const MAX = 5000;
@@ -140,9 +142,82 @@ function chunkB64(key, i) {
   return { b64: btoa(s) };
 }
 
+// ---------- STLFlix: modellenlijst van de hele bibliotheek ----------
+// Zelfde opvraging als de pagina "See all products" op platform.stlflix.com (met je eigen login), pagina per pagina.
+// Downloaden doet de extensie NIET: elke download op STLFlix heeft een botcontrole (Cloudflare Turnstile), die klik je zelf.
+
+const SF = "https://platform.stlflix.com";
+const SF_PAGE = 48;
+let sfTab = null;
+
+function sfBody(page) {
+  return JSON.stringify({
+    text: "", page, size: SF_PAGE, sort: "release_date:DESC",
+    filters: { tags: [], category: "", subCategory: "", releaseDate: new Date().toISOString(), hasPaintTutorial: false,
+      macroCategory: "", excludeMacroCategory: "", hasMultiparts: false, extraCategories: [] },
+  });
+}
+
+// Draait IN een tabblad op platform.stlflix.com.
+async function sfSearchInPage(body) {
+  const r = await fetch("/api/elasticsearch", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body });
+  let j = null;
+  try { j = await r.json(); } catch (e) { /* geen json */ }
+  return { status: r.status, body: j };
+}
+
+async function sfSearch(page) {
+  if (!sfTab) {
+    try {
+      const r = await fetch(`${SF}/api/elasticsearch`, { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: sfBody(page) });
+      if (r.ok && (r.headers.get("content-type") || "").includes("json")) return { status: r.status, body: await r.json() };
+    } catch (e) { /* dan via een tabblad */ }
+    const tab = await chrome.tabs.create({ url: `${SF}/explore`, active: false });
+    sfTab = tab.id;
+    await waitForLoad(tab.id, 45000);
+  }
+  const [res] = await chrome.scripting.executeScript({ target: { tabId: sfTab }, world: "MAIN", func: sfSearchInPage, args: [sfBody(page)] });
+  if (!res || !res.result) throw new Error("Kon STLFlix niet bereiken.");
+  return res.result;
+}
+
+const names = (xs) => (xs || []).map((x) => x && x.attributes && x.attributes.name).filter(Boolean);
+
+function sfSlim(x) {
+  const img = x.thumbnail && x.thumbnail.attributes && x.thumbnail.attributes.url;
+  return {
+    id: String(x.id), title: String(x.name || "").trim(), cover: img || null, dl: x.downloads || 0,
+    date: String(x.release_date || "").slice(0, 10) || null,
+    url: x.slug ? `${SF}/product/${x.slug}` : null,
+    // categorieën met een voorvoegsel, zodat de tool er filters van kan maken
+    tags: [...names(x.macro_categories).map((n) => `cat:${n}`), ...names(x.parent_categories).map((n) => `group:${n}`),
+      ...names(x.sub_categories).map((n) => `sub:${n}`), ...names(x.tags), ...(x.multiparts ? ["Multipart"] : [])].slice(0, 20),
+  };
+}
+
+async function getStlflixModels() {
+  const items = [];
+  const seen = new Set();
+  try {
+    for (let page = 1; page <= 400; page++) {
+      const r = await sfSearch(page);
+      if (r.status === 401 || r.status === 403) throw new Error("STLFlix weigert: ben je in deze Chrome ingelogd op platform.stlflix.com?");
+      if (r.status !== 200 || !r.body) throw new Error(`STLFlix antwoordde ${r.status}`);
+      const hits = r.body.results || [];
+      for (const h of hits) if (!seen.has(String(h.id))) { seen.add(String(h.id)); items.push(sfSlim(h)); }
+      if (!hits.length || items.length >= (r.body.total || 0)) break;
+      await new Promise((ok) => setTimeout(ok, 300));   // rustig aan: zoals iemand die verder scrollt
+    }
+    return { name: "STLFlix", items };
+  } finally {
+    if (sfTab) { const t = sfTab; sfTab = null; await chrome.tabs.remove(t).catch(() => {}); }
+  }
+}
+
 // ---------- berichten van de beheertool (via content.js) ----------
 
 const HANDLERS = {
+  "sf-models": () => getStlflixModels(),
   "mw-models": (m) => getModels(m.uid, m.handle),
   "mw-file": (m) => getFile(m.id),
   "mw-chunk": async (m) => chunkB64(m.key, Number(m.index) || 0),

@@ -8,7 +8,10 @@ wanneer je zelf het profiel van de artiest opent. De lijst gaat rechtstreeks ter
 - Werkt alleen op `https://products.anyprintsforyou.be` (en `http://localhost:3000` voor ontwikkeling).
 - Downloads: per model de 3MF van het standaard-printprofiel (of het eerste profiel dat wel lukt), zoals de knop
   "Download 3MF". Het bestand gaat in stukken naar de beheertool, niet naar je map Downloads.
-- Praat enkel met `makerworld.com` en hun bestandsserver `*.bblmw.com`. Geen andere websites, geen gegevens naar derden.
+- Praat enkel met `makerworld.com`, hun bestandsserver `*.bblmw.com` en `platform.stlflix.com`. Geen andere websites, geen gegevens naar derden.
+- **STLFlix** (vanaf 1.2.0): haalt de modellenlijst van de hele bibliotheek op (zoals "See all products", pagina per
+  pagina, met je eigen STLFlix-login). Downloaden doet de extensie daar niet: STLFlix heeft bij elke download een
+  botcontrole. Je downloadt de zips zelf (Download Files > FILES) en sleept ze in de tool bij de licentie.
 - Als het rechtstreeks ophalen niet lukt, opent de extensie het profiel even in een achtergrondtabblad en sluit het daarna weer.
 
 ## Installeren (eenmalig, per pc)
@@ -17,5 +20,5 @@ wanneer je zelf het profiel van de artiest opent. De lijst gaat rechtstreeks ter
 3. Klik **Uitgepakte extensie laden** en kies de map `browser-extension/makerworld-helper`.
 4. Herlaad de beheertool. Bij Licenties > Modellen staat nu **Nieuwste modellen ophalen**.
 
-Wees ingelogd op makerworld.com in dezelfde Chrome. Na een wijziging aan de extensie: in `chrome://extensions` op
+Wees ingelogd op makerworld.com (en voor STLFlix op platform.stlflix.com) in dezelfde Chrome. Na een wijziging aan de extensie: in `chrome://extensions` op
 het herlaad-icoon van de extensie klikken.
