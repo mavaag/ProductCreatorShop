@@ -1,7 +1,7 @@
 # MakerProducts-agent
 
 Een Docker-container op de NAS die de knop **"Laat de agent dit verwerken"** in de Catalogus afhandelt. Claude Code
-maakt daarin voor geselecteerde lasermodellen zonder snijklare platen de 3 mm-platen (xTool M2 + LaserPecker LX2),
+maakt daarin voor geselecteerde lasermodellen zonder snijklare platen de 3 mm-platen (xTool M2 + LaserPecker LX2 + xTool X1),
 schrijft voor elk geselecteerd model het productdocument en publiceert alles naar Supabase. Daarna klik je in de
 Catalogus op **Maak product**.
 
