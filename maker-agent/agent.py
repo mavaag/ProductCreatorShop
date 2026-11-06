@@ -17,6 +17,8 @@ en laat Claude Code die afwerken:
     verzamelmap in _catalog/sources.json (met backup), bouwt de catalogus opnieuw en haalt het bundelkaartje weg;
   - soort 'license' (knop "Gedownloade bestanden in de Catalogus zetten" bij Licenties): zonder Claude de gedownloade
     modellen uit _Inbox/_Licenties/<artiest> in de bibliotheek zetten (tools/licenses/place_downloads.py);
+  - Inbox-timer: wat INBOX_AUTO_MIN minuten (standaard 60, 0 = uit) ongewijzigd in _Inbox staat, zet de agent zelf
+    in een inbox-opdracht; na elke inbox-opdracht een overzichtsmail (tools/maker/notify_mail.py, notify.env);
   - elke dag: herinneringsmail voor licenties die binnen 30 dagen vervallen (tools/licenses/license_reminders.py).
 Claude draait in de modus "dontAsk": alleen wat in claude-settings.json toegelaten is mag, de rest wordt geweigerd.
 Na één opdracht (of na een uur zonder opdracht) stopt het script; de container start het opnieuw, zodat een
@@ -32,13 +34,18 @@ LOGS = os.path.join(HOME, 'logs')
 INBOX = os.path.join(supa.MAKER_ROOT, '_Inbox')
 DONE = os.path.join(INBOX, '_verwerkt')
 RETENTION_DAYS = int(os.environ.get('INBOX_RETENTION_DAYS', '14'))
+# Inbox-timer: wat zo lang ongewijzigd in de Inbox staat, verwerkt de agent zelf (0 = uit). Na elke inbox-opdracht
+# komt er een overzichtsmail (notify.env).
+AUTO_MIN = int(os.environ.get('INBOX_AUTO_MIN', '60'))
+AUTO_CHECK_S = 300
+AUTO_NOTE = 'automatisch'
 SETTLE_S = 60           # een item dat de laatste minuut nog veranderde, wordt waarschijnlijk nog gekopieerd
 IGNORE = {'desktop.ini', 'thumbs.db', '.ds_store'}   # schrijft Windows/macOS zelf, telt niet als kopiëren
 POLL_S = 30
 IDLE_EXIT_S = 3600
 JOB_TIMEOUT_S = 6 * 3600
 TAIL_LINES = 60
-VERSION = '14'
+VERSION = '15'
 ORDERS_SYNC_MIN = 10          # bestellingen uit WooCommerce ophalen (orders_sync.py)
 MATCH_EVERY_H = 24            # shopproducten <-> catalogusmodellen voorstellen (match_shop_files.py)
 # Techniekmappen in de Inbox: zet je iets in _Inbox/Resin, dan weet de agent dat het een resinprint is (enz.).
@@ -101,8 +108,76 @@ def scan_inbox():
         for item, path, t, wall_art in entries:
             n, size, newest = tree_stats(path)
             out.append({'name': item, 'kind': 'folder' if os.path.isdir(path) else 'file', 'files': n, 'size': size,
-                        'ready': time.time() - newest > SETTLE_S, 'technique': t, 'wall_art': wall_art})
+                        'ready': time.time() - newest > SETTLE_S, 'technique': t, 'wall_art': wall_art,
+                        'changed': round(newest)})
     return out
+
+
+def _ts(iso):
+    try: return datetime.datetime.fromisoformat(iso.replace('Z', '+00:00')).timestamp()
+    except (AttributeError, ValueError): return 0
+
+
+def auto_queue_inbox(items):
+    """Inbox-timer: items die al INBOX_AUTO_MIN minuten niet meer veranderden, zelf in een inbox-opdracht zetten
+    (zonder productdocumenten). Niet opnieuw: wat al in een opdracht in de wachtrij staat of bezig is, en wat sinds de
+    laatste opdracht waarin het zat niet veranderde (mislukt of geannuleerd: dan eerst iets aanpassen)."""
+    if AUTO_MIN <= 0: return None
+    due = [i for i in items if time.time() - i.get('changed', time.time()) >= AUTO_MIN * 60]
+    if not due: return None
+    jobs = supa.rest('GET', 'maker_jobs?kind=eq.inbox&select=items,status,finished_at,created_at&order=created_at.desc&limit=100') or []
+    busy = {n for j in jobs if j['status'] in ('queued', 'running') for n in (j['items'] or [])}
+    last = {}   # naam -> einde van de laatste afgewerkte opdracht met dat item
+    for j in jobs:
+        if j['status'] in ('queued', 'running'): continue
+        for n in j['items'] or []:
+            last.setdefault(n, _ts(j.get('finished_at') or j.get('created_at')))
+    todo = [i['name'] for i in due if i['name'] not in busy and not (i['name'] in last and i['changed'] <= last[i['name']])]
+    if not todo: return None
+    supa.rest('POST', 'maker_jobs', {'kind': 'inbox', 'model_ids': [], 'items': todo, 'then_process': False,
+                                     'note': f'{AUTO_NOTE} (na {AUTO_MIN} min ongewijzigd in de Inbox)'}, prefer='return=minimal')
+    print(f'inbox-timer: opdracht voor {len(todo)} item(s) aangemaakt', flush=True)
+    return todo
+
+
+def _mb(size):
+    return f'{size / 1e6:.1f} MB' if size >= 1e5 else f'{max(1, round(size / 1e3))} kB'
+
+
+def mail_inbox_summary(job, results, before, failed, minutes):
+    """Overzichtsmail na een inbox-opdracht (automatisch of met de knop)."""
+    try:
+        import notify_mail   # /src/tools/maker staat al in sys.path
+    except Exception as e:
+        print(f'inbox-mail: {e}', flush=True); return
+    names = job['items'] or []
+    ok = [n for n in names if results.get(n, {}).get('status') == 'ok']
+    bad = [n for n in names if n not in ok]
+    auto = (job.get('note') or '').startswith(AUTO_NOTE)
+    def tech(n):
+        return (before.get(n, {}).get('technique') or (n.split('/')[0] if '/' in n else 'los')).upper()
+    groups = {}
+    for n in names:
+        g = groups.setdefault(tech(n), [0, 0, 0]); g[0] += 1; g[1 if n in ok else 2] += 1
+    def line(n, mark):
+        i = before.get(n)
+        size = f' ({i["files"]} bestand{"" if i["files"] == 1 else "en"}, {_mb(i["size"])})' if i else ''
+        note = (results.get(n, {}).get('note') or ('geen resultaat van de agent' if mark == 'x' else '')).strip()
+        return f'  [{mark}] {n}{size}' + (f'\n      {note}' if note else '')
+    body = [f'De agent heeft {"automatisch " if auto else ""}{len(names)} item{"" if len(names) == 1 else "s"} uit de Inbox verwerkt '
+            f'in {minutes} min: {len(ok)} gelukt, {len(bad)} niet.' + (' De opdracht zelf liep fout; kijk het logboek na in de Catalogus.' if failed else ''),
+            '', 'Per techniek:']
+    body += [f'  {k}: {v[0]} item{"" if v[0] == 1 else "s"}, {v[1]} gelukt' + (f', {v[2]} niet' if v[2] else '') for k, v in sorted(groups.items())]
+    if ok: body += ['', 'In de bibliotheek en de Catalogus gezet (daarna naar _Inbox/_verwerkt):'] + [line(n, 'v') for n in ok]
+    if bad: body += ['', 'Niet verwerkt (blijft in de Inbox; pas het aan of verwerk het opnieuw met de knop):'] + [line(n, 'x') for n in bad]
+    body += ['', 'Catalogus: https://products.anyprintsforyou.be/catalog']
+    if auto: body.append('Productdocumenten maak je daar met "Laat de agent dit verwerken".')
+    subject = f'[Any Prints For You] Inbox verwerkt: {len(ok)} van {len(names)} gelukt' + (' (automatisch)' if auto else '')
+    try:
+        sent = notify_mail.mail(subject, '\n'.join(body) + '\n')
+        print('inbox-mail ' + ('verstuurd' if sent else 'niet verstuurd: geen mailinstellingen in /run/notify.env'), flush=True)
+    except Exception as e:
+        print(f'inbox-mail mislukt: {e}', flush=True)
 
 
 def cleanup_done():
@@ -187,7 +262,7 @@ def background_loop():
 
 
 def heartbeat_loop():
-    last_cleanup = 0
+    last_cleanup = last_auto = 0
     while True:
         try:
             if time.time() - last_cleanup > 6 * 3600:
@@ -197,9 +272,16 @@ def heartbeat_loop():
                 if w: print(f'~/work/inbox: {w} uitgepakte items ouder dan {WORK_KEEP_DAYS} dagen verwijderd', flush=True)
             done = len(os.listdir(DONE)) if os.path.isdir(DONE) else 0
             info = f'_verwerkt: {done} item{"" if done == 1 else "s"}, worden na {RETENTION_DAYS} dagen automatisch verwijderd'
+            info += (f'. Inbox-timer: wat {AUTO_MIN} min ongewijzigd in de Inbox staat, verwerkt de agent zelf (je krijgt een mail)'
+                     if AUTO_MIN > 0 else '. Inbox-timer staat uit')
+            items = scan_inbox()
+            if time.time() - last_auto > AUTO_CHECK_S:
+                last_auto = time.time()
+                try: auto_queue_inbox(items)
+                except Exception as e: print(f'inbox-timer mislukt: {e}', flush=True)
             beat = {'id': 1, 'seen_at': now(), 'status': status['text'], 'version': VERSION}
             try:
-                supa.rest('POST', 'maker_agent', {**beat, 'inbox': scan_inbox(), 'inbox_info': info},
+                supa.rest('POST', 'maker_agent', {**beat, 'inbox': items, 'inbox_info': info},
                           prefer='resolution=merge-duplicates,return=minimal')
             except RuntimeError:   # migratie 020 nog niet uitgevoerd: hartslag zonder inbox
                 supa.rest('POST', 'maker_agent', beat, prefer='resolution=merge-duplicates,return=minimal')
@@ -388,6 +470,7 @@ def run_job(job):
     # actuele shoplijst, zodat de agent kan nakijken of een model al in de shop staat
     r = subprocess.run(['python3', os.path.join(HERE, 'woo_export.py')], capture_output=True, text=True)
     shop_note = ((r.stdout + r.stderr).strip().splitlines()[-1:] or ['woo_export: geen uitvoer'])[0]
+    before = {i['name']: i for i in scan_inbox() if i['name'] in (job.get('items') or [])} if inbox_job else {}
     prompt, n, what = build_prompt(job, shop_note)
     status['text'] = f'bezig met {"inbox-" if inbox_job else "opsplits-" if split_job else ""}opdracht ({n} {what}{"" if n == 1 else "s"})'
     tail = []
@@ -449,6 +532,7 @@ def run_job(job):
     patch_job(jid, status='failed' if failed else 'done', finished_at=now(), log_tail='\n'.join(tail[-TAIL_LINES:]),
               progress=(f'Claude stopte met code {code}' if code else 'Claude gaf geen resultaten terug') if failed
               else f'klaar: {ok} van {len(keys)} gelukt')
+    if inbox_job: mail_inbox_summary(job, results, before, failed, round((time.time() - started) / 60))
 
 
 def main():
