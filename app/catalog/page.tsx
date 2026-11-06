@@ -478,7 +478,7 @@ function SetMaker({ designs, onQueued }: { designs: MakerModel[]; onQueued: () =
 
 /**
  * Opdrachten voor de MakerProducts-agent (Docker-container op de NAS, zie maker-agent/): geselecteerde modellen
- * zonder document laten verwerken -- lasermodellen eerst 3 mm-platen voor de xTool M2 + LaserPecker LX2, dan het
+ * zonder document laten verwerken -- lasermodellen eerst 3 mm-platen voor de xTool M2 + LaserPecker LX2 + xTool X1, dan het
  * productdocument. De agent pikt de opdracht op, schrijft zijn voortgang terug in maker_jobs en publiceert zelf.
  */
 function AgentPanel({ waiting, titles, onJobFinished }: {
@@ -544,7 +544,7 @@ function AgentPanel({ waiting, titles, onJobFinished }: {
 
   async function queue() {
     const msg = `${todo.length} model${todo.length === 1 ? "" : "len"} door de agent laten verwerken?` +
-      (needPlates > 0 ? ` Voor ${needPlates} lasermodel${needPlates === 1 ? "" : "len"} worden eerst 3 mm-platen gemaakt (xTool M2 + LaserPecker LX2).` : "") +
+      (needPlates > 0 ? ` Voor ${needPlates} lasermodel${needPlates === 1 ? "" : "len"} worden eerst 3 mm-platen gemaakt (xTool M2 + LaserPecker LX2 + xTool X1).` : "") +
       " Dit kan een tijd duren en gebruikt je Claude-abonnement.";
     if (!(await confirmDialog(msg, { confirmLabel: "Verwerken" }))) return;
     const { error } = await supabase.from("maker_jobs").insert({ model_ids: todo.map((m) => m.id), note: note.trim() });
@@ -587,7 +587,7 @@ function AgentPanel({ waiting, titles, onJobFinished }: {
           <p className="muted" style={{ flex: "1 1 100%", margin: 0 }}>
             <b style={{ color: "var(--yellow)" }}>{todo.length}</b> geselecteerd zonder productdocument of platen
             {needPlates > 0 && <> (waarvan <b style={{ color: "var(--yellow)" }}>{needPlates}</b> lasermodellen zonder snijklare platen)</>}.
-            De agent maakt de platen (3 mm, xTool M2 + LaserPecker LX2), de shoptekst, de varianten en de foto&apos;s.
+            De agent maakt de platen (3 mm, xTool M2 + LaserPecker LX2 + xTool X1), de shoptekst, de varianten en de foto&apos;s.
           </p>
           <div style={{ flex: 1, minWidth: 240 }}>
             <label>Extra instructies voor de agent (optioneel)</label>

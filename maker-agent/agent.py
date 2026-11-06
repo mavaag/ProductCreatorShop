@@ -45,7 +45,7 @@ POLL_S = 30
 IDLE_EXIT_S = 3600
 JOB_TIMEOUT_S = 6 * 3600
 TAIL_LINES = 60
-VERSION = '15'
+VERSION = '16'
 ORDERS_SYNC_MIN = 10          # bestellingen uit WooCommerce ophalen (orders_sync.py)
 MATCH_EVERY_H = 24            # shopproducten <-> catalogusmodellen voorstellen (match_shop_files.py)
 # Techniekmappen in de Inbox: zet je iets in _Inbox/Resin, dan weet de agent dat het een resinprint is (enz.).

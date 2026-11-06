@@ -32,7 +32,7 @@ it is that command only, not Bash as a whole: split it into simple commands, or 
 ## Reporting (the user sees this live in the Catalogus page)
 ```bash
 python3 /src/maker-agent/jobctl.py progress "Bear lamp: platen nesten (3/10)"   # short, Dutch, often
-python3 /src/maker-agent/jobctl.py result <model_id> ok "3 mm M2+LX2, 4+3 platen; document klaar"
+python3 /src/maker-agent/jobctl.py result <model_id> ok "3 mm M2+LX2+X1, 4+3+2 platen; document klaar"
 python3 /src/maker-agent/jobctl.py result <model_id> failed "bron is enkel CDR"
 python3 /src/maker-agent/jobctl.py result <model_id> skipped "bundel van 40 modellen"
 ```
@@ -56,10 +56,14 @@ Every model in the job must end with exactly one `result`. Notes are short and i
   `python3 /src/tools/maker/sync_catalog.py` and `python3 /src/tools/maker/publish_docs.py`.
 
 ## Per model
-1. **Lasercut without `laser_ready`**: make the 3 mm sets for **xTool M2 (A3 420x297)** and **LaserPecker LX2
-   (500x300)** as described in the runbook (check designer thickness and part counts, retarget slots to 3 mm,
+1. **Lasercut without `laser_ready`**: make the 3 mm sets for **xTool M2 (A3 420x297)**, **LaserPecker LX2
+   (500x300)** and **xTool X1 (600x300)** (`convert2.PLATES` / `MACHINE_NAME`, folder suffix `xTool_X1_600x300`;
+   same scale on every machine, only the nesting differs) as described in the runbook (check designer thickness and part counts, retarget slots to 3 mm,
    nest, CUT/ENGRAVE layers). Write `<model>/LaserReady/<Name>_3mm_<pct>pct_<machine>/` + Dutch `README.txt`
    (+ assembly guide PDF when the model has several parts). If the job note asks for 6 mm too, add 6 mm sets.
+   **Sizes (user decision 2026-11-06):** `Size` M = standard, L = largest on the LX2, **XL = largest on the X1**
+   (X1-only set `..._XL_<pct>pct_xTool_X1_600x300`), only when XL is at least 15% bigger than L. Sizes are never
+   named after machines.
 2. **Every model without a document** (`has_doc` false): write `_catalog/products/<id>.json` following the runbook
    rules (English shop texts in the live templates, all laser products are DIY kits, variants, existing WooCommerce
    categories only, trademark flag, check the shop export for an existing product when one is available).
@@ -82,7 +86,7 @@ A laser model that is a wall clock (folder or category `Clocks`, or the design i
 and gets **no** 3/6 mm sets or M/L sizes:
 - Two materials, same design and size: **black acrylic 3 mm** (cast, glossy -- the "vinyl record" look; never real
   vinyl/PVC records, never laser PVC) and **wood 3 mm** (plywood, the user's `HOUTEN PLAAT 500x300x3`). Outer
-  diameter **280 mm** (fits both the M2 A3 bed and the LX2), sold **with a silent quartz clock movement**.
+  diameter **280 mm** (fits the M2 A3 bed, the LX2 and the X1), sold **with a silent quartz clock movement**.
 - Plates: one cut file per clock, scaled so the outer diameter is 280 mm, with a centre hole of **8 mm** for the
   movement spindle (add it when the design has none; keep it when it is between 7 and 10 mm). Numbers and fine
   details stay connected to the disc -- report it when parts would fall out. Folder
@@ -93,7 +97,7 @@ and gets **no** 3/6 mm sets or M/L sizes:
   included (battery AA not included), ready to hang. Production per variation: the same 280 mm cut file, the
   material of that variation (materials `ZWART ACRYL 500x300x3` or `HOUTEN PLAAT 500x300x3`, one plate) and one
   `KLOKUURWERK`, written as `production.materials: [{"name": "<material name>", "quantity": 1}, ...]` and
-  `production.machines` with the keys `M2` / `LX2` (Maak product fills the cost lines from these); put "uurwerk monteren" in
+  `production.machines` with the keys `M2` / `LX2` / `X1` (Maak product fills the cost lines from these); put "uurwerk monteren" in
   `notes_internal`. Default variation: Black Acrylic.
 - Photos: there are no real photos of the clocks. After writing the document, run
   `python3 /src/tools/maker/clock_mockups.py "<model path>" --update-doc` (renders the clock from its SVG/PNG in black
