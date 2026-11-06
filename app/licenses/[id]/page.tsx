@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
@@ -53,6 +53,7 @@ export default function LicenseModelsPage() {
   const [dl, setDl] = useState<DownloadProgress | null>(null);
   const [dlFailed, setDlFailed] = useState<{ id: string; title: string; error: string }[]>([]);
   const [own, setOwn] = useState<{ file: File; source_id: string }[]>([]);   // zelf gedownloade bestanden (STLFlix)
+  const stopRef = useRef(false);   // knop "Stoppen na dit model"
 
   async function load() {
     try {
@@ -161,7 +162,7 @@ export default function LicenseModelsPage() {
       const r = await importModels(supabase, license, payload, source);
       setNotice(`${r.total} modellen bijgewerkt: ${r.added} nieuw${r.removed ? `, ${r.removed} niet meer online` : ""}${r.returned ? `, ${r.returned} terug online` : ""}.`);
       setPasteText(""); setPasteOpen(false);
-      if (r.added > 0) setStatus("new");
+      if (r.added > 0 && r.added < r.total) setStatus("new");   // bij de allereerste lijst is alles nieuw: gewoon Alle tonen
       await load();
     } catch (e: any) {
       setError(e.message ?? String(e));
@@ -208,7 +209,8 @@ export default function LicenseModelsPage() {
     setError(null); setNotice(null); setNoExtension(false); setDlFailed([]);
     setDl({ done: 0, total: toFetch.length, bytes: 0 });
     try {
-      const r = await downloadViaExtension(supabase, license, toFetch, setDl);
+      stopRef.current = false;
+      const r = await downloadViaExtension(supabase, license, toFetch, setDl, () => stopRef.current);
       setDlFailed(r.failed);
       if (r.ok.length) {
         const mb = Math.round(r.ok.reduce((a, x) => a + x.size, 0) / 1e6);
@@ -327,9 +329,10 @@ export default function LicenseModelsPage() {
             <>
               <p className="muted" style={{ marginTop: 0 }}>
                 {toFetch.length} model{toFetch.length === 1 ? "" : "len"} op <b>Overnemen</b> staan nog niet in de Catalogus.
-                {license.platform === "stlflix" ? <> STLFlix heeft bij elke download een botcontrole, dus die doe je zelf: open de modellen hieronder,
-                klik op <b>Download Files</b> &gt; <b>FILES</b> en sleep de zips daarna in het vak hieronder. De tool zoekt bij elke zip het model op naam;
-                de agent pakt ze uit in de bibliotheek ({license.folder || "3D-Print/" + license.artist}) met de foto van STLFlix. </>
+                {license.platform === "stlflix" ? <> Klik op <b>Downloaden en in de Catalogus zetten</b>: de extensie opent het eerste model op STLFlix,
+                jij klikt daar <b>Download Files</b> &gt; <b>FILES</b> (STLFlix heeft bij elke download een botcontrole, die blijft bij jou). De extensie vangt de zip op,
+                sluit het tabblad en opent het volgende model; tabblad sluiten = overslaan. Op het einde zet de agent alles in de bibliotheek
+                ({license.folder || "3D-Print/" + license.artist}) met de foto van STLFlix. Zelf al zips gedownload? Sleep ze in het vak hieronder. </>
                 : license.platform === "makerworld" ? <> Klik op <b>Downloaden en in de Catalogus zetten</b>: de extensie MakerWorld-hulp downloadt de 3MF
                 (standaard-printprofiel) met je eigen login, en de agent zet ze in de bibliotheek ({license.folder || "3D-Print/" + license.artist}) met de
                 foto van MakerWorld. </> : <> Download de bestanden (3MF of STL) naar <span className="mono">{inbox}</span> en klik op de knop. </>}
@@ -347,12 +350,15 @@ export default function LicenseModelsPage() {
                     {dl ? `Downloaden ${dl.done + 1 > dl.total ? dl.total : dl.done + 1}/${dl.total}...` : `Downloaden en in de Catalogus zetten (${toFetch.length})`}
                   </button>
                 )}
+                {dl && license.platform === "stlflix" && (
+                  <button className="btn secondary" onClick={() => { stopRef.current = true; setNotice("Stopt na dit model; wat al binnen is, gaat naar de Catalogus."); }}>Stoppen na dit model</button>
+                )}
                 <button className="btn secondary" onClick={queuePlace} disabled={!!dl || jobs.some((j) => j.status === "queued" || j.status === "running")}
                   title={`Bestanden die al in ${inbox} staan`}>
                   Bestanden uit de Inbox in de Catalogus zetten
                 </button>
               </div>
-              {!AUTO_DOWNLOAD.includes(license.platform) && (
+              {(!AUTO_DOWNLOAD.includes(license.platform) || license.platform === "stlflix") && (
                 <div style={{ marginTop: 12 }}>
                   <label htmlFor="lic-own" className="drop" style={{ display: "block", border: "1px dashed var(--line)", padding: 14, textAlign: "center", cursor: "pointer" }}
                     onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); addOwnFiles(e.dataTransfer.files); }}>
@@ -390,7 +396,7 @@ export default function LicenseModelsPage() {
               )}
               {dl && (
                 <p className="muted" style={{ margin: "8px 0 0" }}>
-                  {dl.current ? <>Bezig met <b>{dl.current}</b> · </> : null}{Math.round(dl.bytes / 1e6)} MB binnen. Laat deze pagina open tot het klaar is.
+                  {dl.current ? <>Bezig met <b>{dl.current}</b>{license.platform === "stlflix" ? <> (klik in het STLFlix-tabblad op Download Files &gt; FILES)</> : null} · </> : null}{Math.round(dl.bytes / 1e6)} MB binnen. Laat deze pagina open tot het klaar is.
                 </p>
               )}
               {dlFailed.length > 0 && (
