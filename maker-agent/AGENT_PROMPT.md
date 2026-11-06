@@ -61,6 +61,9 @@ Every model in the job must end with exactly one `result`. Notes are short and i
    same scale on every machine, only the nesting differs) as described in the runbook (check designer thickness and part counts, retarget slots to 3 mm,
    nest, CUT/ENGRAVE layers). Write `<model>/LaserReady/<Name>_3mm_<pct>pct_<machine>/` + Dutch `README.txt`
    (+ assembly guide PDF when the model has several parts). If the job note asks for 6 mm too, add 6 mm sets.
+   **Sizes (user decision 2026-11-06):** `Size` M = standard, L = largest on the LX2, **XL = largest on the X1**
+   (X1-only set `..._XL_<pct>pct_xTool_X1_600x300`), only when XL is at least 15% bigger than L. Sizes are never
+   named after machines.
 2. **Every model without a document** (`has_doc` false): write `_catalog/products/<id>.json` following the runbook
    rules (English shop texts in the live templates, all laser products are DIY kits, variants, existing WooCommerce
    categories only, trademark flag, check the shop export for an existing product when one is available).
