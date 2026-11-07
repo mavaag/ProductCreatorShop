@@ -87,7 +87,7 @@ const SECTIONS: Section[] = [
         <ul>
           <li><b>Snijklaar</b>: er zijn al snijplaten (LaserReady). <b>Document</b>: productdocument klaar. <b>Merk</b>: figuur of merk van iemand anders (bv. Marvel) - licentie nakijken voor je verkoopt. <b>In shop #...</b>: gekoppeld aan dat shopproduct.</li>
           <li><b>⧉ Bundel · ~N</b>: de map bevat ongeveer N verschillende modellen (laser: verschillende ontwerpen; 3D-print: submappen met elk een eigen figuur, maat- en supportmappen tellen niet). Klik erop om hem te laten <b>opsplitsen</b> (zie hieronder).</li>
-          <li>Vinkjes <i>Enkel snijklaar</i>, <i>Enkel merkfiguren</i> en <i>Enkel bundels</i> om snel te filteren.</li>
+          <li>Vinkjes <i>Enkel snijklaar</i>, <i>Enkel merkfiguren</i> en <i>Enkel bundels</i> om snel te filteren. <i>Verberg wat al in de shop staat</i> laat modellen weg waarvan al een product gemaakt is of die aan een bestaand shopproduct gekoppeld zijn (label <b>In shop #...</b>).</li>
         </ul>
         <h3>Koppeling met de shop</h3>
         <p>In het detailvenster, blok <i>Koppeling met de shop</i>: staat een model al in je shop, zoek het (naam, SKU of product-id) en klik <b>Koppel</b>. Dan wordt er geen dubbel product van gemaakt. Vermoedt de agent een match, dan zie je <i>Bekijk #...</i> of <i>Klopt / Klopt niet</i>. <i>Ontkoppelen</i> maakt het ongedaan.</p>
