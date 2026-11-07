@@ -50,6 +50,7 @@ export default function CatalogPage() {
   const [onlyReady, setOnlyReady] = useState(false);
   const [onlyTrademark, setOnlyTrademark] = useState(false);
   const [onlyBundles, setOnlyBundles] = useState(false);
+  const [hideShop, setHideShop] = useState(false);   // modellen die al een shopproduct hebben verbergen
   const [shown, setShown] = useState(PAGE_SIZE);
   const [openId, setOpenId] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -100,7 +101,7 @@ export default function CatalogPage() {
     }
   }
 
-  useEffect(() => setShown(PAGE_SIZE), [stage, kind, category, search, onlyReady, onlyTrademark, onlyBundles]);
+  useEffect(() => setShown(PAGE_SIZE), [stage, kind, category, search, onlyReady, onlyTrademark, onlyBundles, hideShop]);
 
   function stageOf(m: MakerModel): Exclude<Stage, "all" | "picked"> | null {
     const pick = picks.get(m.id);
@@ -138,13 +139,14 @@ export default function CatalogPage() {
       if (onlyReady && (m.kind !== "Lasercut" || m.laser_ready.length === 0)) return false;   // snijklaar = enkel lasermodellen met platen
       if (onlyTrademark && !m.is_trademark) return false;
       if (onlyBundles && !canSplit(m)) return false;
+      if (hideShop && inShop(stageOf(m))) return false;
       if (stage === "picked" && !picks.has(m.id)) return false;
       if (stage === "shop" ? !inShop(stageOf(m)) : stage !== "all" && stage !== "picked" && stageOf(m) !== stage) return false;
       if (q && !`${m.title} ${m.collection} ${m.category} ${m.path}`.toLowerCase().includes(q)) return false;
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [models, picks, links, stage, kind, category, search, onlyReady, onlyTrademark, onlyBundles]);
+  }, [models, picks, links, stage, kind, category, search, onlyReady, onlyTrademark, onlyBundles, hideShop]);
 
   async function togglePick(m: MakerModel) {
     const pick = picks.get(m.id);
@@ -289,6 +291,10 @@ export default function CatalogPage() {
         <label style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 0 10px" }} title="Mappen met veel verschillende ontwerpen, die je kan laten opsplitsen in aparte modellen">
           <input type="checkbox" style={{ width: "auto" }} checked={onlyBundles} onChange={(e) => setOnlyBundles(e.target.checked)} />
           Enkel bundels
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 0 10px" }} title="Verbergt modellen waarvan al een product gemaakt is of die gekoppeld zijn aan een bestaand shopproduct">
+          <input type="checkbox" style={{ width: "auto" }} checked={hideShop} onChange={(e) => setHideShop(e.target.checked)} />
+          Verberg wat al in de shop staat
         </label>
       </div>
 
