@@ -1,24 +1,30 @@
 import "./globals.css";
 import Link from "next/link";
-import { Rajdhani, Share_Tech_Mono, Orbitron } from "next/font/google";
+import localFont from "next/font/local";
 import { DialogHost } from "@/components/DialogHost";
 import { LicenseAlert } from "@/components/LicenseAlert";
 
-const sans = Rajdhani({
-  subsets: ["latin"],
-  weight: ["500", "600", "700"],
+// Lettertypes zitten in de repo (app/fonts, SIL OFL 1.1): de build hangt zo niet af van Google Fonts.
+const sans = localFont({
+  src: [
+    { path: "./fonts/rajdhani-latin-500-normal.woff2", weight: "500", style: "normal" },
+    { path: "./fonts/rajdhani-latin-600-normal.woff2", weight: "600", style: "normal" },
+    { path: "./fonts/rajdhani-latin-700-normal.woff2", weight: "700", style: "normal" },
+  ],
   variable: "--font-sans",
   display: "swap",
 });
-const mono = Share_Tech_Mono({
-  subsets: ["latin"],
+const mono = localFont({
+  src: "./fonts/share-tech-mono-latin-400-normal.woff2",
   weight: "400",
   variable: "--font-mono",
   display: "swap",
 });
-const display = Orbitron({
-  subsets: ["latin"],
-  weight: ["600", "700"],
+const display = localFont({
+  src: [
+    { path: "./fonts/orbitron-latin-600-normal.woff2", weight: "600", style: "normal" },
+    { path: "./fonts/orbitron-latin-700-normal.woff2", weight: "700", style: "normal" },
+  ],
   variable: "--font-display",
   display: "swap",
 });
